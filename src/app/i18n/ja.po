@@ -64,7 +64,7 @@ msgstr "表示"
 msgid "Hide"
 msgstr "非表示"
 
-#: src/ui/controls.cpp src/ui/filebrowser.cpp src/app/screens/messages/message_dialogs.cpp src/app/screens/settings/settings_pages.cpp src/app/screens/shell/composer.cpp src/app/screens/shell/composer_popups.cpp src/app/screens/shell/scheduled_page.cpp src/app/screens/shell/session_dialogs.cpp src/app/screens/shell/shell_dialogs.cpp src/app/screens/shell/signin_dialogs.cpp src/app/screens/shell/status_dialog.cpp
+#: src/ui/controls.cpp src/ui/filebrowser.cpp src/app/screens/messages/message_dialogs.cpp src/app/screens/settings/settings_pages.cpp src/app/screens/shell/composer.cpp src/app/screens/shell/composer_popups.cpp src/app/screens/shell/scheduled_page.cpp src/app/screens/shell/shell_dialogs.cpp src/app/screens/shell/signin_dialogs.cpp src/app/screens/shell/status_dialog.cpp
 msgid "Cancel"
 msgstr "キャンセル"
 
@@ -84,7 +84,7 @@ msgstr "ファイルを開く"
 msgid "Save file"
 msgstr "ファイルを保存"
 
-#: src/ui/filebrowser.cpp src/app/screens/messages/message_dialogs.cpp src/app/screens/settings/settings_dialog.cpp src/app/screens/settings/settings_pages.cpp src/app/screens/shell/composer_popups.cpp src/app/screens/shell/session_dialogs.cpp src/app/screens/shell/shell_dialogs.cpp src/app/screens/shell/status_dialog.cpp
+#: src/ui/filebrowser.cpp src/app/screens/messages/message_dialogs.cpp src/app/screens/settings/settings_dialog.cpp src/app/screens/settings/settings_pages.cpp src/app/screens/shell/composer_popups.cpp src/app/screens/shell/shell_dialogs.cpp src/app/screens/shell/status_dialog.cpp
 msgid "Save"
 msgstr "保存"
 
@@ -108,7 +108,7 @@ msgstr "このフォルダは空です"
 msgid "Show hidden files (Ctrl+H)"
 msgstr "隠しファイルを表示 (Ctrl+H)"
 
-#: src/ui/filebrowser.cpp src/app/screens/settings/settings_pages.cpp src/app/screens/shell/channel_dialogs.cpp src/app/screens/shell/session_dialogs.cpp src/app/screens/shell/shell_dialogs.cpp src/app/screens/shell/status_dialog.cpp
+#: src/ui/filebrowser.cpp src/app/screens/settings/settings_pages.cpp src/app/screens/shell/channel_dialogs.cpp src/app/screens/shell/shell_dialogs.cpp src/app/screens/shell/status_dialog.cpp
 msgid "Name"
 msgstr "名前"
 
@@ -144,420 +144,6 @@ msgstr "貼り付け"
 msgid "Select all"
 msgstr "すべて選択"
 
-#: src/app/claude/approvals.cpp
-msgid "Yes, and don't ask again for %1 commands in %2"
-msgstr "はい、%2 での %1 コマンドは今後確認しない"
-
-#: src/app/claude/approvals.cpp
-msgid "Yes, and don't ask again for %1"
-msgstr "はい、%1 は今後確認しない"
-
-#: src/app/claude/approvals.cpp
-msgid "Yes, and always allow access to %1 from this project"
-msgstr "はい、このプロジェクトでは %1 へのアクセスを常に許可"
-
-#: src/app/claude/approvals.cpp
-msgid "Yes, allow all edits during this session"
-msgstr "はい、このセッション中のすべての編集を許可"
-
-#: src/app/claude/approvals.cpp src/app/claude/backend.cpp
-msgid "Yes"
-msgstr "はい"
-
-#: src/app/claude/approvals.cpp src/app/claude/backend.cpp
-msgid "No"
-msgstr "いいえ"
-
-#: src/app/claude/backend.cpp src/app/screens/messages/rows.cpp src/app/screens/shell/typing_indicator.cpp
-msgid "You"
-msgstr "あなた"
-
-#: src/app/claude/backend.cpp
-msgid "This session is running in a terminal — reply there. Once it ends, you can continue it here."
-msgstr "このセッションはターミナルで動いています。返信はそちらでどうぞ。終了すれば、ここから続けられます。"
-
-#: src/app/claude/backend.cpp
-msgid "Another program is driving this session. Once it ends, you can continue it here."
-msgstr "このセッションは別のプログラムが操作しています。終了すれば、ここから続けられます。"
-
-#: src/app/claude/backend.cpp
-msgid "Waiting for you"
-msgstr "あなたの対応待ち"
-
-#: src/app/claude/backend.cpp
-msgid "Not logged in"
-msgstr "未ログイン"
-
-#: src/app/claude/backend.cpp
-msgid "Working"
-msgstr "作業中"
-
-#: src/app/claude/backend.cpp
-msgid "Running a background command"
-msgstr "バックグラウンドでコマンドを実行中"
-
-#: src/app/claude/backend.cpp
-msgid "its thread"
-msgstr "そのスレッド"
-
-#: src/app/claude/backend.cpp
-msgid "Subagent “%1” reported back in %2."
-msgstr "サブエージェント「%1」が%2で報告しました。"
-
-#: src/app/claude/backend.cpp
-msgid "Waiting for you in the terminal."
-msgstr "ターミナルであなたの対応を待っています。"
-
-#: src/app/claude/backend.cpp
-msgid "Waiting for your approval: %1"
-msgstr "あなたの承認待ち: %1"
-
-#: src/app/claude/backend.cpp
-msgid "Its options couldn't be read yet; trying again."
-msgstr "選択肢をまだ読み取れません。再試行しています。"
-
-#: src/app/claude/backend.cpp
-msgid " · no permission checks"
-msgstr " · 権限の確認なし"
-
-#: src/app/claude/backend.cpp src/app/claude/backend_branch.cpp src/app/claude/backend_manage.cpp src/app/claude/backend_send.cpp
-msgid "The session was removed from msga."
-msgstr "セッションはmsgaから削除されました。"
-
-#: src/app/claude/backend_branch.cpp
-msgid "Thinking…"
-msgstr "考え中…"
-
-#: src/app/claude/backend_branch.cpp
-msgid "Reading files…"
-msgstr "ファイルを読んでいます…"
-
-#: src/app/claude/backend_branch.cpp src/app/screens/shell/composer_popups.cpp src/app/screens/shell/quick_switcher.cpp
-msgid "Searching…"
-msgstr "検索中…"
-
-#: src/app/claude/backend_branch.cpp
-msgid "Looking things up online…"
-msgstr "オンラインで調べています…"
-
-#: src/app/claude/backend_branch.cpp
-msgid "Running a command…"
-msgstr "コマンドを実行しています…"
-
-#: src/app/claude/backend_branch.cpp
-msgid "Asking a subagent…"
-msgstr "サブエージェントに依頼しています…"
-
-#: src/app/claude/backend_branch.cpp
-msgid "Working…"
-msgstr "作業中…"
-
-#: src/app/claude/backend_branch.cpp
-msgid "Waiting for approval…"
-msgstr "承認待ち…"
-
-#: src/app/claude/backend_branch.cpp src/app/claude/backend_send.cpp
-msgid "Send the session its first message before asking on the side."
-msgstr "横道の質問をする前に、まずセッションに最初のメッセージを送ってください。"
-
-#: src/app/claude/backend_branch.cpp src/app/claude/backend_send.cpp
-msgid "Couldn't read %1."
-msgstr "%1 を読み込めませんでした。"
-
-#: src/app/claude/backend_branch.cpp src/app/claude/backend_send.cpp
-msgid "Claude Code didn't pick up the message."
-msgstr "Claude Code がメッセージを受け取りませんでした。"
-
-#: src/app/claude/backend_branch.cpp
-msgid "Claude Code stopped before it answered."
-msgstr "Claude Codeは回答する前に停止しました。"
-
-#: src/app/claude/backend_manage.cpp src/app/claude/backend_send.cpp src/app/slack/slack_actions.cpp
-msgid "Couldn't send message: %1"
-msgstr "メッセージを送信できませんでした: %1"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Couldn't delete the session's worktree: %1"
-msgstr "セッションのワークツリーを削除できませんでした: %1"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Couldn't copy the picture."
-msgstr "画像をコピーできませんでした。"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Ask a side question in a thread; the session itself isn't touched"
-msgstr "スレッドで横道の質問をします。セッション自体には影響しません"
-
-#: src/app/claude/backend_manage.cpp
-msgid "<question>"
-msgstr "<質問>"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Show the session's Claude Code version, model, account and folder"
-msgstr "セッションの Claude Code のバージョン、モデル、アカウント、フォルダーを表示"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Start a new session in the same folder; this one stays as it is"
-msgstr "同じフォルダーで新しいセッションを開始します。このセッションはそのまま残ります"
-
-#: src/app/claude/backend_manage.cpp src/app/screens/settings/settings_pages.cpp
-msgid "Version"
-msgstr "バージョン"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Session name"
-msgstr "セッション名"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Teammate"
-msgstr "チームメイト"
-
-#: src/app/claude/backend_manage.cpp
-msgid "%1 (no longer on the team)"
-msgstr "%1（チームから外れています）"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Session ID"
-msgstr "セッション ID"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Background"
-msgstr "バックグラウンド"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Ended"
-msgstr "終了済み"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Interactive, in a terminal"
-msgstr "対話型（ターミナル）"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Driven by another program"
-msgstr "別のプログラムが操作中"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Session kind"
-msgstr "セッションの種類"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Peer address"
-msgstr "ピアアドレス"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Folder"
-msgstr "フォルダー"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Login method"
-msgstr "ログイン方法"
-
-#: src/app/claude/backend_manage.cpp
-msgid "%1 account"
-msgstr "%1 アカウント"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Organization"
-msgstr "組織"
-
-#: src/app/claude/backend_manage.cpp src/app/screens/shell/status_dialog.cpp
-msgid "Email"
-msgstr "メールアドレス"
-
-#: src/app/claude/backend_manage.cpp src/app/screens/settings/settings_pages.cpp
-msgid "Model"
-msgstr "モデル"
-
-#: src/app/claude/backend_manage.cpp
-msgid "Permission mode"
-msgstr "権限モード"
-
-#: src/app/claude/backend_send.cpp
-msgid "This session no longer exists."
-msgstr "このセッションはもう存在しません。"
-
-#: src/app/claude/backend_send.cpp
-msgid "This subagent can't be written to until it has started."
-msgstr "このサブエージェントには、開始するまで書き込めません。"
-
-#: src/app/claude/backend_send.cpp
-msgid "Type your question after /btw."
-msgstr "/btw の後に質問を入力してください。"
-
-#: src/app/claude/backend_send.cpp
-msgid "Claude Code's session didn't take the message: %1"
-msgstr "Claude Codeのセッションがメッセージを受け取りませんでした: %1"
-
-#: src/app/claude/backend_send.cpp
-msgid "Claude isn't waiting for that approval any more."
-msgstr "Claude はもうこの承認を待っていません。"
-
-#: src/app/claude/backend_send.cpp
-msgid "The answer is on its way."
-msgstr "回答を送信中です。"
-
-#: src/app/claude/backend_send.cpp
-msgid "%1 isn't a folder."
-msgstr "%1 はフォルダーではありません。"
-
-#: src/app/claude/backend_send.cpp
-msgid "Claude Code doesn't run background sessions in the home folder. Pick a project folder."
-msgstr "Claude Code はホームフォルダーではバックグラウンドセッションを実行しません。プロジェクトのフォルダーを選んでください。"
-
-#: src/app/claude/cli.cpp
-msgid "Claude Code isn't installed on this computer (msga can't find the claude command). Install it (https://code.claude.com/docs/en/setup), run `claude` once in a terminal to log in, then try again."
-msgstr "このコンピューターには Claude Code がインストールされていません（msga が claude コマンドを見つけられません）。インストール（https://code.claude.com/docs/en/setup）してからターミナルで一度 `claude` を実行してログインし、もう一度お試しください。"
-
-#: src/app/claude/cli.cpp
-msgid "Claude Code isn't logged in on this computer. Run `claude` in a terminal and log in with /login, then try again."
-msgstr "このコンピューターの Claude Code はログインしていません。ターミナルで `claude` を実行して /login でログインしてから、もう一度お試しください。"
-
-#: src/app/claude/cli.cpp
-msgid "Claude Code doesn't seem to be set up on this computer: %1 doesn't exist. Run `claude` once in a terminal, then add the workspace again."
-msgstr "このコンピューターでは Claude Code が設定されていないようです（%1 がありません）。ターミナルで一度 `claude` を実行してから、もう一度ワークスペースを追加してください。"
-
-#: src/app/claude/launcher.cpp
-msgid "Claude Code exited (code %1)."
-msgstr "Claude Code が終了しました（コード %1）。"
-
-#: src/app/claude/launcher.cpp
-msgid "Claude Code"
-msgstr "Claude Code"
-
-#: src/app/claude/launcher.cpp
-msgid "Project skill"
-msgstr "プロジェクトのスキル"
-
-#: src/app/claude/launcher.cpp
-msgid "Skill"
-msgstr "スキル"
-
-#: src/app/claude/launcher.cpp
-msgid "Couldn't start %1: %2"
-msgstr "%1 を起動できませんでした: %2"
-
-#: src/app/claude/launcher.cpp
-msgid "Claude Code started a copy of this session instead of continuing it."
-msgstr "Claude Code はこのセッションを続ける代わりにコピーを開始しました。"
-
-#: src/app/claude/links.cpp
-msgid "Couldn't find the message's thread."
-msgstr "メッセージのスレッドが見つかりませんでした。"
-
-#: src/app/claude/links.cpp
-msgid "Can't read the linked thread in %1: %2"
-msgstr "%1 のリンクされたスレッドを読み込めません: %2"
-
-#: src/app/claude/links.cpp
-msgid "Picked up late — looking into it now…"
-msgstr "遅れて受け取りました — 今から調べます…"
-
-#: src/app/claude/links.cpp
-msgid "Looking into it…"
-msgstr "調べています…"
-
-#: src/app/claude/links.cpp
-msgid "%1 in %2: %3"
-msgstr "%2 の %1: %3"
-
-#: src/app/claude/links.cpp
-msgid "There is no Claude Code workspace to ask."
-msgstr "質問できる Claude Code ワークスペースがありません。"
-
-#: src/app/claude/links.cpp
-msgid "%1-marked replies are generated by AI."
-msgstr "%1 の付いた返信は AI が生成したものです。"
-
-#: src/app/claude/links.cpp
-msgid "The agent couldn't answer in %1: %2"
-msgstr "エージェントは %1 で回答できませんでした: %2"
-
-#: src/app/claude/links.cpp
-msgid "Couldn't answer: %1"
-msgstr "回答できませんでした: %1"
-
-#: src/app/claude/links.cpp
-msgid "Answered below"
-msgstr "下に回答しました"
-
-#: src/app/claude/links.cpp src/app/screens/messages/rich.cpp src/app/screens/shell/shell_links.cpp
-msgid "%1 in %2"
-msgstr "%2 の %1"
-
-#: src/app/claude/render.cpp
-msgid "%n tool call"
-msgid_plural "%n tool calls"
-msgstr[0] "ツール呼び出し %n 件"
-
-#: src/app/claude/render.cpp
-msgid "… %n earlier"
-msgid_plural "… %n earlier"
-msgstr[0] "… それ以前に %n 件"
-
-#: src/app/claude/render.cpp
-msgid "Subagent: %1"
-msgstr "サブエージェント: %1"
-
-#: src/app/claude/render.cpp
-msgid "Subagent report"
-msgstr "サブエージェントの報告"
-
-#: src/app/claude/render.cpp
-msgid "Message from session “%1”"
-msgstr "セッション「%1」からのメッセージ"
-
-#: src/app/claude/render.cpp
-msgid "Message from another session"
-msgstr "別のセッションからのメッセージ"
-
-#: src/app/claude/roles.cpp
-msgid "Generalist"
-msgstr "ジェネラリスト"
-
-#: src/app/claude/roles.cpp
-msgid "Claude Code as it comes: any task."
-msgstr "素の Claude Code：どんな作業でも。"
-
-#: src/app/claude/roles.cpp
-msgid "Engineer"
-msgstr "エンジニア"
-
-#: src/app/claude/roles.cpp
-msgid "Writes, debugs and reviews code, and proves it works."
-msgstr "コードを書き、デバッグし、レビューして、動くことを確かめます。"
-
-#: src/app/claude/roles.cpp
-msgid "Designer"
-msgstr "デザイナー"
-
-#: src/app/claude/roles.cpp
-msgid "Shapes flows, screens and interface copy; builds mockups."
-msgstr "フロー、画面、UI の文言を形にし、モックアップを作ります。"
-
-#: src/app/claude/roles.cpp
-msgid "Marketer"
-msgstr "マーケター"
-
-#: src/app/claude/roles.cpp
-msgid "Positioning, messaging, launch plans and copy."
-msgstr "ポジショニング、メッセージ、ローンチ計画、コピー。"
-
-#: src/app/claude/roles.cpp
-msgid "Researcher"
-msgstr "リサーチャー"
-
-#: src/app/claude/roles.cpp
-msgid "Digs into questions and reports findings with sources."
-msgstr "疑問を掘り下げ、出典つきで結果を報告します。"
-
-#: src/app/claude/roles.cpp
-msgid "A teammate needs a name."
-msgstr "チームメイトには名前が必要です。"
-
-#: src/app/claude/roles.cpp
-msgid "That teammate is gone."
-msgstr "そのチームメイトはもういません。"
-
 #: src/app/llm/service.cpp
 msgid "No AI provider connected — connect one in Settings → AI assistance"
 msgstr "AIプロバイダーが接続されていません — 設定→「AIアシスタンス」で接続してください"
@@ -566,49 +152,9 @@ msgstr "AIプロバイダーが接続されていません — 設定→「AIア
 msgid "%1 is not connected"
 msgstr "%1は接続されていません"
 
-#: src/app/llm/service.cpp
-msgid "%1 does not support speech-to-text — connect an OpenAI-compatible provider in Settings → AI assistance"
-msgstr "%1は音声の文字起こしに対応していません — 設定→「AIアシスタンス」でOpenAI互換のプロバイダーを接続してください"
-
-#: src/app/llm/service.cpp
-msgid "%1 does not support speech-to-text"
-msgstr "%1は音声の文字起こしに対応していません"
-
-#: src/app/llm/voice_input.cpp
-msgid "Voice input needs a speech-to-text provider. Connect OpenAI or an OpenAI-compatible server in Settings → AI assistance."
-msgstr "音声入力には文字起こしに対応したプロバイダーが必要です。設定 → AIアシスタンスでOpenAIまたはOpenAI互換のサーバーを接続してください。"
-
-#: src/app/llm/voice_input.cpp
-msgid "No microphone recording is available on this system"
-msgstr "このシステムではマイクで録音できません"
-
-#: src/app/llm/voice_input.cpp
-msgid "Couldn't record: %1"
-msgstr "録音できませんでした: %1"
-
-#: src/app/llm/voice_input.cpp
-msgid "No speech was recorded"
-msgstr "音声が録音されませんでした"
-
-#: src/app/llm/voice_input.cpp
-msgid "Voice input needs a speech-to-text provider"
-msgstr "音声入力には文字起こしに対応したプロバイダーが必要です"
-
-#: src/app/llm/voice_input.cpp src/app/screens/messages/audio_card.cpp
-msgid "Couldn't transcribe: %1"
-msgstr "文字起こしできませんでした: %1"
-
-#: src/app/llm/voice_input.cpp src/app/screens/messages/audio_card.cpp
-msgid "No speech was recognised"
-msgstr "音声を認識できませんでした"
-
 #: src/app/llm/wire.cpp
 msgid "unknown error"
 msgstr "不明なエラー"
-
-#: src/app/llm/wire.cpp
-msgid "This server has no speech-to-text endpoint (HTTP 404)"
-msgstr "このサーバーには音声文字起こしのエンドポイントがありません（HTTP 404）"
 
 #: src/app/llm/wire.cpp
 msgid "No chat endpoint at this URL (HTTP 404) — most servers expect it to end in /v1"
@@ -629,10 +175,6 @@ msgstr "サーバーから予期しない応答が返されました（JSONで�
 #: src/app/llm/wire.cpp
 msgid "Unexpected response from server (no choices)"
 msgstr "サーバーから予期しない応答が返されました（choicesがありません）"
-
-#: src/app/llm/wire.cpp
-msgid "Unexpected response from server (no text)"
-msgstr "サーバーから予期しない応答が返されました（textがありません）"
 
 #: src/app/llm/wire.cpp
 msgid "Server not found"
@@ -791,20 +333,12 @@ msgid "APP"
 msgstr "アプリ"
 
 #: src/app/screens/messages/audio_card.cpp
-msgid "%1 · transcribed by %2"
-msgstr "%1 · %2による文字起こし"
-
-#: src/app/screens/messages/audio_card.cpp
 msgid "Transcript (auto-generated)"
 msgstr "文字起こし（自動生成）"
 
 #: src/app/screens/messages/audio_card.cpp
 msgid "Loading…"
 msgstr "読み込み中…"
-
-#: src/app/screens/messages/audio_card.cpp
-msgid "Transcribe with AI"
-msgstr "AIで文字起こし"
 
 #: src/app/screens/messages/audio_card.cpp
 msgid "View transcript"
@@ -825,18 +359,6 @@ msgstr "%1をダウンロード中"
 #: src/app/screens/messages/audio_card.cpp
 msgid "Download failed"
 msgstr "ダウンロードに失敗しました"
-
-#: src/app/screens/messages/audio_card.cpp
-msgid "%1 does not support speech-to-text. Pick an OpenAI-compatible provider in Settings → AI assistance."
-msgstr "%1は音声の文字起こしに対応していません。設定 → AIアシスタンスでOpenAI互換のプロバイダーを選んでください。"
-
-#: src/app/screens/messages/audio_card.cpp
-msgid "Transcription needs an AI provider. Connect one in Settings → AI assistance."
-msgstr "文字起こしにはAIプロバイダーが必要です。設定 → AIアシスタンスで接続してください。"
-
-#: src/app/screens/messages/audio_card.cpp
-msgid "Could not read the file"
-msgstr "ファイルを読み込めませんでした"
 
 #: src/app/screens/messages/emoji_picker.cpp
 msgid "Search all emoji"
@@ -958,7 +480,7 @@ msgstr "ブラウザで開く"
 msgid "More actions"
 msgstr "その他の操作"
 
-#: src/app/screens/messages/message_list.cpp src/app/screens/settings/settings_dialog.cpp src/app/screens/shell/canvas_viewer.cpp src/app/screens/shell/session_status_dialog.cpp src/app/screens/shell/shell.cpp
+#: src/app/screens/messages/message_list.cpp src/app/screens/settings/settings_dialog.cpp src/app/screens/shell/canvas_viewer.cpp src/app/screens/shell/shell.cpp
 msgid "Close"
 msgstr "閉じる"
 
@@ -995,10 +517,6 @@ msgid "Save for later"
 msgstr "後で見るために保存"
 
 #: src/app/screens/messages/message_list.cpp
-msgid "Ask agent"
-msgstr "エージェントに質問"
-
-#: src/app/screens/messages/message_list.cpp
 msgid "Share"
 msgstr "共有"
 
@@ -1025,10 +543,6 @@ msgstr "複数の人が入力中…"
 #: src/app/screens/messages/message_list.cpp
 msgid "Remove from saved"
 msgstr "保存済みから削除"
-
-#: src/app/screens/messages/message_list.cpp
-msgid "Open agent thread"
-msgstr "エージェントのスレッドを開く"
 
 #: src/app/screens/messages/message_list.cpp
 msgid "Sent to the app"
@@ -1127,14 +641,6 @@ msgid "Delete file…"
 msgstr "ファイルを削除…"
 
 #: src/app/screens/messages/message_list.cpp
-msgid "Allow %1 to ask agent"
-msgstr "%1 がエージェントに質問できるようにする"
-
-#: src/app/screens/messages/message_list.cpp
-msgid "Unlink agent"
-msgstr "エージェントのリンクを解除"
-
-#: src/app/screens/messages/message_list.cpp
 msgid "In 20 minutes"
 msgstr "20分後"
 
@@ -1179,6 +685,10 @@ msgid "group message"
 msgstr "グループメッセージ"
 
 #: src/app/screens/messages/rich.cpp
+msgid "%1 in %2"
+msgstr "%2 の %1"
+
+#: src/app/screens/messages/rich.cpp
 msgid "message"
 msgstr "メッセージ"
 
@@ -1209,6 +719,10 @@ msgstr "%1時間%2分"
 #: src/app/screens/messages/rows.cpp
 msgid "%1h"
 msgstr "%1時間"
+
+#: src/app/screens/messages/rows.cpp src/app/screens/shell/typing_indicator.cpp
+msgid "You"
+msgstr "あなた"
 
 #: src/app/screens/messages/rows.cpp
 msgid "Nobody joined the huddle."
@@ -1412,16 +926,8 @@ msgid "Download thread as text"
 msgstr "スレッドをテキストとしてダウンロード"
 
 #: src/app/screens/messages/thread_panel.cpp
-msgid "Open as session"
-msgstr "セッションとして開く"
-
-#: src/app/screens/messages/thread_panel.cpp
 msgid "Also send to channel"
 msgstr "チャンネルにも送信"
-
-#: src/app/screens/messages/thread_panel.cpp
-msgid "Open the Slack thread: %1"
-msgstr "Slack のスレッドを開く: %1"
 
 #: src/app/screens/messages/thread_panel.cpp
 msgid "Save thread"
@@ -1904,20 +1410,16 @@ msgid "API key"
 msgstr "APIキー"
 
 #: src/app/screens/settings/settings_pages.cpp
+msgid "Model"
+msgstr "モデル"
+
+#: src/app/screens/settings/settings_pages.cpp
 msgid "Model name"
 msgstr "モデル名"
 
 #: src/app/screens/settings/settings_pages.cpp
 msgid "Fetch models"
 msgstr "モデルを取得"
-
-#: src/app/screens/settings/settings_pages.cpp
-msgid "Speech model"
-msgstr "音声モデル"
-
-#: src/app/screens/settings/settings_pages.cpp
-msgid "Speech-to-text model for voice input and audio transcripts. Leave empty for the default."
-msgstr "音声入力と音声の文字起こしに使うモデルです。空欄の場合は既定のモデルを使います。"
 
 #: src/app/screens/settings/settings_pages.cpp
 msgid "Test connection"
@@ -1939,38 +1441,6 @@ msgstr ""
 msgid "Native language:"
 msgstr "母国語:"
 
-#: src/app/screens/settings/settings_pages.cpp src/app/screens/shell/composer.cpp src/app/screens/shell/shortcuts.cpp
-msgid "Voice input"
-msgstr "音声入力"
-
-#: src/app/screens/settings/settings_pages.cpp
-msgid ""
-"Dictate messages with the microphone button in the message box. When you dictate, the recording and the conversation's recent messages are sent to your AI provider.\n"
-"The speech-to-text model is set in each provider's settings above."
-msgstr ""
-"メッセージ欄のマイクボタンで、メッセージを音声で入力できます。音声入力を使うと、録音と会話の最近のメッセージがAIプロバイダーに送信されます。\n"
-"文字起こしのモデルは、上の各プロバイダーの設定で指定します。"
-
-#: src/app/screens/settings/settings_pages.cpp
-msgid "Voice input needs an OpenAI or OpenAI-compatible provider with speech-to-text."
-msgstr "音声入力には、文字起こしに対応したOpenAIまたはOpenAI互換のプロバイダーが必要です。"
-
-#: src/app/screens/settings/settings_pages.cpp
-msgid "Glossary"
-msgstr "用語集"
-
-#: src/app/screens/settings/settings_pages.cpp
-msgid "Names, product terms and jargon to spell correctly, one per line."
-msgstr "正しく表記したい名前、製品名、専門用語を1行に1つずつ入力します。"
-
-#: src/app/screens/settings/settings_pages.cpp
-msgid "Clean up with AI"
-msgstr "AIで整える"
-
-#: src/app/screens/settings/settings_pages.cpp
-msgid "Removes filler words and false starts using your AI provider."
-msgstr "AIプロバイダーを使って、「えー」などのつなぎ言葉や言い直しを取り除きます。"
-
 #: src/app/screens/settings/settings_pages.cpp
 msgid "Connect"
 msgstr "接続"
@@ -1983,7 +1453,7 @@ msgstr "編集"
 msgid "Disconnect"
 msgstr "切断"
 
-#: src/app/screens/settings/settings_pages.cpp src/app/screens/shell/saved_page.cpp src/app/screens/shell/session_dialogs.cpp
+#: src/app/screens/settings/settings_pages.cpp src/app/screens/shell/saved_page.cpp
 msgid "Remove"
 msgstr "削除"
 
@@ -2095,6 +1565,10 @@ msgstr ""
 #: src/app/screens/settings/settings_pages.cpp
 msgid "Clear state"
 msgstr "状態をクリア"
+
+#: src/app/screens/settings/settings_pages.cpp
+msgid "Version"
+msgstr "バージョン"
 
 #: src/app/screens/settings/settings_pages.cpp
 msgid "Version %1, built %2"
@@ -2642,10 +2116,6 @@ msgid "Search GIFs — needs a GIPHY API key"
 msgstr "GIFを検索 — GIPHYのAPIキーが必要です"
 
 #: src/app/screens/shell/composer.cpp
-msgid "Stop and transcribe"
-msgstr "停止して文字起こし"
-
-#: src/app/screens/shell/composer.cpp src/app/screens/shell/shell_agents.cpp
 msgid "Message %1"
 msgstr "%1へのメッセージ"
 
@@ -2735,6 +2205,10 @@ msgstr ""
 msgid "Get a free GIPHY key…"
 msgstr "無料のGIPHYキーを取得…"
 
+#: src/app/screens/shell/composer_popups.cpp src/app/screens/shell/quick_switcher.cpp
+msgid "Searching…"
+msgstr "検索中…"
+
 #: src/app/screens/shell/composer_popups.cpp
 msgid "No GIFs found."
 msgstr "GIFが見つかりませんでした。"
@@ -2800,10 +2274,6 @@ msgid "Leave conversation"
 msgstr "会話から退出"
 
 #: src/app/screens/shell/context_menus.cpp
-msgid "Stop"
-msgstr "停止"
-
-#: src/app/screens/shell/context_menus.cpp
 msgid "New section…"
 msgstr "新しいセクション…"
 
@@ -2818,30 +2288,6 @@ msgstr "ワークスペース管理"
 #: src/app/screens/shell/context_menus.cpp
 msgid "Log out"
 msgstr "ログアウト"
-
-#: src/app/screens/shell/context_menus.cpp
-msgid "Find a session"
-msgstr "セッションを探す"
-
-#: src/app/screens/shell/context_menus.cpp src/app/screens/shell/session_dialogs.cpp
-msgid "Create a session"
-msgstr "セッションを作成"
-
-#: src/app/screens/shell/context_menus.cpp
-msgid "Create an unsafe session"
-msgstr "安全でないセッションを作成"
-
-#: src/app/screens/shell/context_menus.cpp src/app/screens/shell/teammate_page.cpp
-msgid "Edit teammate…"
-msgstr "チームメイトを編集…"
-
-#: src/app/screens/shell/context_menus.cpp src/app/screens/shell/session_dialogs.cpp
-msgid "Restore default"
-msgstr "デフォルトに戻す"
-
-#: src/app/screens/shell/context_menus.cpp
-msgid "Remove teammate…"
-msgstr "チームメイトを外す…"
 
 #: src/app/screens/shell/context_menus.cpp
 msgid "Create a section…"
@@ -2890,14 +2336,6 @@ msgstr "セクションに移動"
 #: src/app/screens/shell/context_menus.cpp
 msgid "Rename conversation…"
 msgstr "会話の名前を変更…"
-
-#: src/app/screens/shell/context_menus.cpp
-msgid "Rename session…"
-msgstr "セッション名を変更…"
-
-#: src/app/screens/shell/context_menus.cpp
-msgid "Remove from msga"
-msgstr "msgaから削除"
 
 #: src/app/screens/shell/context_menus.cpp
 msgid "Log out from %1"
@@ -3072,82 +2510,6 @@ msgstr "予約済みメッセージ"
 msgid "Messages you schedule will appear here until they're sent."
 msgstr "予約したメッセージは送信されるまでここに表示されます。"
 
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "Search for sessions"
-msgstr "セッションを検索"
-
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "Looking for sessions…"
-msgstr "セッションを探しています…"
-
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "There are no sessions yet."
-msgstr "セッションはまだありません。"
-
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "No sessions match."
-msgstr "一致するセッションはありません。"
-
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "Add a teammate"
-msgstr "チームメイトを追加"
-
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "Edit teammate"
-msgstr "チームメイトを編集"
-
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "Copywriter"
-msgstr "コピーライター"
-
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "Description"
-msgstr "説明"
-
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "Writes clear, friendly product copy."
-msgstr "わかりやすく親しみやすい製品コピーを書きます。"
-
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "Picture"
-msgstr "画像"
-
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "Instructions"
-msgstr "指示"
-
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "You are the team's copywriter. You write short, friendly copy in the product's voice…"
-msgstr "あなたはチームのコピーライターです。製品の語り口で、短く親しみやすいコピーを書きます…"
-
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "Added to Claude Code's own instructions: what the teammate focuses on, how it works, what to avoid."
-msgstr "Claude Code 自身の指示に追加されます：このチームメイトが注力すること、進め方、避けること。"
-
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "Sessions already started keep the instructions they began with; new sessions get these."
-msgstr "すでに始まったセッションは開始時の指示のままで、新しいセッションにこの指示が使われます。"
-
-#: src/app/screens/shell/session_dialogs.cpp src/app/screens/shell/sidebar.cpp
-msgid "Add teammate"
-msgstr "チームメイトを追加"
-
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "In the list"
-msgstr "リストにあり"
-
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "Remove teammate"
-msgstr "チームメイトを外す"
-
-#: src/app/screens/shell/session_dialogs.cpp
-msgid "Remove the %1 from the team? Its sessions stay in the list, with its name and picture."
-msgstr "%1 をチームから外しますか？セッションは名前と画像ごとリストに残ります。"
-
-#: src/app/screens/shell/session_status_dialog.cpp
-msgid "Session status"
-msgstr "セッションの状態"
-
 #: src/app/screens/shell/shell.cpp
 msgid "Keyboard shortcuts"
 msgstr "キーボードショートカット"
@@ -3224,18 +2586,6 @@ msgstr "通知の状態: %1"
 msgid "Workspace options"
 msgstr ""
 
-#: src/app/screens/shell/shell_agents.cpp
-msgid "That session is gone: Claude Code no longer has it."
-msgstr "このセッションはもうありません。Claude Code から削除されています。"
-
-#: src/app/screens/shell/shell_agents.cpp
-msgid "Start session in a directory without permission checks…"
-msgstr "権限の確認なしでフォルダーでセッションを開始…"
-
-#: src/app/screens/shell/shell_agents.cpp
-msgid "Start session in a directory…"
-msgstr "フォルダーでセッションを開始…"
-
 #: src/app/screens/shell/shell_dialogs.cpp
 msgid "Search channels and people…"
 msgstr "チャンネルやメンバーを検索…"
@@ -3251,10 +2601,6 @@ msgstr "このファイルを転送"
 #: src/app/screens/shell/shell_dialogs.cpp
 msgid "Add a message, if you'd like."
 msgstr "必要に応じてメッセージを追加できます。"
-
-#: src/app/screens/shell/shell_dialogs.cpp
-msgid "Couldn't open the chat."
-msgstr "チャットを開けませんでした。"
 
 #: src/app/screens/shell/shell_dialogs.cpp
 msgid "Forwarding %1"
@@ -3314,16 +2660,8 @@ msgid "The picture is fitted into a square, and the unread dot is drawn over its
 msgstr "画像は正方形に収まるよう縮小され、未読の点がその角に重ねて表示されます。画像ファイルをこのウィンドウにドロップすることもできます。"
 
 #: src/app/screens/shell/shell_dialogs.cpp
-msgid "Rename session"
-msgstr "セッション名を変更"
-
-#: src/app/screens/shell/shell_dialogs.cpp
 msgid "Name conversation"
 msgstr "会話に名前を付ける"
-
-#: src/app/screens/shell/shell_dialogs.cpp
-msgid "Only msga shows this name; Claude Code keeps its own. Leave it empty to use Claude Code's name again."
-msgstr "この名前はmsgaにだけ表示され、Claude Codeは独自の名前を保持します。空欄にするとClaude Codeの名前に戻ります。"
 
 #: src/app/screens/shell/shell_dialogs.cpp
 msgid "Only you see this name. Leave it empty to show the members' names again."
@@ -3352,10 +2690,6 @@ msgstr "セクションを削除"
 #: src/app/screens/shell/shell_dialogs.cpp
 msgid "Delete \"%1\"? Its conversations go back to where they were listed before."
 msgstr "「%1」を削除しますか？ 中の会話は元の場所に戻ります。"
-
-#: src/app/screens/shell/shell_links.cpp
-msgid "The session is gone."
-msgstr "セッションはもうありません。"
 
 #: src/app/screens/shell/shell_notify.cpp
 msgid "Someone"
@@ -3414,10 +2748,6 @@ msgid "Add channels"
 msgstr "チャンネルを追加"
 
 #: src/app/screens/shell/sidebar.cpp
-msgid "Add sessions"
-msgstr "セッションを追加"
-
-#: src/app/screens/shell/sidebar.cpp
 msgid "Open a direct message"
 msgstr "ダイレクトメッセージを開く"
 
@@ -3428,10 +2758,6 @@ msgstr "自分"
 #: src/app/screens/shell/sidebar.cpp
 msgid "Starred"
 msgstr "スター付き"
-
-#: src/app/screens/shell/sidebar.cpp src/app/screens/shell/teammate_page.cpp
-msgid "Sessions"
-msgstr "セッション"
 
 #: src/app/screens/shell/sidebar.cpp
 msgid "Direct messages"
@@ -3454,10 +2780,6 @@ msgid "channels"
 msgstr "チャンネル"
 
 #: src/app/screens/shell/sidebar.cpp
-msgid "Team"
-msgstr "チーム"
-
-#: src/app/screens/shell/sidebar.cpp
 msgid "Find a channel"
 msgstr "チャンネルを探す"
 
@@ -3465,14 +2787,6 @@ msgstr "チャンネルを探す"
 msgid "%n background task running"
 msgid_plural "%n background tasks running"
 msgstr[0] "%n 件のバックグラウンドタスクを実行中"
-
-#: src/app/screens/shell/sidebar_footer.cpp
-msgid "Zen mode is on: tool calls are hidden. Click to show everything."
-msgstr "禅モードはオンです：ツール呼び出しは非表示です。クリックするとすべて表示します。"
-
-#: src/app/screens/shell/sidebar_footer.cpp
-msgid "Zen mode is off. Click to hide tool calls for easier reading."
-msgstr "禅モードはオフです。クリックするとツール呼び出しを隠して読みやすくします。"
 
 #: src/app/screens/shell/sidebar_footer.cpp
 msgid "Profile & status"
@@ -3749,6 +3063,10 @@ msgid "Your display name"
 msgstr "表示名"
 
 #: src/app/screens/shell/status_dialog.cpp
+msgid "Email"
+msgstr "メールアドレス"
+
+#: src/app/screens/shell/status_dialog.cpp
 msgid "name@example.com"
 msgstr "name@example.com"
 
@@ -3783,36 +3101,6 @@ msgstr "保存中…"
 #: src/app/screens/shell/status_dialog.cpp
 msgid "Could not save: %1"
 msgstr "保存できませんでした: %1"
-
-#: src/app/screens/shell/teammate_page.cpp
-msgid "No sessions yet. Write below to start one."
-msgstr "まだセッションはありません。下に書き込むと始まります。"
-
-#: src/app/screens/shell/teammate_page.cpp
-msgid "Change folder"
-msgstr "フォルダーを変更"
-
-#: src/app/screens/shell/teammate_page.cpp
-msgid "%n new"
-msgid_plural "%n new"
-msgstr[0] "%n 件の新着"
-
-#: src/app/screens/shell/teammate_page.cpp
-msgid "Start new session in %1"
-msgstr "%1 で新しいセッションを開始"
-
-#: src/app/screens/shell/teammate_page.cpp
-msgid "%n session"
-msgid_plural "%n sessions"
-msgstr[0] "%n 件のセッション"
-
-#: src/app/screens/shell/teammate_page.cpp
-msgid "Browse…"
-msgstr "参照…"
-
-#: src/app/screens/shell/teammate_page.cpp
-msgid "Folder for new sessions with the %1"
-msgstr "%1 との新しいセッションのフォルダー"
 
 #: src/app/screens/shell/threads_page.cpp
 msgid "%1 files"
@@ -3890,26 +3178,6 @@ msgstr "msgaの新しいバージョンをダウンロードしました。適�
 msgid "Restart now"
 msgstr "今すぐ再起動"
 
-#: src/app/screens/shell/voice_strip.cpp
-msgid "Cancel voice input (Esc)"
-msgstr "音声入力をキャンセル（Esc）"
-
-#: src/app/screens/shell/voice_strip.cpp
-msgid "Dismiss"
-msgstr "閉じる"
-
-#: src/app/screens/shell/voice_strip.cpp
-msgid "Esc to cancel"
-msgstr "Escでキャンセル"
-
-#: src/app/screens/shell/voice_strip.cpp
-msgid "Transcribing…"
-msgstr "文字起こし中…"
-
-#: src/app/screens/shell/voice_strip.cpp
-msgid "Cleaning up…"
-msgstr "整えています…"
-
 #: src/app/slack/browser_login.cpp
 msgid "Opening %1…"
 msgstr "%1 を開いています…"
@@ -3975,6 +3243,10 @@ msgstr "この会話にはSlackの未送信の下書きがあります。先に�
 #: src/app/slack/slack_actions.cpp
 msgid "Upload failed: %1"
 msgstr "アップロードに失敗しました: %1"
+
+#: src/app/slack/slack_actions.cpp
+msgid "Couldn't send message: %1"
+msgstr "メッセージを送信できませんでした: %1"
 
 #: src/app/slack/slack_actions.cpp
 msgid "Couldn't set the reminder: %1"
@@ -4112,6 +3384,554 @@ msgstr "ダウンロードに失敗しました: %1"
 #: src/app/update/updater.cpp
 msgid "Downloaded update is corrupt (checksum mismatch)."
 msgstr "ダウンロードした更新ファイルが破損しています（チェックサム不一致）。"
+
+#~ msgid "%1 does not support speech-to-text — connect an OpenAI-compatible provider in Settings → AI assistance"
+#~ msgstr "%1は音声の文字起こしに対応していません — 設定→「AIアシスタンス」でOpenAI互換のプロバイダーを接続してください"
+
+#~ msgid "%1 does not support speech-to-text"
+#~ msgstr "%1は音声の文字起こしに対応していません"
+
+#~ msgid "Voice input needs a speech-to-text provider. Connect OpenAI or an OpenAI-compatible server in Settings → AI assistance."
+#~ msgstr "音声入力には文字起こしに対応したプロバイダーが必要です。設定 → AIアシスタンスでOpenAIまたはOpenAI互換のサーバーを接続してください。"
+
+#~ msgid "No microphone recording is available on this system"
+#~ msgstr "このシステムではマイクで録音できません"
+
+#~ msgid "Couldn't record: %1"
+#~ msgstr "録音できませんでした: %1"
+
+#~ msgid "No speech was recorded"
+#~ msgstr "音声が録音されませんでした"
+
+#~ msgid "Voice input needs a speech-to-text provider"
+#~ msgstr "音声入力には文字起こしに対応したプロバイダーが必要です"
+
+#~ msgid "Couldn't transcribe: %1"
+#~ msgstr "文字起こしできませんでした: %1"
+
+#~ msgid "No speech was recognised"
+#~ msgstr "音声を認識できませんでした"
+
+#~ msgid "This server has no speech-to-text endpoint (HTTP 404)"
+#~ msgstr "このサーバーには音声文字起こしのエンドポイントがありません（HTTP 404）"
+
+#~ msgid "Unexpected response from server (no text)"
+#~ msgstr "サーバーから予期しない応答が返されました（textがありません）"
+
+#~ msgid "%1 · transcribed by %2"
+#~ msgstr "%1 · %2による文字起こし"
+
+#~ msgid "Transcribe with AI"
+#~ msgstr "AIで文字起こし"
+
+#~ msgid "%1 does not support speech-to-text. Pick an OpenAI-compatible provider in Settings → AI assistance."
+#~ msgstr "%1は音声の文字起こしに対応していません。設定 → AIアシスタンスでOpenAI互換のプロバイダーを選んでください。"
+
+#~ msgid "Transcription needs an AI provider. Connect one in Settings → AI assistance."
+#~ msgstr "文字起こしにはAIプロバイダーが必要です。設定 → AIアシスタンスで接続してください。"
+
+#~ msgid "Could not read the file"
+#~ msgstr "ファイルを読み込めませんでした"
+
+#~ msgid "Ask agent"
+#~ msgstr "エージェントに質問"
+
+#~ msgid "Open agent thread"
+#~ msgstr "エージェントのスレッドを開く"
+
+#~ msgid "Allow %1 to ask agent"
+#~ msgstr "%1 がエージェントに質問できるようにする"
+
+#~ msgid "Unlink agent"
+#~ msgstr "エージェントのリンクを解除"
+
+#~ msgid "Open as session"
+#~ msgstr "セッションとして開く"
+
+#~ msgid "Open the Slack thread: %1"
+#~ msgstr "Slack のスレッドを開く: %1"
+
+#~ msgid "Speech model"
+#~ msgstr "音声モデル"
+
+#~ msgid "Speech-to-text model for voice input and audio transcripts. Leave empty for the default."
+#~ msgstr "音声入力と音声の文字起こしに使うモデルです。空欄の場合は既定のモデルを使います。"
+
+#~ msgid "Voice input"
+#~ msgstr "音声入力"
+
+#~ msgid ""
+#~ "Dictate messages with the microphone button in the message box. When you dictate, the recording and the conversation's recent messages are sent to your AI provider.\n"
+#~ "The speech-to-text model is set in each provider's settings above."
+#~ msgstr ""
+#~ "メッセージ欄のマイクボタンで、メッセージを音声で入力できます。音声入力を使うと、録音と会話の最近のメッセージがAIプロバイダーに送信されます。\n"
+#~ "文字起こしのモデルは、上の各プロバイダーの設定で指定します。"
+
+#~ msgid "Voice input needs an OpenAI or OpenAI-compatible provider with speech-to-text."
+#~ msgstr "音声入力には、文字起こしに対応したOpenAIまたはOpenAI互換のプロバイダーが必要です。"
+
+#~ msgid "Glossary"
+#~ msgstr "用語集"
+
+#~ msgid "Names, product terms and jargon to spell correctly, one per line."
+#~ msgstr "正しく表記したい名前、製品名、専門用語を1行に1つずつ入力します。"
+
+#~ msgid "Clean up with AI"
+#~ msgstr "AIで整える"
+
+#~ msgid "Removes filler words and false starts using your AI provider."
+#~ msgstr "AIプロバイダーを使って、「えー」などのつなぎ言葉や言い直しを取り除きます。"
+
+#~ msgid "Stop and transcribe"
+#~ msgstr "停止して文字起こし"
+
+#~ msgid "Stop"
+#~ msgstr "停止"
+
+#~ msgid "Find a session"
+#~ msgstr "セッションを探す"
+
+#~ msgid "Create a session"
+#~ msgstr "セッションを作成"
+
+#~ msgid "Create an unsafe session"
+#~ msgstr "安全でないセッションを作成"
+
+#~ msgid "Edit teammate…"
+#~ msgstr "チームメイトを編集…"
+
+#~ msgid "Restore default"
+#~ msgstr "デフォルトに戻す"
+
+#~ msgid "Remove teammate…"
+#~ msgstr "チームメイトを外す…"
+
+#~ msgid "Rename session…"
+#~ msgstr "セッション名を変更…"
+
+#~ msgid "Remove from msga"
+#~ msgstr "msgaから削除"
+
+#~ msgid "Couldn't open the chat."
+#~ msgstr "チャットを開けませんでした。"
+
+#~ msgid "Rename session"
+#~ msgstr "セッション名を変更"
+
+#~ msgid "Only msga shows this name; Claude Code keeps its own. Leave it empty to use Claude Code's name again."
+#~ msgstr "この名前はmsgaにだけ表示され、Claude Codeは独自の名前を保持します。空欄にするとClaude Codeの名前に戻ります。"
+
+#~ msgid "The session is gone."
+#~ msgstr "セッションはもうありません。"
+
+#~ msgid "Add teammate"
+#~ msgstr "チームメイトを追加"
+
+#~ msgid "Add sessions"
+#~ msgstr "セッションを追加"
+
+#~ msgid "Sessions"
+#~ msgstr "セッション"
+
+#~ msgid "Team"
+#~ msgstr "チーム"
+
+#~ msgid "Zen mode is on: tool calls are hidden. Click to show everything."
+#~ msgstr "禅モードはオンです：ツール呼び出しは非表示です。クリックするとすべて表示します。"
+
+#~ msgid "Zen mode is off. Click to hide tool calls for easier reading."
+#~ msgstr "禅モードはオフです。クリックするとツール呼び出しを隠して読みやすくします。"
+
+#~ msgid "No sessions yet. Write below to start one."
+#~ msgstr "まだセッションはありません。下に書き込むと始まります。"
+
+#~ msgid "Change folder"
+#~ msgstr "フォルダーを変更"
+
+#~ msgid "%n new"
+#~ msgid_plural "%n new"
+#~ msgstr[0] "%n 件の新着"
+
+#~ msgid "Start new session in %1"
+#~ msgstr "%1 で新しいセッションを開始"
+
+#~ msgid "%n session"
+#~ msgid_plural "%n sessions"
+#~ msgstr[0] "%n 件のセッション"
+
+#~ msgid "Browse…"
+#~ msgstr "参照…"
+
+#~ msgid "Folder for new sessions with the %1"
+#~ msgstr "%1 との新しいセッションのフォルダー"
+
+#~ msgid "Cancel voice input (Esc)"
+#~ msgstr "音声入力をキャンセル（Esc）"
+
+#~ msgid "Dismiss"
+#~ msgstr "閉じる"
+
+#~ msgid "Esc to cancel"
+#~ msgstr "Escでキャンセル"
+
+#~ msgid "Transcribing…"
+#~ msgstr "文字起こし中…"
+
+#~ msgid "Cleaning up…"
+#~ msgstr "整えています…"
+
+#~ msgid "Yes, and don't ask again for %1 commands in %2"
+#~ msgstr "はい、%2 での %1 コマンドは今後確認しない"
+
+#~ msgid "Yes, and don't ask again for %1"
+#~ msgstr "はい、%1 は今後確認しない"
+
+#~ msgid "Yes, and always allow access to %1 from this project"
+#~ msgstr "はい、このプロジェクトでは %1 へのアクセスを常に許可"
+
+#~ msgid "Yes, allow all edits during this session"
+#~ msgstr "はい、このセッション中のすべての編集を許可"
+
+#~ msgid "Yes"
+#~ msgstr "はい"
+
+#~ msgid "No"
+#~ msgstr "いいえ"
+
+#~ msgid "This session is running in a terminal — reply there. Once it ends, you can continue it here."
+#~ msgstr "このセッションはターミナルで動いています。返信はそちらでどうぞ。終了すれば、ここから続けられます。"
+
+#~ msgid "Another program is driving this session. Once it ends, you can continue it here."
+#~ msgstr "このセッションは別のプログラムが操作しています。終了すれば、ここから続けられます。"
+
+#~ msgid "Waiting for you"
+#~ msgstr "あなたの対応待ち"
+
+#~ msgid "Not logged in"
+#~ msgstr "未ログイン"
+
+#~ msgid "Working"
+#~ msgstr "作業中"
+
+#~ msgid "Running a background command"
+#~ msgstr "バックグラウンドでコマンドを実行中"
+
+#~ msgid "its thread"
+#~ msgstr "そのスレッド"
+
+#~ msgid "Subagent “%1” reported back in %2."
+#~ msgstr "サブエージェント「%1」が%2で報告しました。"
+
+#~ msgid "Waiting for you in the terminal."
+#~ msgstr "ターミナルであなたの対応を待っています。"
+
+#~ msgid "Waiting for your approval: %1"
+#~ msgstr "あなたの承認待ち: %1"
+
+#~ msgid "Its options couldn't be read yet; trying again."
+#~ msgstr "選択肢をまだ読み取れません。再試行しています。"
+
+#~ msgid " · no permission checks"
+#~ msgstr " · 権限の確認なし"
+
+#~ msgid "The session was removed from msga."
+#~ msgstr "セッションはmsgaから削除されました。"
+
+#~ msgid "Thinking…"
+#~ msgstr "考え中…"
+
+#~ msgid "Reading files…"
+#~ msgstr "ファイルを読んでいます…"
+
+#~ msgid "Looking things up online…"
+#~ msgstr "オンラインで調べています…"
+
+#~ msgid "Running a command…"
+#~ msgstr "コマンドを実行しています…"
+
+#~ msgid "Asking a subagent…"
+#~ msgstr "サブエージェントに依頼しています…"
+
+#~ msgid "Working…"
+#~ msgstr "作業中…"
+
+#~ msgid "Waiting for approval…"
+#~ msgstr "承認待ち…"
+
+#~ msgid "Send the session its first message before asking on the side."
+#~ msgstr "横道の質問をする前に、まずセッションに最初のメッセージを送ってください。"
+
+#~ msgid "Couldn't read %1."
+#~ msgstr "%1 を読み込めませんでした。"
+
+#~ msgid "Claude Code didn't pick up the message."
+#~ msgstr "Claude Code がメッセージを受け取りませんでした。"
+
+#~ msgid "Claude Code stopped before it answered."
+#~ msgstr "Claude Codeは回答する前に停止しました。"
+
+#~ msgid "Couldn't delete the session's worktree: %1"
+#~ msgstr "セッションのワークツリーを削除できませんでした: %1"
+
+#~ msgid "Couldn't copy the picture."
+#~ msgstr "画像をコピーできませんでした。"
+
+#~ msgid "Ask a side question in a thread; the session itself isn't touched"
+#~ msgstr "スレッドで横道の質問をします。セッション自体には影響しません"
+
+#~ msgid "<question>"
+#~ msgstr "<質問>"
+
+#~ msgid "Show the session's Claude Code version, model, account and folder"
+#~ msgstr "セッションの Claude Code のバージョン、モデル、アカウント、フォルダーを表示"
+
+#~ msgid "Start a new session in the same folder; this one stays as it is"
+#~ msgstr "同じフォルダーで新しいセッションを開始します。このセッションはそのまま残ります"
+
+#~ msgid "Session name"
+#~ msgstr "セッション名"
+
+#~ msgid "Teammate"
+#~ msgstr "チームメイト"
+
+#~ msgid "%1 (no longer on the team)"
+#~ msgstr "%1（チームから外れています）"
+
+#~ msgid "Session ID"
+#~ msgstr "セッション ID"
+
+#~ msgid "Background"
+#~ msgstr "バックグラウンド"
+
+#~ msgid "Ended"
+#~ msgstr "終了済み"
+
+#~ msgid "Interactive, in a terminal"
+#~ msgstr "対話型（ターミナル）"
+
+#~ msgid "Driven by another program"
+#~ msgstr "別のプログラムが操作中"
+
+#~ msgid "Session kind"
+#~ msgstr "セッションの種類"
+
+#~ msgid "Peer address"
+#~ msgstr "ピアアドレス"
+
+#~ msgid "Folder"
+#~ msgstr "フォルダー"
+
+#~ msgid "Login method"
+#~ msgstr "ログイン方法"
+
+#~ msgid "%1 account"
+#~ msgstr "%1 アカウント"
+
+#~ msgid "Organization"
+#~ msgstr "組織"
+
+#~ msgid "Permission mode"
+#~ msgstr "権限モード"
+
+#~ msgid "This session no longer exists."
+#~ msgstr "このセッションはもう存在しません。"
+
+#~ msgid "This subagent can't be written to until it has started."
+#~ msgstr "このサブエージェントには、開始するまで書き込めません。"
+
+#~ msgid "Type your question after /btw."
+#~ msgstr "/btw の後に質問を入力してください。"
+
+#~ msgid "Claude Code's session didn't take the message: %1"
+#~ msgstr "Claude Codeのセッションがメッセージを受け取りませんでした: %1"
+
+#~ msgid "Claude isn't waiting for that approval any more."
+#~ msgstr "Claude はもうこの承認を待っていません。"
+
+#~ msgid "The answer is on its way."
+#~ msgstr "回答を送信中です。"
+
+#~ msgid "%1 isn't a folder."
+#~ msgstr "%1 はフォルダーではありません。"
+
+#~ msgid "Claude Code doesn't run background sessions in the home folder. Pick a project folder."
+#~ msgstr "Claude Code はホームフォルダーではバックグラウンドセッションを実行しません。プロジェクトのフォルダーを選んでください。"
+
+#~ msgid "Claude Code isn't installed on this computer (msga can't find the claude command). Install it (https://code.claude.com/docs/en/setup), run `claude` once in a terminal to log in, then try again."
+#~ msgstr "このコンピューターには Claude Code がインストールされていません（msga が claude コマンドを見つけられません）。インストール（https://code.claude.com/docs/en/setup）してからターミナルで一度 `claude` を実行してログインし、もう一度お試しください。"
+
+#~ msgid "Claude Code isn't logged in on this computer. Run `claude` in a terminal and log in with /login, then try again."
+#~ msgstr "このコンピューターの Claude Code はログインしていません。ターミナルで `claude` を実行して /login でログインしてから、もう一度お試しください。"
+
+#~ msgid "Claude Code doesn't seem to be set up on this computer: %1 doesn't exist. Run `claude` once in a terminal, then add the workspace again."
+#~ msgstr "このコンピューターでは Claude Code が設定されていないようです（%1 がありません）。ターミナルで一度 `claude` を実行してから、もう一度ワークスペースを追加してください。"
+
+#~ msgid "Claude Code exited (code %1)."
+#~ msgstr "Claude Code が終了しました（コード %1）。"
+
+#~ msgid "Claude Code"
+#~ msgstr "Claude Code"
+
+#~ msgid "Project skill"
+#~ msgstr "プロジェクトのスキル"
+
+#~ msgid "Skill"
+#~ msgstr "スキル"
+
+#~ msgid "Couldn't start %1: %2"
+#~ msgstr "%1 を起動できませんでした: %2"
+
+#~ msgid "Claude Code started a copy of this session instead of continuing it."
+#~ msgstr "Claude Code はこのセッションを続ける代わりにコピーを開始しました。"
+
+#~ msgid "Couldn't find the message's thread."
+#~ msgstr "メッセージのスレッドが見つかりませんでした。"
+
+#~ msgid "Can't read the linked thread in %1: %2"
+#~ msgstr "%1 のリンクされたスレッドを読み込めません: %2"
+
+#~ msgid "Picked up late — looking into it now…"
+#~ msgstr "遅れて受け取りました — 今から調べます…"
+
+#~ msgid "Looking into it…"
+#~ msgstr "調べています…"
+
+#~ msgid "%1 in %2: %3"
+#~ msgstr "%2 の %1: %3"
+
+#~ msgid "There is no Claude Code workspace to ask."
+#~ msgstr "質問できる Claude Code ワークスペースがありません。"
+
+#~ msgid "%1-marked replies are generated by AI."
+#~ msgstr "%1 の付いた返信は AI が生成したものです。"
+
+#~ msgid "The agent couldn't answer in %1: %2"
+#~ msgstr "エージェントは %1 で回答できませんでした: %2"
+
+#~ msgid "Couldn't answer: %1"
+#~ msgstr "回答できませんでした: %1"
+
+#~ msgid "Answered below"
+#~ msgstr "下に回答しました"
+
+#~ msgid "%n tool call"
+#~ msgid_plural "%n tool calls"
+#~ msgstr[0] "ツール呼び出し %n 件"
+
+#~ msgid "… %n earlier"
+#~ msgid_plural "… %n earlier"
+#~ msgstr[0] "… それ以前に %n 件"
+
+#~ msgid "Subagent: %1"
+#~ msgstr "サブエージェント: %1"
+
+#~ msgid "Subagent report"
+#~ msgstr "サブエージェントの報告"
+
+#~ msgid "Message from session “%1”"
+#~ msgstr "セッション「%1」からのメッセージ"
+
+#~ msgid "Message from another session"
+#~ msgstr "別のセッションからのメッセージ"
+
+#~ msgid "Generalist"
+#~ msgstr "ジェネラリスト"
+
+#~ msgid "Claude Code as it comes: any task."
+#~ msgstr "素の Claude Code：どんな作業でも。"
+
+#~ msgid "Engineer"
+#~ msgstr "エンジニア"
+
+#~ msgid "Writes, debugs and reviews code, and proves it works."
+#~ msgstr "コードを書き、デバッグし、レビューして、動くことを確かめます。"
+
+#~ msgid "Designer"
+#~ msgstr "デザイナー"
+
+#~ msgid "Shapes flows, screens and interface copy; builds mockups."
+#~ msgstr "フロー、画面、UI の文言を形にし、モックアップを作ります。"
+
+#~ msgid "Marketer"
+#~ msgstr "マーケター"
+
+#~ msgid "Positioning, messaging, launch plans and copy."
+#~ msgstr "ポジショニング、メッセージ、ローンチ計画、コピー。"
+
+#~ msgid "Researcher"
+#~ msgstr "リサーチャー"
+
+#~ msgid "Digs into questions and reports findings with sources."
+#~ msgstr "疑問を掘り下げ、出典つきで結果を報告します。"
+
+#~ msgid "A teammate needs a name."
+#~ msgstr "チームメイトには名前が必要です。"
+
+#~ msgid "That teammate is gone."
+#~ msgstr "そのチームメイトはもういません。"
+
+#~ msgid "Search for sessions"
+#~ msgstr "セッションを検索"
+
+#~ msgid "Looking for sessions…"
+#~ msgstr "セッションを探しています…"
+
+#~ msgid "There are no sessions yet."
+#~ msgstr "セッションはまだありません。"
+
+#~ msgid "No sessions match."
+#~ msgstr "一致するセッションはありません。"
+
+#~ msgid "Add a teammate"
+#~ msgstr "チームメイトを追加"
+
+#~ msgid "Edit teammate"
+#~ msgstr "チームメイトを編集"
+
+#~ msgid "Copywriter"
+#~ msgstr "コピーライター"
+
+#~ msgid "Description"
+#~ msgstr "説明"
+
+#~ msgid "Writes clear, friendly product copy."
+#~ msgstr "わかりやすく親しみやすい製品コピーを書きます。"
+
+#~ msgid "Picture"
+#~ msgstr "画像"
+
+#~ msgid "Instructions"
+#~ msgstr "指示"
+
+#~ msgid "You are the team's copywriter. You write short, friendly copy in the product's voice…"
+#~ msgstr "あなたはチームのコピーライターです。製品の語り口で、短く親しみやすいコピーを書きます…"
+
+#~ msgid "Added to Claude Code's own instructions: what the teammate focuses on, how it works, what to avoid."
+#~ msgstr "Claude Code 自身の指示に追加されます：このチームメイトが注力すること、進め方、避けること。"
+
+#~ msgid "Sessions already started keep the instructions they began with; new sessions get these."
+#~ msgstr "すでに始まったセッションは開始時の指示のままで、新しいセッションにこの指示が使われます。"
+
+#~ msgid "In the list"
+#~ msgstr "リストにあり"
+
+#~ msgid "Remove teammate"
+#~ msgstr "チームメイトを外す"
+
+#~ msgid "Remove the %1 from the team? Its sessions stay in the list, with its name and picture."
+#~ msgstr "%1 をチームから外しますか？セッションは名前と画像ごとリストに残ります。"
+
+#~ msgid "Session status"
+#~ msgstr "セッションの状態"
+
+#~ msgid "That session is gone: Claude Code no longer has it."
+#~ msgstr "このセッションはもうありません。Claude Code から削除されています。"
+
+#~ msgid "Start session in a directory without permission checks…"
+#~ msgstr "権限の確認なしでフォルダーでセッションを開始…"
+
+#~ msgid "Start session in a directory…"
+#~ msgstr "フォルダーでセッションを開始…"
 
 #~ msgid "Search messages…"
 #~ msgstr "メッセージを検索…"

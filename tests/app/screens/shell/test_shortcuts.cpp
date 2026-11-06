@@ -49,16 +49,9 @@ void pump(int n = 10) {
         app().pump(2);
 }
 
-// A fake backend where one DM is a Claude Code session.
-struct AgentFake : fake::FakeBackend {
-    using fake::FakeBackend::FakeBackend;
-    bool    isAgentSession(ConvRef c) const override { return c == agent; }
-    ConvRef agent = kNoConv;
-};
-
 struct Harness {
     Store     store;
-    AgentFake backend{store, app().platform()};
+    fake::FakeBackend backend{store, app().platform()};
 #ifdef MSGA_HAVE_MESSAGES
     screens::ImageCache images{app().platform()};
     screens::Context    ctx{app(), store, backend, images, {}, {}, {}, {}, {}};
@@ -182,7 +175,6 @@ TEST("shortcuts: tooltips and chips spell the keys per platform") {
     CHECK_STR(nativeKeys(Id::EmojiPicker), "Ctrl+Shift+\\");
     CHECK_STR(nativeKeys(Id::OpenSettings), "Ctrl+,");
     CHECK_STR(nativeKeys(Id::SearchMessages), "Ctrl+F");
-    CHECK_STR(nativeKeys(Id::VoiceInput), "Ctrl+Shift+Space");
 #endif
     CHECK_STR(nativeKeys(Id::EditLastMessage), "\xE2\x86\x91");
     CHECK_STR(nativeKeys(Id::CancelOrExitEdit), "Esc");

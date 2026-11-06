@@ -168,7 +168,6 @@ void Store::clear() {
     workspaceIcon.clear();
     workspaceUrl.clear();
     _mutedThreads.clear();
-    _aiTranscripts.clear();
     _reminders.clear();
     _saved.clear();
     _scheduled.clear();
@@ -182,7 +181,6 @@ void Store::clear() {
     _unreadThreads     = 0;
     _unreadActivity    = 0;
     workspaceMuted     = false;
-    answersAreMentions = false;
     me                 = kNoUser;
     ++_textRev;
     textUnlisted();
@@ -795,8 +793,6 @@ bool Store::reactedByMe(const Reaction &r) const {
 }
 
 bool Store::mentions(const Message &m) const {
-    if (answersAreMentions)
-        return m.subtype() != "progress";
     return mentionsMe(m.text);
 }
 
@@ -890,33 +886,6 @@ void Store::setDraft(ConvRef c, Ts thread, std::string html, std::vector<std::st
     }
     ++_localRev;
     emit({ChangeKind::Meta, c}); // app-local state: the workspace cache keeps it
-}
-
-const Store::AiTranscript *Store::aiTranscript(const std::string &fileId) const {
-    const auto it = _aiTranscripts.find(fileId);
-    return it == _aiTranscripts.end() ? nullptr : &it->second;
-}
-
-void Store::setAiTranscript(const std::string &fileId, std::string text, std::string by) {
-    if (fileId.empty())
-        return;
-    _aiTranscripts[fileId] = {std::move(text), std::move(by)};
-    ++_localRev;
-    const auto has = [&](const Message &m) {
-        for (const File &f : m.files())
-            if (f.id == fileId)
-                return true;
-        return false;
-    };
-    for (ConvRef c = 0; c < ConvRef(_convs.size()); ++c) {
-        for (const Message &m : _convs[c].messages)
-            if (has(m))
-                emit({ChangeKind::Update, c, 0, m.ts});
-        for (const Thread &t : _convs[c].threads)
-            for (const Message &m : t.replies)
-                if (has(m))
-                    emit({ChangeKind::Update, c, t.root, m.ts});
-    }
 }
 
 int64_t Store::reminderAt(ConvRef c, Ts ts) const {
