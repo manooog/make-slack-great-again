@@ -27,8 +27,6 @@
 #include "screens/shell/profile_card.h"
 #include "screens/shell/shell_dialogs.h"
 #include "screens/shell/quick_switcher.h"
-#include "screens/shell/session_status_dialog.h"
-#include "screens/shell/teammate_page.h"
 #include "screens/shell/overview_page.h"
 #include "screens/shell/saved_page.h"
 #include "screens/shell/scheduled_page.h"
@@ -874,7 +872,7 @@ Shell::Shell(
             jumpToMessage(c, ts, thread);
             return;
         }
-        std::weak_ptr<int> alive = _agentAlive;
+        std::weak_ptr<int> alive = _alive;
         _ctx.backend.joinChannel(
             c, [this, alive, ts, thread](ConvRef joined, const std::string &err) {
                 if (alive.expired())
@@ -977,23 +975,7 @@ Shell::Shell(
             ts,
             file,
             [this](const std::string &message) { showError(message); },
-            std::move(targets),
-            [this](
-                const std::string       &key,
-                const std::string       &role,
-                std::string              text,
-                std::vector<std::string> paths
-            ) {
-                // Its workspace first (as a notification's click does).
-                if (!key.empty()) {
-                    if (!(key == _activeKey && _signedIn) && onSwitchWorkspace)
-                        onSwitchWorkspace(key);
-                    const Running *r = findRunning(key);
-                    if (!r || r->store != &_ctx.store() || !_signedIn)
-                        return; // logged out meanwhile
-                }
-                prefillTeammate(role, std::move(text), std::move(paths));
-            }
+            std::move(targets)
         );
         if (_forward)
             _forward->onClosed = [this, f = _forward] {
@@ -1015,15 +997,7 @@ Shell::Shell(
         });
     };
     ctx.messageUser = [this](model::UserRef u) {
-        // A teammate has no DM of its own; its page is
-        // where writing to it starts a session.
-        if (_ctx.backend.capabilities().agentSessions)
-            for (const model::Backend::AgentRole &r : _ctx.backend.agentRoles())
-                if (r.user != model::kNoUser && r.user == u) {
-                    openTeammate(r.id);
-                    return;
-                }
-        std::weak_ptr<int> alive = _agentAlive;
+        std::weak_ptr<int> alive = _alive;
         _ctx.backend.openDm(u, [this, alive](ConvRef c) {
             if (!alive.expired() && c != kNoConv)
                 open(c);
@@ -1046,7 +1020,17 @@ Shell::Shell(
     };
     _thread->panel->list().onEdit = [this](ConvRef, Ts ts) { _thread->composer->beginEdit(ts); };
 #endif
-    wireAgentUi();
+    // Slack's built-in and app slash commands must still run locally; this
+    // dispatch is independent of the removed Claude Code agent UI.
+    _composer->onCommand = [this](const std::string &name, const std::string &args) {
+        runCommand(_current, 0, name, args);
+    };
+#ifdef MSGA_HAVE_MESSAGES
+    _thread->composer->onCommand = [this](const std::string &name, const std::string &args) {
+        runCommand(_thread->composer->conv(), _thread->composer->thread(), name, args);
+    };
+    _thread->composer->setPopupArea(_thread->panel);
+#endif
 
     _observer = ctx.store.observe(model::Store::kAnyConv, [this](const model::Change &ch) {
         onChange(ch);
@@ -1064,8 +1048,6 @@ Shell::Shell(
     shortcuts::install(win, Id::QuickSwitch, [this] { showQuickSwitcher(); });
     win.keyFilter = [this](const Event &e) {
         noteActivity();
-        if (removeIdleSession(e))
-            return true;
         typeIntoComposer(e);
         return false;
     };
@@ -1240,52 +1222,16 @@ uint64_t Shell::nextNotifyId() {
     return _nextNotifyId++;
 }
 
-// ── Claude Code UI ──────────────────────────────────────────────────────────
-
-void Shell::wireAgentUi() {
-    // ↑ in a Claude Code session: its prompt history, as in Claude Code
-    // itself (the thread composer has none).
-    // On a teammate's page, before any session: the prompts of the folder
-    // the new session starts in. (A command typed there is the new
-    // session's first prompt: the page's onSendRequest takes the send.)
-    _composer->historySource = [this] {
-        if (teammateOpen())
-            return _ctx.backend.folderPromptHistory(teammatePage()->folder());
-        return _current == kNoConv ? std::vector<std::string>()
-                                   : _ctx.backend.promptHistory(_current);
-    };
-    _composer->onCommand = [this](const std::string &name, const std::string &args) {
-        runCommand(_current, 0, name, args);
-    };
-    // Zen mode: remembered per workspace in Settings; the open chat reloads
-    // to match.
-    SidebarFooter &footer = _sidebar->footer();
-    footer.setZenOn(_settings.zenMode(_activeKey));
-    footer.onZenToggled = [this](bool on) {
-        _settings.setZenMode(_activeKey, on);
-        saveSettingsSoon();
-        _ctx.backend.setZenMode(on);
-#ifdef MSGA_HAVE_MESSAGES
-        if (_current != kNoConv)
-            static_cast<screens::MessageList *>(_messages)->showConversation(_current);
-#endif
-    };
-#ifdef MSGA_HAVE_MESSAGES
-    // A command typed in a thread runs as in the channel, in the thread:
-    // what it posts is a reply there.
-    _thread->composer->onCommand = [this](const std::string &name, const std::string &args) {
-        runCommand(_thread->composer->conv(), _thread->composer->thread(), name, args);
-    };
-    _thread->composer->setPopupArea(_thread->panel); // its popups stay inside the panel
-    // "Open as session": a branched agent thread moves to the list.
-    _thread->panel->onOpenAsSession = [this](ConvRef conv, Ts root) {
-        const ConvRef session = _ctx.backend.openThreadAsSession(conv, root);
-        if (session == kNoConv)
-            return;
-        closeThread();
-        open(session);
-    };
-#endif
+// Routes Slack's /dnd, /status, /mute and app commands through the backend
+// rather than accidentally posting them as ordinary chat messages.
+void Shell::runCommand(ConvRef conv, Ts thread, const std::string &name, const std::string &args) {
+    if (conv == kNoConv)
+        return;
+    const auto result = _ctx.backend.runLocalCommand(conv, thread, name, args);
+    if (!result.error.empty())
+        showError(result.error);
+    if (result.open != kNoConv)
+        open(result.open);
 }
 
 // A conversation nobody can post to from here
@@ -1307,20 +1253,6 @@ void Shell::applyComposerAccess() {
         return;
     _composerLock = reason;
     _composer->setLockReason(reason);
-}
-
-// A command msga runs itself (an agent session's
-// /status, /clear) — nothing is sent.
-void Shell::runCommand(ConvRef conv, Ts thread, const std::string &name, const std::string &args) {
-    if (conv == kNoConv)
-        return;
-    const auto r = _ctx.backend.runLocalCommand(conv, thread, name, args);
-    if (!r.error.empty())
-        showError(r.error);
-    if (!r.status.empty())
-        SessionStatusDialog::show(_win, r.status);
-    if (r.open != kNoConv)
-        open(r.open);
 }
 
 Shell::~Shell() {
@@ -1657,7 +1589,6 @@ void Shell::buildMain(View *parent) {
         if (_current != kNoConv)
             _tabs->setCanvas(true, true, title);
     };
-    buildTeammatePage(stack); // an agent workspace's teammate page (shell_agents.cpp)
     buildActivityPage(stack);
     buildThreadsPage(stack);
     buildSavedPage(stack);
@@ -1752,7 +1683,6 @@ void Shell::setWaiting(bool on) {
     _sidebar->setVisible(_signedIn && !on);
     _listHandle->setVisible(_signedIn && !on);
     if (on) {
-        leaveTeammate();
         leavePages();
         _header->setVisible(false);
         _tabs->setVisible(false);
@@ -1922,7 +1852,6 @@ void Shell::workspaceChanged() {
 void Shell::open(ConvRef conv) {
     if (!_signedIn || conv == kNoConv || conv >= _ctx.store().conversationCount())
         return;
-    leaveTeammate(); // the teammate page keeps what was typed to it
     leavePages();
     _search->hideNow();
     showMessageArea();
@@ -1964,7 +1893,6 @@ void Shell::open(ConvRef conv) {
 }
 
 void Shell::leaveWorkspace() {
-    leaveTeammate();
     leavePages();
     if (_activityPage)
         _activityPage->clear(); // its items point into the old workspace
@@ -2166,9 +2094,6 @@ void Shell::closeThreadOnEscape() {
     closeThread();
 }
 
-// Shift+Del on an idle Claude Code session: "Remove from msga". Filtered
-// before the focused view sees the key, because the composer keeps focus; a
-// text field with a selection keeps the key (Cut there).
 namespace {
 
 // A key that types a character (letters, digits, punctuation, space, the
@@ -2202,25 +2127,6 @@ void Shell::typeIntoComposer(const Event &e) {
         c = _thread->composer;
     if (c && c->visible() && c->enabled())
         c->edit().focus();
-}
-
-bool Shell::removeIdleSession(const Event &e) {
-    if (!shortcuts::matches(shortcuts::Id::RemoveIdleSession, e) || topDialog() || _settingsDlg)
-        return false;
-    if (View *f = _win.focusView();
-        f && f->role() == Role::TextInput && static_cast<const TextEdit *>(f)->hasSelection())
-        return false;
-    const ConvRef c = _sidebar->selected();
-    if (c >= _ctx.store().conversationCount() || !_ctx.backend.isAgentSession(c))
-        return false;
-    const model::Conversation &cv = _ctx.store().conversation(c);
-    // Exactly what the row paints: an idle session has a gray dot — neither
-    // working (green) nor there-but-unreachable (yellow).
-    if (cv.kind != model::ConvKind::Dm || cv.dmUser >= _ctx.store().userCount() ||
-        _ctx.store().user(cv.dmUser).active || _ctx.store().user(cv.dmUser).unavailable)
-        return false;
-    _menus->run(Menus::kLeave, c);
-    return true;
 }
 
 void Shell::openThread(ConvRef conv, Ts root) {
@@ -2343,7 +2249,6 @@ void Shell::showPage(Page p) {
     OverviewPage *page = pageView(p);
     if (!page || !_signedIn || !pageAvailable(p))
         return;
-    leaveTeammate();
     for (Page o : {Page::Activity, Page::Threads, Page::Saved, Page::Scheduled})
         if (o != p)
             leavePage(o);
@@ -2564,8 +2469,6 @@ void Shell::onChange(const model::Change &ch) {
         rebuildTrayMenu();
         if (_waiting && _ctx.store().conversationCount() > 0)
             setWaiting(false); // the column shows the moment real data arrives
-        if (teammateOpen())    // another workspace: the page follows (or goes)
-            refreshTeammates();
         applyPendingNav(); // a back/forward jump waiting for these conversations
     }
     bool attached = false;
@@ -2970,7 +2873,7 @@ void Shell::refreshTrayIcon(int mentions, bool unread) {
                     if (file::readAll(path, &bytes) && decodeTrayPicture(bytes, &bmp))
                         *out = std::make_shared<gfx::Bitmap>(trayPicture(bmp, mono));
                 },
-                [this, alive = std::weak_ptr<int>(_agentAlive), out, custom] {
+                [this, alive = std::weak_ptr<int>(_alive), out, custom] {
                     if (alive.expired() || custom != _trayImagePath)
                         return; // the shell is gone, or another picture is wanted
                     _trayImage    = std::move(*out);
@@ -3369,7 +3272,7 @@ void Shell::renameConversation(ConvRef c) {
 }
 
 void Shell::openBrowseDialog(int tab) {
-    std::weak_ptr<int> alive = _agentAlive;
+    std::weak_ptr<int> alive = _alive;
     showFindChannel(
         _ctx,
         _win,
@@ -3407,7 +3310,7 @@ void Shell::openBrowseDialog(int tab) {
 }
 
 void Shell::openCreateChannel() {
-    std::weak_ptr<int> alive = _agentAlive;
+    std::weak_ptr<int> alive = _alive;
     showCreateChannel(
         _win, _ctx.store().workspaceName, [this, alive](const std::string &name, bool priv) {
             // Created, and the list shows it; nothing opens.

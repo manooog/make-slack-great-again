@@ -6,9 +6,6 @@
 //   --demo <dir>          the fake workspace in <dir>/fixture.json (only in
 //                         builds configured with -DMSGA_DEMO=ON)
 //   --demo-tour <file>    with --demo: msga's scripted walkthrough (demo/tour.json)
-//   --claude-permission-hook <dir>
-//                         Claude Code's permission hook for the sessions msga
-//                         starts (app/claude/approvals.h): no window, no app
 //
 // Diagnostics (screenshots, measurements):
 //   --theme light|dark   override the saved theme for this run
@@ -23,7 +20,6 @@
 // MSGA_MEMSTATS=<seconds> prints them that often.
 #include "app/auth/workspaces.h"
 #include "app/cache/workspace_cache.h"
-#include "app/claude/approvals.h"
 #include "app/crash/crash_handler.h"
 #include "app/i18n/languages.h"
 #include "app/identity.h"
@@ -54,9 +50,7 @@
 #endif
 
 #ifdef MSGA_DEMO
-#include "app/claude/backend.h"
 #include "app/fake/fake_backend.h"
-#include "screens/shell/demo/claude_demo.h"
 #include "screens/shell/demo/soak.h"
 #include "screens/shell/demo/tour.h"
 #endif
@@ -194,8 +188,6 @@ bool parseNotificationClick(std::string_view s, uint64_t *id, std::string *actio
 } // namespace
 
 int main(int argc, char **argv) {
-    if (argc == 3 && argv[1] == claude::kPermissionHookFlag)
-        return claude::runPermissionHook(argv[2]);
 #ifdef MSGA_DEMO
     std::string demo;
 #else
@@ -387,29 +379,14 @@ int main(int argc, char **argv) {
             {cache::WorkspaceCache::root(pa), file::join(cache, "workspace-icons")}
         );
 #ifdef MSGA_DEMO
-    // A Slack fixture runs on the fake backend; a Claude Code one
-    // (claude-code.json) on the real Claude Code workspace, whose `claude` is
-    // the fixture's stand-in (demo/claude_demo.h).
+    // Demo fixtures use the fake Slack workspace only.
     std::optional<fake::FakeBackend> demoBackend;
-    std::unique_ptr<claude::Backend> demoClaude;
-    std::string                      demoStart;
-    if (!demo.empty() && demo::isClaudeFixture(demo)) {
-        demo::ClaudeDemo cd;
-        if (!demo::prepareClaudeDemo(demo, pa, settings, &cd, &err)) {
-            std::fprintf(stderr, "msga --demo: %s\n", err.c_str());
-            return 2;
-        }
-        store.workspaceName = "Claude Code";
-        demoClaude =
-            std::make_unique<claude::Backend>(store, pa, claude::Credentials{cd.claudePath});
-        backend.setTarget(*demoClaude);
-        demoStart = cd.startSession;
-    } else if (!demo.empty()) {
+    if (!demo.empty()) {
         demoBackend.emplace(store, pa);
         demoBackend->setFixture(demo, 0);
         backend.setTarget(*demoBackend);
     }
-    const bool demoMode = demoBackend || demoClaude;
+    const bool demoMode = demoBackend.has_value();
 #else
     const bool demoMode = false;
 #endif
@@ -587,19 +564,8 @@ int main(int argc, char **argv) {
     }
 #ifdef MSGA_DEMO
     else {
-        fake::FakeBackend *fb = demoBackend ? &*demoBackend : nullptr;
-        model::Backend    &db = fb ? static_cast<model::Backend &>(*fb) : *demoClaude;
-        if (demoClaude) { // as Accounts does for a workspace
-            demoClaude->onError  = [&sh](const std::string &message) { sh.showError(message); };
-            demoClaude->onUnsent = [&sh, &db](
-                                       model::ConvRef                  conv,
-                                       model::Ts                       thread,
-                                       const std::string              &text,
-                                       const std::vector<std::string> &files
-                                   ) {
-                sh.giveBackUnsent(sh.drafts().scope(), db.store(), conv, thread, text, files);
-            };
-        }
+        fake::FakeBackend *fb = &*demoBackend;
+        model::Backend    &db = *fb;
         const double t0 = app->nowMs();
         sh.setSignedIn(true); // the workspace opening: the first-load state until connected
         // t0 by value: connect answers after this block has ended.
@@ -609,8 +575,7 @@ int main(int argc, char **argv) {
                 app->quit();
                 return;
             }
-            model::ConvRef start =
-                fb ? fb->fixture().startConversation : store.findConversation(demoStart);
+            model::ConvRef start = fb->fixture().startConversation;
             if (!openId.empty())
                 if (model::ConvRef c = store.findConversation(openId); c != model::kNoConv)
                     start = c;

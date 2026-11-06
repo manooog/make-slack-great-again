@@ -120,6 +120,11 @@ std::vector<TextEdit::Run> run(uint32_t a, uint32_t b, uint8_t f, std::string_vi
 
 } // namespace
 
+TEST("shell: Slack slash-command dispatcher remains connected") {
+    Harness h;
+    REQUIRE(bool(h.sh->composer().onCommand));
+}
+
 // ── mrkdwn serialiser ───────────────────────────────────────────────────────
 
 TEST("composer: runs serialise to mrkdwn the parser reads back") {
@@ -3213,17 +3218,12 @@ TEST("history: back and forward cross workspaces; a signed-out one's entries go"
     CHECK(&w.ctx.store() == &w.a);
 }
 
-TEST("zen mode: each workspace keeps its own") {
-    TwoWorkspaces         w;
+TEST("Slack workspaces do not expose Claude's zen-mode toggle") {
+    TwoWorkspaces w;
     shell::SidebarFooter &f = w.sh->sidebar().footer();
-    REQUIRE(!f.zenOn());
-    f.toggleZen();
-    CHECK(w.settings.zenMode(kKeyA));
-    CHECK_FALSE(w.settings.zenMode(kKeyB));
+    CHECK_FALSE(f.zenToggle()->visible());
     w.show(kKeyB);
-    CHECK_FALSE(f.zenOn());
-    w.show(kKeyA);
-    CHECK(f.zenOn());
+    CHECK_FALSE(f.zenToggle()->visible());
 }
 
 TEST("header: names, presence, DND and my phantom state follow the Store") {
