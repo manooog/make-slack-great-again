@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        timeout-minutes: 7
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y --no-install-recommends \
+            clang lld cmake ninja-build pkg-config python3 \
+            libfreetype-dev libharfbuzz-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev wayland-protocols \
+            libxcb1-dev libxcb-xkb-dev libxcb-shm0-dev \
+            libxcb-randr0-dev libxcb-cursor-dev libxcb-xfixes0-dev \
+            libxcb-xinput-dev libxcb-xtest0-dev libdbus-1-dev \
+            fonts-inter fonts-noto-color-emoji
+      - name: Configure
+        run: |
+          cmake -S . -B build-ci -G Ninja \
+            -DCMAKE_BUILD_TYPE=MinSizeRel \
+            -DMSGA_BUILD_TESTS=ON \
+            -DMSGA_DEMO=OFF \
+            -DMSGA_SELF_UPDATE=OFF
+      - name: Build
+        run: cmake --build build-ci --parallel 4
+      - name: Verify regression-sensitive tests
+        run: ctest --test-dir build-ci --output-on-failure --parallel 1 -R '^(text_ink_lean|ui_popup|messages_actions|shell_ui_tests|settings_tests)$'
+      - name: Test
+        run: ctest --test-dir build-ci --output-on-failure --parallel 2
