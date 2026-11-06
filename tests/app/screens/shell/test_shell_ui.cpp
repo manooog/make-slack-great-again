@@ -203,6 +203,25 @@ std::string joined(const std::vector<std::string> &v) {
 
 } // namespace
 
+
+// The integrated title row stays compact, and conversation-only actions
+// live beside the tabs rather than increasing title-bar density.
+TEST("title layout: huddle belongs to tab actions, title controls stay compact") {
+#ifndef __APPLE__
+    Harness h;
+    h.backend.huddles = true;
+    h.sh->header().refresh();
+    pump();
+    CHECK(h.sh->header().height() <= 48);
+    CHECK(h.sh->workspaceSwitcher()->height() == 34);
+    const ui::View *huddle = h.sh->header().huddle();
+    REQUIRE(huddle->parent() != nullptr);
+    CHECK(huddle->parent()->parent() == &h.sh->tabs());
+    CHECK(huddle->visible());
+    CHECK(huddle->windowRect().y >= h.sh->header().windowRect().y + h.sh->header().height());
+#endif
+}
+
 // ── Sidebar ─────────────────────────────────────────────────────────────────
 
 TEST("sidebar: the entries and sections, and Saved messages while something is saved") {
@@ -345,8 +364,14 @@ TEST("sidebar footer: the presence toggle flips at once and settles on the servi
     CHECK(f.toggle()->tooltip().find("no official Slack app is connected") != std::string::npos);
     f.togglePresence();
     CHECK(f.showsHidden()); // optimistic
-    // The fake service keeps reporting automatic presence: back it goes.
+#ifdef __APPLE__
+    // The original visible footer also animates the service response.
     REQUIRE(until([&] { return !f.showsHidden(); }));
+#else
+    // The title-bar menu hides the internal toggle: only the immediate state
+    // changes visually. The separate rejection test covers backend settling.
+    CHECK_FALSE(f.toggle()->visible());
+#endif
     CHECK_STR(f.avatarButton()->tooltip(), "Profile & status");
 }
 
@@ -453,10 +478,18 @@ TEST("sidebar footer: the background-task cog turns while jobs run and lists the
     pump();
     REQUIRE(cog->visible());
     CHECK(f.tasksTurning());
-    // Left of the presence toggle, 8 px apart, the same 40 px square.
-    const ui::RectF c = cog->windowRect(), t = f.toggle()->windowRect();
+    const ui::RectF c = cog->windowRect();
+    CHECK(c.w == 40 && c.h == 40);
+#ifdef __APPLE__
+    // The old footer puts the spinner before the presence toggle.
+    const ui::RectF t = f.toggle()->windowRect();
     CHECK(std::abs(c.x + c.w + 8 - t.x) < 0.5f);
-    CHECK(c.w == 40 && c.h == 40 && c.y == t.y);
+    CHECK(c.y == t.y);
+#else
+    // The integrated title bar places the spinner next to the avatar.
+    CHECK(c.y < 48);
+    CHECK_FALSE(f.toggle()->visible());
+#endif
     // Hovering it: the count, then the jobs; it follows the list.
     auto *hooks = app().platform().testHooks();
     hooks->injectPointerMove(h.win->native(), {c.x + 20, c.y + 20});
@@ -465,7 +498,11 @@ TEST("sidebar footer: the background-task cog turns while jobs run and lists the
     CHECK_STR(
         f.tasksPopup()->accessibleName(), "1 background task running\nDownloading report.pdf"
     );
+#ifdef __APPLE__
     CHECK(f.tasksPopup()->windowRect().y + f.tasksPopup()->height() <= c.y); // above it
+#else
+    CHECK(f.tasksPopup()->windowRect().y >= c.y); // below the title bar
+#endif
     const int b = model::jobs().begin("Copying photo.png");
     pump();
     CHECK_STR(
@@ -542,7 +579,21 @@ TEST("header: channel members and star, a DM's avatar, huddles only where the se
     Harness            h;
     shell::ConvHeader &hd = h.sh->header();
     CHECK_STR(hd.title()->text(), "#design");
+#ifndef __APPLE__
+    // The clickable pill surrounds the title while preserving its alignment.
+    const ui::RectF title = hd.title()->windowRect();
+    const ui::RectF pill = hd.title()->parent()->windowRect();
+    CHECK(pill.h >= 34);
+    CHECK(title.x - pill.x >= 7);
+    CHECK(pill.x + pill.w - title.x - title.w >= 9);
+    CHECK(std::abs(title.x - hd.windowRect().x - 16) < 1);
+#endif
+#ifdef __APPLE__
     CHECK(hd.members()->visible());
+#else
+    // The channel title replaces the standalone member-count control.
+    CHECK_FALSE(hd.members()->visible());
+#endif
     CHECK_STR(hd.memberCount()->text(), "9");
     CHECK_STR(hd.members()->tooltip(), "View members");
     CHECK_STR(hd.star()->tooltip(), "Unstar conversation");

@@ -239,7 +239,8 @@ SidebarFooter::SidebarFooter(Sidebar &, screens::Context &ctx, Avatars &avatars)
     _avatar->setPlaceholder(C::PresenceAway);
     _avatar->setHitTransparent(true);
     _avatarBtn->onClick = [this] { showAvatarMenu(); };
-    add<View>()->style().flex(1);
+    _spacer = add<View>();
+    _spacer->style().flex(1);
     // Left of the toggle (kTaskGap apart; refresh()), at the right edge
     // without one.
     _tasks = add<TaskSpinner>();
@@ -258,6 +259,44 @@ SidebarFooter::SidebarFooter(Sidebar &, screens::Context &ctx, Avatars &avatars)
     setZenOn(false);
     _jobsObserver = model::jobs().observe([this] { jobsChanged(); });
     jobsChanged();
+}
+
+void SidebarFooter::setInRail(bool inRail) {
+    if (_inRail == inRail)
+        return;
+    hideTasksPopup();
+    _inRail = inRail;
+    if (inRail) {
+        // Keep the task indicator above the profile avatar at the rail's foot.
+        style().column().width(64).height(kAuto).padding(0).items(Align::Center).spacing(8);
+        _spacer->setVisible(false);
+        adopt(remove(_tasks), 0);
+    } else {
+        style().row().width(kAuto).height(kHeight)
+            .padding(kPad, 0, kPad, kBottomPad).items(Align::End).spacing(0);
+        adopt(remove(_avatarBtn), 0);
+        adopt(remove(_tasks), 2);
+        _spacer->setVisible(true);
+    }
+    refresh();
+}
+
+void SidebarFooter::setInTitleBar() {
+    if (_inTitle)
+        return;
+    hideTasksPopup();
+    _inTitle = true;
+    _inRail = true;
+    _tasks->setRole(Role::Button); // the title strip otherwise treats hover as caption drag
+    style().row().width(kAuto).height(kAuto).padding(0).items(Align::Center).spacing(6);
+    _spacer->setVisible(false);
+    adopt(remove(_tasks), 0);
+    _avatarBtn->style().size(30, 30);
+    _avatar->style().size(30, 30);
+    _avatar->setRadius(7);
+    _toggle->setVisible(false);
+    _zen->setVisible(false);
+    refresh();
 }
 
 View *SidebarFooter::tasksIndicator() const {
@@ -354,12 +393,12 @@ void SidebarFooter::refresh() {
         : active           ? P::Active
         : sp.phantomAway() ? P::Phantom
                            : P::Away,
-        C::Sidebar
+        _inRail && !_inTitle ? C::Rail : C::Sidebar
     );
     _avatarBtn->setTooltip(caps.selfStatus ? tr("Profile & status") : tr("Profile"));
-    _toggle->setVisible(self);
-    _zen->setVisible(!self && caps.zenMode);
-    _tasks->style().margins(0, 0, self || caps.zenMode ? kTaskGap : 0, 0);
+    _toggle->setVisible(self && !_inRail);
+    _zen->setVisible(!self && caps.zenMode && !_inRail);
+    _tasks->style().margins(0, 0, !_inRail && (self || caps.zenMode) ? kTaskGap : 0, 0);
     if (!_confirm)
         _toggle->show(sp.manualAway, false);
     // The presence tooltip: while away only for want of a connected client,
@@ -407,13 +446,15 @@ void SidebarFooter::togglePresence() {
     // Optimistic: flip the icon now, ask the service, settle on its answer
     // (or, without one, back on the truth after kConfirmMs).
     const bool target = !_toggle->hidden();
-    _toggle->show(target, true);
+    // The top profile menu owns this control while it is invisible. There
+    // is no animation to render, so update its state without a frame ticker.
+    _toggle->show(target, !_inTitle);
     auto &pa = _ctx.app.platform();
     if (_confirm)
         pa.cancelTimer(_confirm);
     _confirm = pa.addTimer(kConfirmMs, false, [this] {
         _confirm = 0;
-        _toggle->show(_ctx.backend.selfPresence().manualAway, true);
+        _toggle->show(_ctx.backend.selfPresence().manualAway, !_inTitle);
         refresh();
     });
     _ctx.backend.setPresence(target, [this](bool ok, const std::string &err) {
@@ -431,7 +472,7 @@ void SidebarFooter::togglePresence() {
             _ctx.app.platform().cancelTimer(_confirm);
             _confirm = 0;
         }
-        _toggle->show(_ctx.backend.selfPresence().manualAway, true);
+        _toggle->show(_ctx.backend.selfPresence().manualAway, !_inTitle);
         refresh();
     });
 }
@@ -440,12 +481,16 @@ void SidebarFooter::showAvatarMenu() {
     Window *w = window();
     if (!w)
         return;
-    std::vector<MenuItem> items(1);
-    items[0].id      = 1;
-    items[0].label   = tr("Manage profile");
-    items[0].icon    = uint16_t(Icon::CircleUserRound);
-    items[0].enabled = bool(onManageProfile);
-    if (_ctx.backend.capabilities().selfStatus) {
+    std::vector<MenuItem> items;
+    MenuItem profile;
+    profile.id      = 1;
+    profile.label   = tr("Manage profile");
+    profile.icon    = uint16_t(Icon::CircleUserRound);
+    profile.enabled = bool(onManageProfile);
+    items.push_back(std::move(profile));
+
+    const auto caps = _ctx.backend.capabilities();
+    if (caps.selfStatus) {
         MenuItem st;
         st.id      = 2;
         st.label   = tr("Manage status");
@@ -453,29 +498,52 @@ void SidebarFooter::showAvatarMenu() {
         st.enabled = bool(onManageStatus);
         items.push_back(std::move(st));
     }
-    // The rail on or off: ticked while it shows.
+    if (_inRail && caps.presence && !caps.zenMode) {
+        addMenuSeparator(items);
+        MenuItem presence;
+        presence.id    = 5;
+        presence.label = _toggle->hidden() ? tr("Appear active") : tr("Appear away");
+        presence.icon  = uint16_t(_toggle->hidden() ? Icon::CircleUserRound : Icon::HatGlasses);
+        items.push_back(std::move(presence));
+    }
+
     addMenuSeparator(items);
-    MenuItem rail;
-    rail.id      = 3;
-    rail.label   = tr("Show workspaces");
-    rail.icon    = uint16_t(Icon::PanelLeft);
-    rail.checked = _railShown;
-    items.push_back(std::move(rail));
+    MenuItem settings;
+    settings.id      = 4;
+    settings.label   = tr("Settings");
+    settings.icon    = uint16_t(Icon::Settings2);
+    settings.enabled = bool(onOpenSettings);
+    items.push_back(std::move(settings));
+
+    if (!_inTitle) {
+        MenuItem rail;
+        rail.id      = 3;
+        rail.label   = tr("Show workspaces");
+        rail.icon    = uint16_t(Icon::PanelLeft);
+        rail.checked = _railShown;
+        items.push_back(std::move(rail));
+    }
+
     const RectF r = _avatarBtn->windowRect();
     Menu::show(
         *w,
-        {r.x, r.y, 0, 0},
+        {r.x, _inTitle ? r.y + r.h : r.y, 0, 0},
         std::move(items),
         [this](int id) {
-            if (id == 3) {
+            if (id == 3)
                 toggleRail();
-                return;
+            else if (id == 4) {
+                if (onOpenSettings)
+                    onOpenSettings();
+            } else if (id == 5)
+                togglePresence();
+            else {
+                auto &hook = id == 1 ? onManageProfile : onManageStatus;
+                if (hook)
+                    hook();
             }
-            auto &hook = id == 1 ? onManageProfile : onManageStatus;
-            if (hook)
-                hook();
         },
-        Popup::Place::Above
+        _inTitle ? Popup::Place::Below : Popup::Place::Above
     );
 }
 

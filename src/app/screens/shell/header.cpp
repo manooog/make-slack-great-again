@@ -304,11 +304,20 @@ ConvHeader::ConvHeader(screens::Context &ctx, Avatars &avatars) : _ctx(ctx), _av
     actions->style().items(Align::Center);
     actions->add<View>()->style().flex(1);
 #else
-    style().row().height(48).padding(16, 0, 8, 0).spacing(8).items(Align::Center).noShrink();
+    // The title bar owns the conversation name and star on non-macOS.
+    // Huddle is reparented into the tabs' right-hand action area by Shell.
+    // The title's hit area starts 8 px before its text; keep the text
+    // aligned with the content pane's original 16 px inset.
+    style().row().height(46).padding(8, 0, 0, 0).spacing(4)
+        .items(Align::Center).flex(1);
     View *heading = this, *actions = this;
 #endif
     _avatar = heading->add<HeaderAvatar>();
     _avatar->setVisible(false);
+#ifndef __APPLE__
+    // Preserve the DM avatar's original 16 px left inset.
+    _avatar->style().margins(8, 0, 0, 0);
+#endif
     _avatar->onClick = [this] {
         if (_avatar->isGroup() && _ctx.backend.capabilities().memberList)
             openMembers(_avatar->windowRect());
@@ -322,15 +331,40 @@ ConvHeader::ConvHeader(screens::Context &ctx, Avatars &avatars) : _ctx(ctx), _av
     _title->setHitTransparent(true);
     heading->add<View>()->style().flex(1);
 #else
-    _title = heading->add<Label>("", Font::HeaderTitle);
+    // The channel title is the member-list entry, not a static label.
+    auto *titleButton = heading->add<Clickable>();
+    // A 34 px hover pill leaves room around the text on all four sides
+    // without shifting the title's alignment in the content pane.
+    titleButton->style().row().height(34).padding(8, 0, 10, 0)
+        .items(Align::Center).noShrink();
+    titleButton->setLook({C::None, C::SidebarHover, C::SidebarHover, C::None, 7});
+    titleButton->setTooltip(tr("View members"));
+    _title = titleButton->add<Label>("", Font::HeaderTitle, C::SidebarText);
     _title->setMaxLines(1);
-    _title->style().flex(1).shrink = 1;
+    _title->setHitTransparent(true);
+    titleButton->onClick = [this, titleButton] {
+        if (_conv == kNoConv) return;
+        const auto &cv = _ctx.store().conversation(_conv);
+        if (cv.kind == ConvKind::Dm) {
+            if (_ctx.openProfile) _ctx.openProfile(cv.dmUser);
+        } else if (_ctx.backend.capabilities().memberList) {
+            openMembers(titleButton->windowRect());
+        }
+    };
+    _titleButton = titleButton;
 #endif
     auto *members = actions->add<MembersButton>();
     members->style().margins(0, 0, 2, 0);
     members->onClick = [this, members] { openMembers(members->windowRect()); };
     _members         = members;
     _count           = members->count;
+#ifndef __APPLE__
+    members->setVisible(false);
+    // Keep the star directly after the channel name, not in the right actions.
+    _star = heading->add<StarButton>();
+    _star->setTint(C::SidebarTextMuted);
+    heading->add<View>()->style().flex(1);
+#endif
     auto *huddle     = actions->add<GlyphButton>(
         Icon::Headphones, 28, 16, C::FormIcon, tr("Opens the huddle in Slack for web")
     );
@@ -340,7 +374,9 @@ ConvHeader::ConvHeader(screens::Context &ctx, Avatars &avatars) : _ctx(ctx), _av
             _ctx.openUrl(huddleJoinUrl(_ctx.store, _conv));
     };
     _huddle = huddle;
+#ifdef __APPLE__
     _star   = actions->add<StarButton>();
+#endif
     _star->style().margins(0, 0, 2, 0);
     _star->onClick = [this] {
         if (_conv != kNoConv)
@@ -353,6 +389,11 @@ ConvHeader::ConvHeader(screens::Context &ctx, Avatars &avatars) : _ctx(ctx), _av
             onSearch();
     };
     _search = search;
+#ifndef __APPLE__
+    // Ctrl+F is still available, but the header no longer duplicates the
+    // title bar's global search control.
+    search->setVisible(false);
+#endif
 }
 
 Clickable *ConvHeader::avatar() const {
@@ -386,11 +427,17 @@ void ConvHeader::refresh() {
     _title->setText(convTitle(st, _conv));
     _star->setVisible(true);
     _star->setStarred(c.starred);
+#ifndef __APPLE__
+    _star->setTint(c.starred ? C::IconStarred : C::SidebarTextMuted);
+    if (_titleButton) _titleButton->setEnabled(c.isDirect() || caps.memberList);
+#endif
     _huddle->setVisible(caps.huddles);
     // Channels: the members button with conversations.list's count (a large
     // one shortened to "12k" so it fits).
     const bool channel = caps.memberList && !c.isDirect();
+#ifdef __APPLE__
     _members->setVisible(channel);
+#endif
     const uint32_t n = channel ? c.memberCount : 0;
     _count->setText(
         n == 0      ? std::string()

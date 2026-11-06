@@ -445,6 +445,21 @@ TEST("drafts: stashed per conversation and thread on every leave path") {
 
 // ── Quick switcher ──────────────────────────────────────────────────────────
 
+TEST("global search: Ctrl+K includes message text, not only conversation names") {
+    Harness h;
+    h.sh->showQuickSwitcher();
+    auto *search = h.sh->quickSwitcher();
+    REQUIRE(search);
+    search->field().setText("proposal b");
+    for (int i = 0; i < 1000 && search->messageResults().empty(); ++i) pump(5);
+    REQUIRE(!search->messageResults().empty());
+    CHECK(search->messageResults()[0].hit.conv == h.conv("C0DESIGN"));
+    search->choose(0); // message hits are first
+    pump();
+    CHECK(h.sh->current() == h.conv("C0DESIGN"));
+}
+
+
 TEST("quick switcher: a DM matches its peer's full name, display name and handle") {
     Harness      h;
     model::User &mira = h.store.user(h.store.findUser("U0MIRA"));
@@ -2038,6 +2053,7 @@ void button(Harness &h, plat::Button b, bool down) {
 
 } // namespace
 
+#ifdef __APPLE__
 TEST("workspace rail: a tile per workspace; a click or its tray item switches") {
     Harness h;
     twoWorkspaces(h);
@@ -2135,6 +2151,8 @@ TEST("workspace rail: a background workspace's menu acts on it") {
     m.run(shell::Menus::kSignOut, 0);    // the menu was used up: the open one's now
     CHECK_STR(signedOut, "");
 }
+
+#endif // __APPLE__: legacy vertical workspace rail
 
 TEST("notifications: pictures are a rounded square (roundedNotifIcon)") {
     gfx::Bitmap b(80, 64); // wider than tall: centre-cropped to 64
@@ -3062,6 +3080,26 @@ uint64_t lastNotification(plat::TestHooks::NotificationProbe *out) {
 
 } // namespace
 
+TEST("global search: message matches include background workspaces without changing tabs") {
+    TwoWorkspaces w;
+    w.post(w.b, "C0GENERAL", "unique-cross-workspace-search-token");
+    w.sh->showQuickSwitcher();
+    auto *search = w.sh->quickSwitcher();
+    REQUIRE(search);
+    CHECK(search->tab() == 0);
+    search->field().setText("unique-cross-workspace-search-token");
+    for (int i = 0; i < 1000 && search->messageResults().empty(); ++i) pump(5);
+    REQUIRE(!search->messageResults().empty());
+    CHECK(search->tab() == 0); // tab only scopes quick navigation, not message search
+    CHECK(search->messageResults()[0].workspace == 1);
+    CHECK(search->messageResults()[0].hit.conv == w.b.findConversation("C0GENERAL"));
+    search->choose(0); // first result is the message, even when a channel also matches
+    pump();
+    REQUIRE(w.switched.size() == 1);
+    CHECK_STR(w.switched[0], kKeyB);
+    CHECK(w.sh->current() == w.b.findConversation("C0GENERAL"));
+}
+
 TEST("workspaces: a background workspace notifies, its name first; the click goes there") {
     TwoWorkspaces  w;
     const uint64_t before = lastNotification(nullptr);
@@ -3224,6 +3262,23 @@ TEST("Slack workspaces do not expose Claude's zen-mode toggle") {
     CHECK_FALSE(f.zenToggle()->visible());
     w.show(kKeyB);
     CHECK_FALSE(f.zenToggle()->visible());
+}
+
+TEST("single-sidebar layout: one profile controller in the title bar") {
+    TwoWorkspaces w;
+    auto &f = w.sh->sidebar().footer();
+#ifndef __APPLE__
+    CHECK_FALSE(w.sh->rail()->visible());
+    REQUIRE(f.parent() != &w.sh->sidebar());
+    REQUIRE(f.parent() != w.sh->rail());
+    CHECK(f.inRail()); // presence is managed by the avatar dropdown
+    CHECK(f.avatarButton()->visible());
+    CHECK_FALSE(f.toggle()->visible());
+    CHECK(w.sh->workspaceSwitcher() != nullptr);
+    CHECK(w.sh->workspaceSwitcher()->parent() != &w.sh->sidebar());
+#else
+    CHECK(f.parent() == w.sh->rail());
+#endif
 }
 
 TEST("header: names, presence, DND and my phantom state follow the Store") {
@@ -3540,6 +3595,7 @@ TEST("thread panel: Esc closes it once the focused view has no use for the key")
     CHECK_FALSE(h.sh->threadOpen());
 }
 
+#ifdef __APPLE__
 TEST("sidebar footer: the avatar menu hides the workspace rail and remembers it") {
     Harness h;
     CHECK(h.sh->rail()->visible());
@@ -3564,6 +3620,8 @@ TEST("sidebar footer: the avatar menu hides the workspace rail and remembers it"
     CHECK(h.sh->rail()->visible());
     CHECK(h.settings.showRail);
 }
+
+#endif // legacy rail preference
 
 #ifdef __APPLE__
 TEST("window: full screen drops the title bar strip and puts the header over the right pane") {
@@ -3668,9 +3726,9 @@ TEST("workspaces: the quick switcher has a tab per workspace; ←/→ and typing
     press(*w.win, plat::Key::Left);
     CHECK(qs->tab() == 0);
     CHECK(qs->results().empty());
-    CHECK_STR(qs->emptyText(), "No matches in Lumen Studio. Other workspaces have some.");
+    CHECK_STR(qs->emptyText(), "Searching\xE2\x80\xA6");
     qs->field().insertText("zzz");
-    CHECK_STR(qs->emptyText(), "No conversations match.");
+    CHECK_STR(qs->emptyText(), "Searching\xE2\x80\xA6");
     // A pick in another workspace's tab switches there and opens it.
     qs->field().setText("second-des"); // runs dry here: the tab moves on
     CHECK(qs->tab() == 1);
@@ -4137,9 +4195,9 @@ TEST("title bar: controls take their presses, empty space drags the window") {
     pump();
     CHECK(hd.search()->enabled());
 #else
-    // The 22 px strip above the header: caption, but for its own buttons.
-    CHECK(search.y > 22);
-    CHECK(at(search) == H::Client);
+    // The conversation title is now part of the 48 px title strip.
+    CHECK(centre(hd.title()).y < 48);
+    CHECK(at(centre(hd.title())) == H::Client);
     CHECK(at({400, 11}) == H::Caption);
 #endif
 }

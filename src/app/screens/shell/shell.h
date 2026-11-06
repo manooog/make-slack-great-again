@@ -88,6 +88,7 @@ public:
     std::vector<std::string>      railOrder() const;
     ui::View                     *workspaceTile(const std::string &key) const; // tests
     int workspaceDot(const std::string &key) const; // tests: its tile's dot (0, 1 blue, 2 red)
+    ui::View *workspaceSwitcher() const { return _workspaceSwitch; } // compact footer
     // A click on a tile or its tray item, and a drop that reordered the rail.
     std::function<void(const std::string &key)>               onSwitchWorkspace;
     std::function<void(const std::vector<std::string> &keys)> onReorderWorkspaces;
@@ -294,6 +295,7 @@ private:
     void        showMessageArea(); // out of a full-width thread panel
     void        closeThreadOnEscape();
     void        addWorkspace(ui::PointF anchor);
+    void        showWorkspacePicker(ui::PointF anchor);
     void        togglePin();  // "Pin window on top"
     void        syncChrome(); // the OS-drawn chrome follows the app theme
     // macOS full screen: no title bar strip; the conversation header moves
@@ -433,6 +435,9 @@ private:
     Sidebar               *_sidebar  = nullptr;
     Composer              *_composer = nullptr;
     ui::View              *_titleBar = nullptr, *_rail = nullptr;
+    ui::View              *_titleSidebar = nullptr, *_titleActions = nullptr;
+    ui::View              *_workspaceSwitch = nullptr;
+    Avatar                *_workspaceAvatar = nullptr;
     float                  _titleBarH  = 0;       // buildTitleBar
     ui::Label             *_titleLabel = nullptr; // macOS: the workspace, without a header
     WorkspaceStack        *_wsStack    = nullptr;
@@ -441,7 +446,7 @@ private:
     bool                   _haveWorkspaces = false; // setWorkspaces was called
     ui::View              *_listHandle = nullptr, *_signedOut = nullptr, *_addBtn = nullptr;
     bool                   _signedIn = true;
-    ui::Button    *_pinBtn = nullptr, *_minBtn = nullptr, *_maxBtn = nullptr, *_closeBtn = nullptr;
+    ui::Button    *_pinBtn = nullptr, *_closeBtn = nullptr;
     ui::Clickable *_prefsBtn                = nullptr;
     ConvHeader    *_header                  = nullptr;
     ConvTabs      *_tabs                    = nullptr;

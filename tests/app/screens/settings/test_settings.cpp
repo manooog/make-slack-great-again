@@ -19,6 +19,7 @@
 #include "app/mrkdwn/markdown.h"
 #include "screens/shell/composer.h"
 #include "screens/shell/shell.h"
+#include "screens/shell/sidebar_footer.h"
 #include "screens/shell/shortcuts.h"
 
 #ifdef MSGA_HAVE_MESSAGES
@@ -58,6 +59,14 @@ plat::TestHooks &hooks() {
 void pump(int n = 10) {
     for (int i = 0; i < n; ++i)
         app().pump(2);
+}
+
+template <class F>
+bool until(F done, int ms = 3000) {
+    const int64_t deadline = base::monotonicMs() + ms;
+    while (!done() && base::monotonicMs() < deadline)
+        app().pump(5);
+    return done();
 }
 
 std::string testPath() {
@@ -354,11 +363,19 @@ TEST("settings: one-click reactions keep their places as the most used reorder")
     CHECK(names.empty());
 }
 
-TEST("settings: the gear opens a window-filling overlay; Escape and the backdrop close it") {
-    Harness   h;
-    ui::View *gear = findIn(&h.win->root(), "Settings"); // the rail tooltip
-    REQUIRE(gear != nullptr);
-    h.click(gear);
+TEST("settings: the profile menu opens a window-filling overlay; Escape and backdrop close it") {
+    Harness h;
+    // On the integrated title bar, Settings lives in the existing avatar
+    // menu rather than a redundant toolbar gear.
+    ui::View *avatar = h.sh->sidebar().footer().avatarButton();
+    REQUIRE(avatar != nullptr);
+    h.click(avatar);
+    auto *menu = static_cast<ui::Menu *>(h.win->topPopup());
+    REQUIRE(menu != nullptr);
+    const ui::RectF item = menu->itemRect("Settings");
+    REQUIRE(item.w > 0 && item.h > 0);
+    const ui::RectF frame = menu->windowRect();
+    h.clickAt(frame.x + item.x + item.w / 2, frame.y + item.y + item.h / 2);
     SettingsDialog *d = h.sh->settingsDialog();
     REQUIRE(d != nullptr);
     CHECK(h.win->topPopup() == d);
@@ -512,7 +529,10 @@ TEST("settings: color mode and theme cards apply and persist at once") {
     CHECK(h.settings.paletteLight == int(ui::Palette::Green));
     CHECK(ui::color(ui::C::Rail) != purple);
     CHECK(ui::color(ui::C::Rail) == ui::paletteColors(ui::Palette::Green, false).rail);
-    CHECK(shell::Settings::load(path).paletteLight == int(ui::Palette::Green));
+    // Settings are persisted asynchronously; don't race the background writer.
+    CHECK(until([&] {
+        return shell::Settings::load(path).paletteLight == int(ui::Palette::Green);
+    }));
     const ui::Color rail = ui::color(ui::C::Rail);
     h.click(d.find("Dark Blue"));
     CHECK(h.settings.paletteDark == int(ui::Palette::Blue));
@@ -529,7 +549,9 @@ TEST("settings: color mode and theme cards apply and persist at once") {
     CHECK(d.find("Theme imported") != nullptr);
     CHECK(h.settings.custom.primary == 0xff1a2b3cu);
     CHECK(ui::color(ui::C::Rail) == 0xff1a2b3cu);
-    CHECK(shell::Settings::load(path).custom.primary == 0xff1a2b3cu);
+    CHECK(until([&] {
+        return shell::Settings::load(path).custom.primary == 0xff1a2b3cu;
+    }));
     // A 10-colour string pins what it names outright.
     imp->setText("#1A2B3C,#222222,#1164A3,#EEEEEE,#333333,#DDDDDD,#2BAC76,#CD2553,#101010,#C0C0C0");
     h.click(d.find("Import"));

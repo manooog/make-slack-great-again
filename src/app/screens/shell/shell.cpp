@@ -76,10 +76,10 @@ namespace {
 // does not say how tall its title bar is.
 constexpr float kMacTitleBarH = 38;
 #else
-constexpr float kTitleBarH = 22; // the compact title strip (Linux/Windows)
+constexpr float kTitleBarH = 46; // compact integrated title and toolbar (48 px maximum)
 #endif
 constexpr float kRailW = 64;
-constexpr float kListW = 240, kListMinW = 160, kListMaxW = 400;
+constexpr float kListW = 248, kListMinW = 180, kListMaxW = 400;
 constexpr float kResizeEdge          = 6;
 // Settings changes are written this long after the first of a burst.
 constexpr int   kSettingsSaveDelayMs = 500;
@@ -469,7 +469,8 @@ public:
 // rest and the link blue under the pointer; a drag resizes the list.
 class ListHandle final : public View {
 public:
-    ListHandle(View &list) : _list(list) {
+    ListHandle(View &list, std::function<void(float)> onResize)
+        : _list(list), _onResize(std::move(onResize)) {
         style().width(4).noShrink();
         setCursor(plat::Cursor::ResizeH);
         setHoverRepaint(true);
@@ -487,10 +488,13 @@ public:
             _startW = _list.width();
             return true;
         case EventType::PointerMove:
-            if (window() && window()->capture() == this)
-                _list.style().width(
-                    std::clamp(_startW + e.windowPos.x - _startX, kListMinW, kListMaxW)
-                );
+            if (window() && window()->capture() == this) {
+                const float width =
+                    std::clamp(_startW + e.windowPos.x - _startX, kListMinW, kListMaxW);
+                _list.style().width(width);
+                if (_onResize)
+                    _onResize(width);
+            }
             return true;
         default:
             return false;
@@ -499,30 +503,54 @@ public:
 
 private:
     View &_list;
+    std::function<void(float)> _onResize;
     float _startX = 0, _startW = 0;
 };
 
-// The windowed frame: the right panel keeps 4 px off the window's right and
-// bottom edges unless maximized or full screen, and the rail colour shows
-// there (a nav-coloured margin).
+// The content pane keeps its rounded surface and themed right/bottom inset in
+// normal, maximized, and fullscreen windows. The outer window stays square.
 class InsetPane final : public View {
 public:
     void paint(gfx::Painter &p) override {
         const auto &pad = currentStyle().pad;
-        if (pad.r > 0 || pad.b > 0)
-            p.fillRect(bounds(), color(C::Rail));
-        p.fillRect({0, 0, width() - pad.r, height() - pad.b}, color(C::Surface));
+        const RectF surface{0, 0, width() - pad.r, height() - pad.b};
+        if (pad.r > 0 || pad.b > 0) {
+            paintNavGradient(*this, p, C::Sidebar);
+            p.fillRoundRect(surface, kRadius, color(C::Surface));
+        } else {
+            p.fillRect(surface, color(C::Surface));
+        }
+    }
+    // Cover rectangular child backgrounds only at the curved corners.
+    void paintOver(gfx::Painter &p) override {
+        const auto &pad = currentStyle().pad;
+        if (pad.r <= 0 || pad.b <= 0)
+            return;
+        const float w = width() - pad.r, h = height() - pad.b;
+        const RectF surface{0, 0, w, h};
+        const RectF corners[] = {{0, 0, kRadius, kRadius},
+                                 {w - kRadius, 0, kRadius, kRadius},
+                                 {0, h - kRadius, kRadius, kRadius},
+                                 {w - kRadius, h - kRadius, kRadius, kRadius}};
+        for (const RectF &corner : corners) {
+            p.save();
+            p.clipRect(corner);
+            paintNavGradient(*this, p, C::Sidebar);
+            p.fillRoundRect(surface, kRadius, color(C::Surface));
+            p.restore();
+        }
     }
     void layout() override {
-        const bool edge =
-            window() && (window()->native().isMaximized() || window()->native().isFullscreen());
-        const float want = edge ? 0 : 4;
+        // The inset is independent of window state, including fullscreen.
+        constexpr float want = 6;
         if (currentStyle().pad.r != want || currentStyle().pad.b != want) {
             style().pad.r = want;
             style().pad.b = want;
         }
         View::layout();
     }
+private:
+    static constexpr float kRadius = 12;
 };
 
 // The splitter handle between the messages and the thread panel: the panel's soft shadow cast
@@ -918,7 +946,12 @@ Shell::Shell(
         storeSorts();
         saveSettingsSoon();
     };
-    _listHandle = body->add<ListHandle>(*_sidebar);
+    _listHandle = body->add<ListHandle>(*_sidebar, [this](float width) {
+#ifndef __APPLE__
+        if (_titleSidebar)
+            _titleSidebar->style().width(width + 4);
+#endif
+    });
     buildMain(body);
     // With no workspace signed in (setSignedIn(false)) this takes the
     // sidebar's and the main pane's place.
@@ -946,6 +979,7 @@ Shell::Shell(
         };
     };
     _sidebar->footer().onManageProfile = [this] { ProfileDialog::show(_win, _ctx, _avatars); };
+    _sidebar->footer().onOpenSettings  = [this] { openSettings(); };
     _sidebar->footer().onError         = [this](const std::string &message) { showError(message); };
     _sidebar->footer().setRailShown(_settings.showRail);
     _sidebar->footer().onRailToggled = [this](bool shown) {
@@ -1307,11 +1341,8 @@ public:
         p.fillRect(bounds(), color(C::Surface));
         p.fillRect({0, height() - 1, width(), 1}, color(C::DividerSubtle));
 #else
-        // A custom theme's pinned top_nav_bg is a flat title bar colour.
-        if (palette(app() && app()->dark()) == Palette::Custom && customPalette().titleBarBg)
-            p.fillRect(bounds(), color(C::TitleBar));
-        else
-            paintNavGradient(*this, p, C::Rail);
+        // The title is a continuation of the sidebar, including custom themes.
+        paintNavGradient(*this, p, C::Sidebar);
 #endif
     }
     bool onEvent(Event &e) override {
@@ -1327,6 +1358,22 @@ public:
     }
     std::function<void(PointF)> onContextMenu;
     std::function<void()>       onStyleChanged; // a theme or palette switch
+};
+
+// Search stays gently highlighted; hovering adds only one more wash from the
+// active palette instead of jumping to the opaque selected-channel colour.
+class TitleSearchTrigger final : public Clickable {
+public:
+    TitleSearchTrigger() {
+        setLook({C::SidebarHover, C::SidebarHover, C::SidebarHover, C::None, 9});
+        setHoverRepaint(true);
+    }
+
+    void paint(gfx::Painter &p) override {
+        Clickable::paint(p);
+        if (hovered())
+            p.fillRoundRect(bounds(), 9, color(C::SidebarHover));
+    }
 };
 
 void Shell::buildTitleBar(View *parent) {
@@ -1349,14 +1396,69 @@ void Shell::buildTitleBar(View *parent) {
 #else
     _titleBarH = kTitleBarH;
     _titleBar->style().row().height(kTitleBarH).noShrink().items(Align::Center);
-    _titleBar->add<View>()->style().flex(1);
+    _titleSidebar = _titleBar->add<View>();
+    _titleSidebar->style().row().width(kListW + 4).height(kTitleBarH)
+        .padding(12, 0, 5, 0).spacing(2).items(Align::Center).noShrink();
+
+    auto *workspace = _titleSidebar->add<Clickable>();
+    // Match the conversation-name hover height without consuming the title
+    // bar's full height. Extra leading padding balances the logo visually.
+    workspace->style().row().height(34).flex(1).padding(8, 0, 4, 0)
+        .spacing(5).items(Align::Center);
+    workspace->setRole(Role::Button);
+    workspace->setLook({C::None, C::SidebarHover, C::SidebarHover, C::None, 6});
+    _workspaceAvatar = workspace->add<Avatar>();
+    _workspaceAvatar->style().size(22, 22).noShrink();
+    _workspaceAvatar->setRadius(5);
+    _workspaceAvatar->setPlaceholder(C::Accent);
+    _workspaceAvatar->setHitTransparent(true);
+    _workspaceAvatar->style().margins(0, 0, 4, 0);
+    _workspaceSwitch = workspace;
+    _titleLabel = workspace->add<Label>(tr("msga"), Font::HeaderTitle, C::SidebarText);
+    _titleLabel->setMaxLines(1);
+    _titleLabel->style().shrink = 1;
+    workspace->add<IconView>(Icon::ChevronDown, 14, C::SidebarTextMuted);
+    workspace->onClick = [this, workspace] {
+        const RectF r = workspace->windowRect();
+        showWorkspacePicker({r.x, r.y + r.h});
+    };
+    auto back = _titleSidebar->add<GlyphButton>(
+        Icon::ChevronLeft, 28, 16, C::SidebarTextMuted, tr("Back"));
+    back->setLook({C::None, C::SidebarHover, C::SidebarHover, C::None, 7});
+    back->onClick = [this] { navigateHistory(true); };
+    auto forward = _titleSidebar->add<GlyphButton>(
+        Icon::ChevronRight, 28, 16, C::SidebarTextMuted, tr("Forward"));
+    forward->setLook({C::None, C::SidebarHover, C::SidebarHover, C::None, 7});
+    forward->onClick = [this] { navigateHistory(false); };
+
+    // The conversation name now belongs to the main-pane portion of the title bar.
+    _header = _titleBar->add<ConvHeader>(_ctx, _avatars);
+    auto *search = _titleBar->add<TitleSearchTrigger>();
+    search->style().row().width(252).height(30).padding(12, 0).spacing(9)
+        .items(Align::Center).noShrink();
+    search->setRole(Role::Button);
+    search->setTooltip(shortcuts::tip(tr("Search"), shortcuts::Id::QuickSwitch));
+    search->add<IconView>(Icon::Search, 16, C::SidebarTextMuted);
+    search->add<Label>(tr("Search"), Font::Control, C::SidebarText);
+    search->add<View>()->style().flex(1);
+    search->add<Label>(shortcuts::nativeKeys(shortcuts::Id::QuickSwitch), Font::Small, C::SidebarTextMuted);
+    search->onClick = [this] { showQuickSwitcher(); };
+    _titleBar->add<View>()->style().width(16).noShrink();
+
+    _titleActions = _titleBar->add<View>();
+    // Only the existing profile/presence control is adopted here; its menu
+    // already exposes Settings. No duplicate toolbar entry or Help shortcut.
+    _titleActions->style().row().height(kTitleBarH).padding(0, 0, 16, 0)
+        .spacing(8).items(Align::Center).noShrink();
 #endif
     strip->onStyleChanged = [this] { syncChrome(); };
     syncChrome();
 #ifndef __APPLE__ // macOS keeps its traffic lights
     auto chrome = [&](Icon icon, const char *tip, bool danger) {
         auto *b = _titleBar->add<IconButton>(icon, tip);
-        b->style().size(40, kTitleBarH);
+        // A centred 34 px hover target, consistent with the title pill.
+        // The close button alone gets the theme's danger hover.
+        b->style().size(32, 34).margins(0, 0, 8, 0);
         b->setIconSize(12);
         b->setTextColor(C::TitleBarControl);
         b->setLook(
@@ -1364,7 +1466,7 @@ void Shell::buildTitleBar(View *parent) {
              danger ? C::Danger : C::SidebarHover,
              danger ? C::Danger : C::SidebarHover,
              C::None,
-             0}
+             7}
         );
         b->setFocusable(false);
         return b;
@@ -1374,15 +1476,7 @@ void Shell::buildTitleBar(View *parent) {
         _pinBtn          = chrome(Icon::PinOff, tr("Pin window on top"), false);
         _pinBtn->onClick = [this] { togglePin(); };
     }
-    _minBtn          = chrome(Icon::WcMinimize, tr("Minimize"), false);
-    _maxBtn          = chrome(Icon::WcMaximize, tr("Maximize"), false);
     _closeBtn        = chrome(Icon::WcClose, tr("Close"), true);
-    _minBtn->onClick = [this] { minimize(); };
-    _maxBtn->onClick = [this] {
-        const bool maxed = !_win.native().isMaximized();
-        _win.native().setMaximized(maxed);
-        _maxBtn->setIcon(maxed ? Icon::WcRestore : Icon::WcMaximize);
-    };
     _closeBtn->onClick = [this] {
         if (_win.onCloseRequested)
             _win.onCloseRequested();
@@ -1451,11 +1545,8 @@ void Shell::togglePin() {
     updateTitleButtons();
 }
 
-// The pin red while pinned, its
-// tooltip the action a click takes; the restore glyph while maximized.
+// The pin turns red while pinned, and its tooltip describes the next action.
 void Shell::updateTitleButtons() {
-    if (_maxBtn)
-        _maxBtn->setIcon(_win.native().isMaximized() ? Icon::WcRestore : Icon::WcMaximize);
     if (_pinBtn) {
         const bool pinned = _win.native().isAlwaysOnTop();
         _pinBtn->setIcon(pinned ? Icon::Pin : Icon::PinOff);
@@ -1464,8 +1555,8 @@ void Shell::updateTitleButtons() {
     }
 }
 
-// The workspace switcher: the bubble 16 px from the top, the ghost "+" 16
-// under it, the gear 14 px above the bottom; tooltips to the right.
+// The workspace switcher: tiles at the top, the account avatar at the bottom
+// (the settings gear remains when signed out); tooltips to the right.
 void Shell::buildRail(View *parent) {
     _rail = parent->add<Rail>();
     _rail->style().width(kRailW).noShrink().padding(0, 16, 0, 14).items(Align::Center);
@@ -1510,11 +1601,21 @@ void Shell::buildMain(View *parent) {
 #ifdef __APPLE__
     // The header is the unified title bar's.
     _header = _titleBar->add<ConvHeader>(_ctx, _avatars);
-#else
-    _header = _mainPane->add<ConvHeader>(_ctx, _avatars);
 #endif
     _header->onSearch     = [this] { openSearch(); };
     _tabs                 = _mainPane->add<ConvTabs>();
+#ifndef __APPLE__
+    // A dedicated right-aligned action area within the existing tabs strip.
+    // Reparent the original huddle button rather than duplicating its click
+    // handler or capability/visibility state in the shell.
+    _tabs->add<View>()->style().flex(1);
+    auto *tabActions = _tabs->add<View>();
+    tabActions->style().row().height(38).padding(0, 0, 16, 0)
+        .spacing(6).items(Align::Center).noShrink();
+    auto *huddle = _header->huddle();
+    tabActions->adopt(_header->remove(huddle));
+    huddle->style().margins(0, 0, 0, 0);
+#endif
     _tabs->onSelect       = [this](int tab) { showCanvas(tab == 1); };
     // The huddle banner: under the tabs, over the messages.
     _huddleBanner         = _mainPane->add<HuddleBanner>();
@@ -3057,7 +3158,34 @@ int Shell::workspaceDot(const std::string &key) const {
 // (its footer's avatar menu brings the rail back) is not: signed out or
 // waiting, the rail is the only way to another workspace or a new one.
 void Shell::updateRailVisible() {
-    _rail->setVisible(_settings.showRail || !_signedIn || _waiting);
+#ifndef __APPLE__
+    if (_sidebar) {
+        SidebarFooter &footer = _sidebar->footer();
+        if (footer.parent() != _titleActions) {
+            _titleActions->adopt(footer.parent()->remove(&footer));
+            footer.setInTitleBar();
+        }
+        footer.setVisible(_signedIn);
+    }
+    if (_workspaceSwitch)
+        _workspaceSwitch->setVisible(true);
+    _rail->setVisible(false);
+#else
+    const bool show = _settings.showRail || !_signedIn || _waiting;
+    if (_sidebar) {
+        SidebarFooter &footer = _sidebar->footer();
+        View *destination = show ? _rail : static_cast<View *>(_sidebar);
+        if (footer.parent() != destination) {
+            // Move the existing control: its presence state, task observer,
+            // timer and callbacks should not be duplicated.
+            destination->adopt(footer.parent()->remove(&footer));
+            footer.setInRail(show);
+        }
+        footer.setVisible(!show || _signedIn);
+    }
+    _prefsBtn->setVisible(show && !_signedIn);
+    _rail->setVisible(show);
+#endif
 }
 
 void Shell::refreshRail() {
@@ -3104,6 +3232,12 @@ void Shell::refreshRail() {
     if (_titleLabel) {
         const std::string &name = _ctx.store().workspaceName;
         _titleLabel->setText(_signedIn && !name.empty() ? name : std::string(tr("msga")));
+    }
+    if (_workspaceAvatar) {
+        const std::string icon = workspaceIconPath();
+        _workspaceAvatar->setBitmap(icon.empty() ? nullptr : _avatars.get(icon, 64));
+        const std::string &name = _ctx.store().workspaceName;
+        _workspaceAvatar->setInitial(name.empty() ? std::string("MSGA") : name);
     }
 }
 
@@ -3246,6 +3380,43 @@ void Shell::attentionSoon() {
     _attentionTimer = _ctx.app.addTimer(50, false, [this] {
         _attentionTimer = 0;
         updateAttention();
+    });
+}
+
+void Shell::showWorkspacePicker(PointF at) {
+    if (!_menus)
+        return;
+    std::vector<MenuItem> items;
+    int next = 1;
+    for (const Workspace &w : _workspaces) {
+        MenuItem item;
+        item.id = next++;
+        item.label = w.name.empty() ? w.id : w.name;
+        item.checked = w.key == _activeKey && _signedIn;
+        items.push_back(std::move(item));
+    }
+    const int addId = next++, optionsId = next;
+    if (!items.empty())
+        addMenuSeparator(items);
+    MenuItem add;
+    add.id = addId;
+    add.label = tr("Add workspace");
+    add.icon = uint16_t(Icon::Plus);
+    items.push_back(std::move(add));
+    if (_signedIn && !_activeKey.empty()) {
+        MenuItem options;
+        options.id = optionsId;
+        options.label = tr("Workspace options");
+        items.push_back(std::move(options));
+    }
+    Menu::popupAt(_win, at, std::move(items), [this, addId, optionsId, at](int id) {
+        if (id == addId)
+            addWorkspace(at);
+        else if (id == optionsId)
+            showWorkspaceMenu(_activeKey, at);
+        else if (id > 0 && size_t(id) <= _workspaces.size() &&
+                 _workspaces[size_t(id - 1)].key != _activeKey && onSwitchWorkspace)
+            onSwitchWorkspace(_workspaces[size_t(id - 1)].key);
     });
 }
 
@@ -3465,6 +3636,7 @@ void Shell::showQuickSwitcher() {
     std::vector<QuickSwitchTab> tabs;
     for (const LiveWorkspace &w : liveWorkspaces()) {
         tabs.push_back({w.key, w.name, w.icon, w.store, {}});
+        tabs.back().backend = w.backend;
         if (w.store != &_ctx.store()) // the open one's comes in below
             tabs.back().order = quickSwitchOrder(*w.store, _sidebar->visited());
     }
@@ -3479,6 +3651,20 @@ void Shell::showQuickSwitcher() {
         const Running *r = findRunning(key);
         if (r && r->store == &_ctx.store() && _signedIn)
             open(conv);
+    };
+    raw->onChooseMessageIn = [this](const std::string &key, ConvRef conv, Ts ts, Ts thread) {
+        if (onSwitchWorkspace) onSwitchWorkspace(key);
+        if (const Running *r = findRunning(key); r && r->store == &_ctx.store() && _signedIn)
+            jumpToMessage(conv, ts, thread);
+    };
+    raw->onChoosePersonIn = [this](const std::string &key, model::UserRef user) {
+        if (onSwitchWorkspace) onSwitchWorkspace(key);
+        if (const Running *r = findRunning(key); r && r->store == &_ctx.store() && _signedIn) {
+            std::weak_ptr<int> alive = _alive;
+            r->backend->openDm(user, [this, alive](ConvRef conv) {
+                if (!alive.expired() && conv != kNoConv) open(conv);
+            });
+        }
     };
     const SizeF ws = _win.size();
     p->setAnchor({(ws.w - 520) / 2, 90, 520, 0}, Popup::Place::Below);
@@ -3546,12 +3732,12 @@ plat::HitArea Shell::hitTest(plat::Point p) const {
 #endif
     if (_pinBtn && _pinBtn->windowRect().contains(pt))
         return H::Client;
-    if (_minBtn && _minBtn->windowRect().contains(pt))
-        return H::MinimizeButton;
-    if (_maxBtn && _maxBtn->windowRect().contains(pt))
-        return H::MaximizeButton;
     if (_closeBtn && _closeBtn->windowRect().contains(pt))
         return H::CloseButton;
+    // Title-bar controls are client input, not window-drag targets.
+    for (View *v = _win.viewAt(pt); v && v != _titleBar; v = v->parent())
+        if (v->focusable() || v->role() == Role::Button)
+            return H::Client;
     return H::Caption;
 }
 
