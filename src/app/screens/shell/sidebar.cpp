@@ -38,7 +38,16 @@ constexpr float kRowHBase = 32, kTopPad = 8, kPill = 12, kPadH = 14, kContentX =
 constexpr int   kAvatarPx = 40; // 20 logical, sharp at 2x
 
 float rowH() {
-    return std::round(kRowHBase * (app() ? app()->userTextScale() : 1.f));
+    const auto *a = app();
+    // Display DPR is applied by the painter, not to logical layout metrics.
+    // OS and in-app text preferences do change the glyph's logical size:
+    // allow the row to grow with those preferences instead of clipping text.
+    const double textScale = a ? a->settings().textScale * a->userTextScale() : 1.0;
+    return std::round(kRowHBase * std::max(1.0, textScale));
+}
+
+void followTextRowHeight(View *row) {
+    row->style().height(rowH());
 }
 
 // A row's label and icon: the selected pill's ink, bright, or dim.
@@ -53,6 +62,7 @@ void pillRow(Clickable *r) {
     r->setRole(Role::ListItem);
     r->style().row().height(rowH()).margins(kPill, 0, kPill, 0).items(Align::Center);
     r->style().padding(kContentX - kPill, 0, 6, 0);
+    followTextRowHeight(r);
 }
 
 // The 20 px rounded avatar rows show, its placeholder the away grey.
@@ -67,6 +77,11 @@ Avatar *smallAvatar(View *parent) {
 // Rows that change colour on hover (repainted bright).
 class HoverRow : public Clickable {
 public:
+    void styleChanged() override {
+        Clickable::styleChanged();
+        followTextRowHeight(this);
+        invalidateLayout();
+    }
     bool onEvent(Event &e) override {
         if (e.type == EventType::PointerEnter || e.type == EventType::PointerLeave) {
             refreshLook();
@@ -263,6 +278,7 @@ public:
         setLook({C::None, C::SidebarHover, C::SidebarHover, C::None, 0}); // full width
         setRole(Role::Button);
         style().row().height(rowH()).padding(kContentX, 0, kPadH, 0).items(Align::Center);
+        followTextRowHeight(this);
         label = add<Label>(std::move(text), Font::Section, C::SidebarTextMuted);
         label->setMaxLines(1);
         label->style().shrink = 1;
@@ -402,6 +418,7 @@ public:
         setLook({C::None, C::SidebarHover, C::SidebarHover, C::None, 0});
         setRole(Role::Button);
         style().row().height(rowH()).items(Align::Center);
+        followTextRowHeight(this);
         style().padding(withPlus ? kContentX + 14 + 6 : kContentX, 0, kPadH, 0);
         label = add<Label>(std::move(text), Font::Body, C::SidebarTextMuted);
         label->setMaxLines(1);
@@ -458,6 +475,11 @@ public:
 // (a tooltip).
 class SidebarRow : public Clickable {
 public:
+    void styleChanged() override {
+        Clickable::styleChanged();
+        followTextRowHeight(this);
+        invalidateLayout();
+    }
     bool onEvent(Event &e) override {
         if (e.type == EventType::ContextMenu && showMenu(e.windowPos))
             return true;
@@ -741,7 +763,8 @@ Sidebar::Sidebar(screens::Context &ctx, Avatars &avatars) : _ctx(ctx), _avatars(
     _scroll->setThinThumb(C::SidebarScrollbar);
     _scroll->style().flex(1);
     _items = _scroll->content();
-    _items->style().padding(0, kTopPad, 0, 0).spacing(0);
+    // Keep the last row off the viewport edge when scrolled to the bottom.
+    _items->style().padding(0, kTopPad, 0, 12).spacing(0);
     _footer = add<SidebarFooter>(*this, ctx, avatars);
 
     _observer = ctx.store.observe(model::Store::kAnyConv, [this](const model::Change &ch) {

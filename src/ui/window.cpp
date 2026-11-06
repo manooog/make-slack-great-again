@@ -124,6 +124,26 @@ Window::Window(const plat::WindowDesc &desc) {
     resized();
 }
 
+void Window::setTransparentBackground(bool on) {
+    if (_transparentBackground == on)
+        return;
+    _transparentBackground = on;
+    _root->setBackground(on ? C::None : C::WindowBg);
+    _blits.clear();
+    damageAll();
+}
+
+void Window::setOverlayClip(float inset, float radius) {
+    inset = std::max(0.f, inset);
+    radius = std::max(0.f, radius);
+    if (inset == _overlayClipInset && radius == _overlayClipRadius)
+        return;
+    _overlayClipInset = inset;
+    _overlayClipRadius = radius;
+    _blits.clear();
+    damageAll(); // clear an old scrim when the rounded edge changes
+}
+
 Window::~Window() {
     _dying = true;
     if (_tooltipTimer)
@@ -913,6 +933,15 @@ void Window::scrollBlit(View *area, int dy) {
     const RectF rect = intersect(area->windowRect(), {0, 0, ws.w, ws.h});
     if (dy == 0 || empty(rect))
         return;
+    if (_transparentBackground) {
+        // Opaque scroll contents can be copied by the usual fast path, but
+        // moving pixels inside an ARGB CSD window can carry stale alpha and
+        // pre-composited overlays across partial damage. Repaint just this
+        // scroll viewport from the retained view tree instead. Do not fall
+        // back to repainting the entire (potentially 4K) window.
+        damage(rect);
+        return;
+    }
     bool merged = false;
     for (Blit &b : _blits) {
         if (sameRect(b.rect, rect)) {
@@ -1018,6 +1047,21 @@ void Window::paintTree(View *v, gfx::Painter &p, RectF dmg, float ox, float oy) 
         for (auto &c : v->_children)
             paintTree(c.get(), p, cd, x, y);
     v->paintOver(p);
+    p.restore();
+}
+
+void Window::paintOverlay(gfx::Painter &p, RectF damage) {
+    p.save();
+    if (_overlayClipRadius > 0) {
+        const SizeF sz = size();
+        const float inset = _overlayClipInset;
+        p.clipRoundRect(
+            {inset, inset, std::max(0.f, sz.w - 2 * inset),
+             std::max(0.f, sz.h - 2 * inset)},
+            _overlayClipRadius
+        );
+    }
+    paintTree(_overlay.get(), p, damage, 0, 0);
     p.restore();
 }
 
@@ -1133,11 +1177,17 @@ void Window::onFrame(bool requested) {
         _stats.viewsPainted = 0;
         for (size_t i = shifted; i < rects.size(); ++i) {
             const plat::Rect &r = rects[i];
+            if (_transparentBackground) {
+                // SHM buffers carry yesterday's pixels. Alpha must be cleared
+                // before blending, even for a small damage-only repaint.
+                for (int y = r.y; y < r.y + r.h; ++y)
+                    std::fill_n(c.pixels + size_t(y) * c.stride + r.x, size_t(r.w), 0u);
+            }
             const RectF       lr{r.x / s, r.y / s, r.w / s, r.h / s};
             p.save();
             p.clipRect(lr);
             paintTree(_root.get(), p, lr, 0, 0);
-            paintTree(_overlay.get(), p, lr, 0, 0);
+            paintOverlay(p, lr);
             p.restore();
         }
         _stats.lastDamage.assign(rects.begin() + ptrdiff_t(shifted), rects.end());
@@ -1200,7 +1250,7 @@ bool Window::dumpFullRepaint(const std::string &path) {
     const RectF  all{0, 0, float(w) / s, float(h) / s};
     const int    painted = _stats.viewsPainted;
     paintTree(_root.get(), p, all, 0, 0);
-    paintTree(_overlay.get(), p, all, 0, 0);
+    paintOverlay(p, all);
     _stats.viewsPainted = painted;
     writePpm(path, full.pixels(), w, h, w);
     return true;
@@ -1238,7 +1288,7 @@ void Window::verifyFrame(const plat::Canvas &c, const std::vector<plat::Rect> &p
     const int    painted = _stats.viewsPainted;
     const RectF  all{0, 0, float(w) / s, float(h) / s};
     paintTree(_root.get(), p, all, 0, 0);
-    paintTree(_overlay.get(), p, all, 0, 0);
+    paintOverlay(p, all);
     _stats.viewsPainted = painted;
     int    bx0 = w, by0 = h, bx1 = -1, by1 = -1, maxDelta = 0;
     size_t diff = 0, noise = 0;

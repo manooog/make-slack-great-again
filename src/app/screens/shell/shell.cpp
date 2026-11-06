@@ -507,31 +507,75 @@ private:
     float _startX = 0, _startW = 0;
 };
 
+// The main Wayland window uses a transparent ARGB surface; the shadow lives
+// outside this view in a 10 px inset. We only clip the *children* inside the
+// rounded frame; its background gradient is clipped here as well.
+class WindowFrame final : public View {
+public:
+    static constexpr float kInset = 10, kRadius = 10;
+
+    WindowFrame() {
+        style().column();
+        setClipChildren(true);
+    }
+    bool rounded() const { return _rounded; }
+    void setRounded(bool rounded) {
+        if (_rounded == rounded)
+            return;
+        _rounded = rounded;
+        const float inset = rounded ? kInset : 0;
+        style().margins(inset, inset, inset, inset);
+        // The radius is also used by Window::paintTree for the child clip.
+        setBackground(C::Sidebar, rounded ? kRadius : 0);
+        setPaintOutset(rounded ? uint8_t(kInset) : 0);
+    }
+    void paint(gfx::Painter &p) override {
+        if (_rounded) {
+            p.dropShadow(bounds(), kRadius, 6, {0, 1}, color(C::Shadow));
+            p.save();
+            p.clipRoundRect(bounds(), kRadius);
+        }
+        paintNavGradient(*this, p, C::Sidebar);
+        if (_rounded)
+            p.restore();
+    }
+
+private:
+    bool _rounded = false;
+};
+
 // The content pane keeps its rounded surface and themed right/bottom inset in
 // normal, maximized, and fullscreen windows. The outer window stays square.
 class InsetPane final : public View {
 public:
+    // When the navigation column disappears, keep the chat surface framed
+    // on the left as well as on the right and bottom.
+    void setLeftInset(bool on) {
+        if (_leftInset == on)
+            return;
+        _leftInset = on;
+        invalidateLayout();
+        update();
+    }
     void paint(gfx::Painter &p) override {
         const auto &pad = currentStyle().pad;
-        const RectF surface{0, 0, width() - pad.r, height() - pad.b};
-        if (pad.r > 0 || pad.b > 0) {
-            paintNavGradient(*this, p, C::Sidebar);
-            p.fillRoundRect(surface, kRadius, color(C::Surface));
-        } else {
-            p.fillRect(surface, color(C::Surface));
-        }
+        const RectF surface{
+            pad.l, 0, width() - pad.l - pad.r, height() - pad.b
+        };
+        paintNavGradient(*this, p, C::Sidebar);
+        p.fillRoundRect(surface, kRadius, color(C::Surface));
     }
     // Cover rectangular child backgrounds only at the curved corners.
     void paintOver(gfx::Painter &p) override {
         const auto &pad = currentStyle().pad;
         if (pad.r <= 0 || pad.b <= 0)
             return;
-        const float w = width() - pad.r, h = height() - pad.b;
-        const RectF surface{0, 0, w, h};
-        const RectF corners[] = {{0, 0, kRadius, kRadius},
-                                 {w - kRadius, 0, kRadius, kRadius},
-                                 {0, h - kRadius, kRadius, kRadius},
-                                 {w - kRadius, h - kRadius, kRadius, kRadius}};
+        const float x = pad.l, w = width() - pad.l - pad.r, h = height() - pad.b;
+        const RectF surface{x, 0, w, h};
+        const RectF corners[] = {{x, 0, kRadius, kRadius},
+                                 {x + w - kRadius, 0, kRadius, kRadius},
+                                 {x, h - kRadius, kRadius, kRadius},
+                                 {x + w - kRadius, h - kRadius, kRadius, kRadius}};
         for (const RectF &corner : corners) {
             p.save();
             p.clipRect(corner);
@@ -543,14 +587,18 @@ public:
     void layout() override {
         // The inset is independent of window state, including fullscreen.
         constexpr float want = 6;
-        if (currentStyle().pad.r != want || currentStyle().pad.b != want) {
-            style().pad.r = want;
-            style().pad.b = want;
+        const float left = _leftInset ? want : 0;
+        if (currentStyle().pad.l != left || currentStyle().pad.r != want ||
+            currentStyle().pad.b != want) {
+            auto &pad = style().pad;
+            pad.l = left;
+            pad.r = pad.b = want;
         }
         View::layout();
     }
 private:
     static constexpr float kRadius = 12;
+    bool _leftInset = false;
 };
 
 // The splitter handle between the messages and the thread panel: the panel's soft shadow cast
@@ -918,8 +966,22 @@ Shell::Shell(
             c->attachFiles(paths);
     };
 
-    auto *screen = win.root().add<View>();
-    screen->style().column();
+    View *screen = nullptr;
+    // Native Wayland SHM already uses premultiplied ARGB8888. Only this
+    // top-level window enables transparent repaint; dialogs are unchanged.
+    if (std::strcmp(ctx.app.platform().backendName(), "wayland") == 0) {
+        win.setTransparentBackground(true);
+        auto *frame = win.root().add<WindowFrame>();
+        _windowFrame = frame;
+        const bool rounded = !win.native().isMaximized() && !win.native().isFullscreen();
+        frame->setRounded(rounded);
+        win.setOverlayClip(rounded ? WindowFrame::kInset : 0,
+                           rounded ? WindowFrame::kRadius : 0);
+        screen = frame;
+    } else {
+        screen = win.root().add<View>();
+        screen->style().column();
+    }
     buildTitleBar(screen);
 #ifdef MSGA_SELF_UPDATE
     _updateBar            = screen->add<UpdateBar>();
@@ -956,6 +1018,7 @@ Shell::Shell(
     // With no workspace signed in (setSignedIn(false)) this takes the
     // sidebar's and the main pane's place.
     _signedOut = body->add<InsetPane>();
+    static_cast<InsetPane *>(_signedOut)->setLeftInset(true);
     _signedOut->style().flex(1);
     auto *page = _signedOut->add<SignedOutPage>();
     page->style().flex(1);
@@ -1360,6 +1423,35 @@ public:
     std::function<void()>       onStyleChanged; // a theme or palette switch
 };
 
+// The conversation title is flexible while signed in. When it disappears
+// (sign-out, first load, or a headerless page), center the search across
+// the *whole window*, not just the space left of the close button.
+class TitleContent final : public View {
+public:
+    View *heading = nullptr, *search = nullptr;
+
+    void layout() override {
+        const bool centered = heading && !heading->visible();
+        float padL = 0, padR = 0;
+        if (centered && parent() && search) {
+            const float before = frame().x;
+            const float after = std::max(0.f, parent()->width() - frame().right());
+            const float space = std::max(0.f, width() - search->currentStyle().w);
+            padL = std::clamp(after - before, 0.f, space);
+            padR = std::clamp(before - after, 0.f, space);
+        }
+        const Justify justify = centered ? Justify::Center : Justify::Start;
+        if (currentStyle().pad.l != padL || currentStyle().pad.r != padR ||
+            currentStyle().justify != justify) {
+            auto &s = style();
+            s.pad.l = padL;
+            s.pad.r = padR;
+            s.justify = justify;
+        }
+        View::layout();
+    }
+};
+
 // Search stays gently highlighted; hovering adds only one more wash from the
 // active palette instead of jumping to the opaque selected-channel colour.
 class TitleSearchTrigger final : public Clickable {
@@ -1431,17 +1523,22 @@ void Shell::buildTitleBar(View *parent) {
     forward->setLook({C::None, C::SidebarHover, C::SidebarHover, C::None, 7});
     forward->onClick = [this] { navigateHistory(false); };
 
-    // The conversation name now belongs to the main-pane portion of the title bar.
-    _header = _titleBar->add<ConvHeader>(_ctx, _avatars);
-    auto *search = _titleBar->add<TitleSearchTrigger>();
-    search->style().row().width(252).height(30).padding(12, 0).spacing(9)
+    // Keep the title and search in one flexible region; without a title,
+    // the region balances both sides of the window to center the search.
+    auto *content = _titleBar->add<TitleContent>();
+    content->style().row().height(kTitleBarH).flex(1).items(Align::Center);
+    _header = content->add<ConvHeader>(_ctx, _avatars);
+    auto *search = content->add<TitleSearchTrigger>();
+    content->heading = _header;
+    content->search = search;
+    search->style().row().width(252).height(32).padding(12, 0).spacing(9)
         .items(Align::Center).noShrink();
     search->setRole(Role::Button);
     search->setTooltip(shortcuts::tip(tr("Search"), shortcuts::Id::QuickSwitch));
-    search->add<IconView>(Icon::Search, 16, C::SidebarTextMuted);
-    search->add<Label>(tr("Search"), Font::Control, C::SidebarText);
+    search->add<IconView>(Icon::Search, 18, C::SidebarTextMuted);
+    search->add<Label>(tr("Search"), Font::Body, C::SidebarText);
     search->add<View>()->style().flex(1);
-    search->add<Label>(shortcuts::nativeKeys(shortcuts::Id::QuickSwitch), Font::Small, C::SidebarTextMuted);
+    search->add<Label>(shortcuts::nativeKeys(shortcuts::Id::QuickSwitch), Font::Control, C::SidebarTextMuted);
     search->onClick = [this] { showQuickSwitcher(); };
     _titleBar->add<View>()->style().width(16).noShrink();
 
@@ -1496,6 +1593,7 @@ void Shell::buildTitleBar(View *parent) {
         if (e.type == plat::EventType::StateChanged) {
             updateTitleButtons();
             syncFullScreenChrome();
+            syncWindowFrame();
             syncWindowVisible(); // minimised or back
         } else if (e.type == plat::EventType::FocusIn || e.type == plat::EventType::FocusOut)
             updateReading();
@@ -1506,6 +1604,18 @@ void Shell::buildTitleBar(View *parent) {
                 fitToScreen();
         }
     };
+}
+
+void Shell::syncWindowFrame() {
+    if (!_windowFrame)
+        return;
+    auto *frame = static_cast<WindowFrame *>(_windowFrame);
+    const bool rounded = !_win.native().isMaximized() && !_win.native().isFullscreen();
+    if (frame->rounded() != rounded) {
+        frame->setRounded(rounded);
+        _win.setOverlayClip(rounded ? WindowFrame::kInset : 0,
+                            rounded ? WindowFrame::kRadius : 0);
+    }
 }
 
 // The native chrome (macOS's title-bar rim and
@@ -1760,6 +1870,9 @@ void Shell::setSignedIn(bool on) {
     updateRailVisible();
     _sidebar->setVisible(on);
     _listHandle->setVisible(on);
+    static_cast<InsetPane *>(_mainPane)->setLeftInset(!on || _waiting);
+    if (!on)
+        _header->setVisible(false);
     _mainPane->setVisible(on);
     _signedOut->setVisible(!on);
     // A workspace opening with nothing loaded yet: the waiting state.
@@ -1783,6 +1896,7 @@ void Shell::setWaiting(bool on) {
     updateRailVisible();
     _sidebar->setVisible(_signedIn && !on);
     _listHandle->setVisible(_signedIn && !on);
+    static_cast<InsetPane *>(_mainPane)->setLeftInset(!_signedIn || on);
     if (on) {
         leavePages();
         _header->setVisible(false);
@@ -3689,9 +3803,12 @@ plat::HitArea Shell::hitTest(plat::Point p) const {
 #else
     const bool resizable = true;
 #endif
+    const float frameInset = _windowFrame &&
+        static_cast<const WindowFrame *>(_windowFrame)->rounded() ? WindowFrame::kInset : 0;
     if (resizable && !nat.isMaximized() && !nat.isFullscreen()) {
-        const bool l = p.x < kResizeEdge, r = p.x >= sz.w - kResizeEdge;
-        const bool t = p.y < kResizeEdge, b = p.y >= sz.h - kResizeEdge;
+        const float edge = std::max(kResizeEdge, frameInset);
+        const bool l = p.x < edge, r = p.x >= sz.w - edge;
+        const bool t = p.y < edge, b = p.y >= sz.h - edge;
         if (t && l)
             return H::ResizeTopLeft;
         if (t && r)
@@ -3709,7 +3826,7 @@ plat::HitArea Shell::hitTest(plat::Point p) const {
         if (t && !(_closeBtn && _closeBtn->windowRect().contains({float(p.x), float(p.y)})))
             return H::ResizeTop;
     }
-    if (p.y >= titleBarHeight())
+    if (p.y >= titleBarHeight() + frameInset)
         return H::Client;
     const PointF pt{float(p.x), float(p.y)};
 #ifdef __APPLE__
