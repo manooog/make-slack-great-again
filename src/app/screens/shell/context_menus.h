@@ -7,7 +7,9 @@
 #include "ui/ui.h"
 
 #include <functional>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace shell {
@@ -63,6 +65,7 @@ public:
         kSortAlpha,
         kSortRecent,
         kUnreadsFirst,
+        kShowUnreadWhenCollapsed,
         // "Move to section" → the n-th section (target: ConvRef)
         kMoveToSection = 200,
     };
@@ -77,7 +80,11 @@ public:
     // A sidebar section header's menu (its More actions): `section` is a
     // custom section's id, "" a built-in section (Channels, Direct
     // messages…); `sort` is the section's, ticked in the menu.
-    std::vector<ui::MenuItem> sectionItems(const std::string &section, SectionSort sort) const;
+    std::vector<ui::MenuItem> sectionItems(
+        const std::string &section, SectionSort sort,
+        std::optional<std::pair<bool, bool>> localMoves = {},
+        std::optional<bool> showUnreadWhenCollapsed = {}
+    ) const;
     void                      runSection(int id, const std::string &section);
     // The sort a sort item picks (`sort` unchanged for any other item).
     static SectionSort        sortAfter(int id, SectionSort sort);
@@ -87,12 +94,16 @@ public:
     void showChat(model::ConvRef c, ui::PointF at);
     void showWorkspace(ui::PointF at);
     void showWorkspace(const Workspace &w, ui::PointF at);
-    // onSort: a sort item was picked (the new sort).
+    // Local ordering is separate from Slack's own custom-section order.
     void showSection(
         const std::string               &section,
         SectionSort                      sort,
         ui::PointF                       at,
-        std::function<void(SectionSort)> onSort
+        std::function<void(SectionSort)> onSort,
+        std::pair<bool, bool>            canMove,
+        std::function<void(int)>         onMove,
+        bool                             showUnreadWhenCollapsed,
+        std::function<void()>            onToggleCollapsedUnreads
     );
 
 private:

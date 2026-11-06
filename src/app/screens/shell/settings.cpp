@@ -266,6 +266,20 @@ void fromJson(const json::Value r, Settings &s) {
                  std::string(e["section"].str()),
                  std::string(e["sort"].str())}
             );
+    for (const json::Value e : r["sidebarSectionOrders"]) {
+        Settings::SectionOrderPref p;
+        p.workspace = std::string(e["workspace"].str());
+        for (const json::Value id : e["sections"])
+            if (!id.str().empty())
+                p.sections.emplace_back(id.str());
+        if (!p.sections.empty())
+            s.sidebarSectionOrders.push_back(std::move(p));
+    }
+    for (const json::Value e : r["sidebarCollapsedUnreads"])
+        if (!e["section"].str().empty())
+            s.sidebarCollapsedUnreads.push_back(
+                {std::string(e["workspace"].str()), std::string(e["section"].str())}
+            );
     for (const json::Value p : r["ai"]) {
         AiProvider a;
         for (const auto &f : kAiFields)
@@ -343,6 +357,25 @@ std::string Settings::toFile() const {
                 .value(p.section)
                 .key("sort")
                 .value(p.sort)
+                .endObject();
+        w.endArray();
+    }
+    if (!sidebarSectionOrders.empty()) {
+        w.key("sidebarSectionOrders").beginArray();
+        for (const SectionOrderPref &p : sidebarSectionOrders) {
+            w.beginObject().key("workspace").value(p.workspace).key("sections").beginArray();
+            for (const std::string &id : p.sections)
+                w.value(id);
+            w.endArray().endObject();
+        }
+        w.endArray();
+    }
+    if (!sidebarCollapsedUnreads.empty()) {
+        w.key("sidebarCollapsedUnreads").beginArray();
+        for (const CollapsedUnreadPref &p : sidebarCollapsedUnreads)
+            w.beginObject()
+                .key("workspace").value(p.workspace)
+                .key("section").value(p.section)
                 .endObject();
         w.endArray();
     }

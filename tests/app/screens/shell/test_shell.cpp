@@ -612,6 +612,181 @@ std::string titles(shell::Sidebar &sb) {
 }
 } // namespace
 
+TEST("sections: Externals groups Slack Connect channels and DMs, with manual overrides") {
+    Harness         h;
+    shell::Sidebar &sb   = h.sh->sidebar();
+    const ConvRef   eng  = h.conv("C0ENG"), mira = h.conv("D0MIRA");
+    const ConvRef   rel  = h.conv("C0RELEASES");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages");
+
+    h.store.updateConversation(eng, [](Conversation &c) { c.extShared = true; });
+    h.store.updateConversation(mira, [](Conversation &c) { c.extShared = true; });
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Externals|Direct messages");
+    const auto order = sb.order();
+    const auto pos = [&](ConvRef c) { return std::find(order.begin(), order.end(), c); };
+    REQUIRE(pos(eng) != order.end() && pos(mira) != order.end() && pos(rel) != order.end());
+    CHECK(pos(eng) > pos(rel));  // external channel follows regular channels
+    CHECK(pos(mira) > pos(rel)); // external DM is in the same section
+
+    REQUIRE(sb.toggleSection("Externals"));
+    pump();
+    CHECK_FALSE(sb.rowState(eng).visible);
+    CHECK_FALSE(sb.rowState(mira).visible);
+    REQUIRE(sb.toggleSection("Externals"));
+    pump();
+    CHECK(sb.rowState(eng).visible);
+
+    // Explicit user placements win; regular channels cannot be dropped into
+    // Externals and external ones cannot be dropped into regular Channels.
+    CHECK_FALSE(sb.dropOnSection(rel, "Externals"));
+    CHECK_FALSE(sb.dropOnSection(mira, "Channels"));
+    h.backend.createSection("Projects", "", eng);
+    pump();
+    CHECK_STR(sb.rowSection(eng), h.store.sections()[0].id);
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|Externals|Direct messages");
+    REQUIRE(sb.dropOnSection(mira, "Starred"));
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|Direct messages");
+
+    // Removing an explicit placement falls back to automatic grouping.
+    h.backend.deleteSection(h.store.sections()[0].id);
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Externals|Direct messages");
+    h.store.updateConversation(eng, [](Conversation &c) { c.extShared = false; });
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages");
+    CHECK(sb.rowState(eng).exists);
+}
+
+TEST("sections: collapsed groups may reveal only unread conversations") {
+    Harness h;
+    shell::Sidebar &sb = h.sh->sidebar();
+    const ConvRef eng = h.conv("C0ENG"), rel = h.conv("C0RELEASES");
+    const ConvRef random = h.conv("C0RANDOM"), mira = h.conv("D0MIRA");
+    REQUIRE(sb.rowState(eng).bold && sb.rowState(rel).bold);
+    REQUIRE(sb.rowState(random).exists && !sb.rowState(random).bold);
+    REQUIRE(sb.toggleSection("Channels"));
+    CHECK_FALSE(sb.rowState(eng).visible);
+    CHECK_FALSE(sb.rowState(random).visible);
+
+    // Disabled by default. Enabling it does not expand the header.
+    CHECK_FALSE(sb.showUnreadWhenCollapsed("#channels"));
+    sb.toggleCollapsedUnreads("#channels");
+    CHECK(sb.showUnreadWhenCollapsed("#channels"));
+    CHECK(sb.rowState(eng).visible);
+    CHECK(sb.rowState(rel).visible);
+    CHECK_FALSE(sb.rowState(random).visible);
+    const int before = sb.rebuildCount();
+
+    // Read status changes are reflected in place; do not uncollapse or
+    // create new rows just because an unread arrives or is cleared.
+    h.backend.markRead(eng, h.store.conversation(eng).latest);
+    pump();
+    CHECK_FALSE(sb.rowState(eng).visible);
+    CHECK(sb.rowState(rel).visible);
+    CHECK(sb.rebuildCount() == before);
+    h.backend.postAs(random, h.store.findUser("U0LENA"), "new message");
+    pump();
+    CHECK(sb.rowState(random).visible);
+
+    // Selecting an exposed unread does not expand all the read rows.
+    sb.select(rel);
+    pump();
+    CHECK_FALSE(sb.rowState(eng).visible);
+
+    // It is per section: another collapsed section still hides its unreads.
+    REQUIRE(sb.toggleSection("Direct messages"));
+    CHECK_FALSE(sb.rowState(mira).visible);
+    sb.toggleCollapsedUnreads("#direct");
+    CHECK(sb.rowState(mira).visible);
+    CHECK_FALSE(sb.rowState(eng).visible);
+    sb.toggleCollapsedUnreads("#channels");
+    CHECK_FALSE(sb.rowState(random).visible);
+    REQUIRE(sb.toggleSection("Channels")); // opens the still-collapsed section
+    CHECK(sb.rowState(eng).visible);
+    CHECK(sb.rowState(random).visible);
+}
+
+TEST("sections: collapsed unread preferences persist per workspace") {
+    Harness h;
+    shell::Sidebar &sb = h.sh->sidebar();
+    CHECK(h.settings.sidebarCollapsedUnreads.empty());
+    sb.toggleCollapsedUnreads("#channels");
+    REQUIRE(h.settings.sidebarCollapsedUnreads.size() == 1);
+    const std::string workspace = h.settings.sidebarCollapsedUnreads[0].workspace;
+    CHECK_STR(h.settings.sidebarCollapsedUnreads[0].section, "#channels");
+    json::Document doc;
+    REQUIRE(doc.parse(h.settings.toFile(), nullptr));
+    CHECK_STR(
+        doc.root()["sidebarCollapsedUnreads"][0]["section"].str(), "#channels"
+    );
+
+    h.settings.sidebarCollapsedUnreads.push_back({workspace + "-different", "#direct"});
+    h.sh->workspaceChanged(); // reads only this workspace's saved choice
+    pump();
+    CHECK(sb.showUnreadWhenCollapsed("#channels"));
+    CHECK_FALSE(sb.showUnreadWhenCollapsed("#direct"));
+    sb.toggleCollapsedUnreads("#channels");
+    CHECK(h.settings.sidebarCollapsedUnreads.size() == 1);
+    CHECK_STR(h.settings.sidebarCollapsedUnreads[0].section, "#direct");
+}
+
+TEST("sections: moving headers persists a workspace-local order") {
+    Harness h;
+    shell::Sidebar &sb = h.sh->sidebar();
+    const ConvRef eng = h.conv("C0ENG"), mira = h.conv("D0MIRA");
+    h.store.updateConversation(eng, [](Conversation &c) { c.extShared = true; });
+    h.store.updateConversation(mira, [](Conversation &c) { c.extShared = true; });
+    h.backend.createSection("Projects", "", kNoConv);
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|Externals|Direct messages");
+
+    // This is a client-side header preference, not a Slack section mutation.
+    CHECK_FALSE(sb.moveSection("#starred", -1));
+    CHECK_FALSE(sb.moveSection("#direct", 1));
+    REQUIRE(sb.moveSection("#externals", -1));
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Externals|Channels|Direct messages");
+    REQUIRE(h.settings.sidebarSectionOrders.size() == 1);
+    const auto &pref = h.settings.sidebarSectionOrders[0];
+    CHECK(pref.sections == sb.sectionOrder());
+    CHECK_STR(pref.sections[2], "#externals");
+    CHECK(h.settings.toFile().find("sidebarSectionOrders") != std::string::npos);
+
+    // Reading settings on workspace switch restores the same local order.
+    const std::string workspace = pref.workspace;
+    h.settings.sidebarSectionOrders.push_back({workspace + "-other", {"#direct", "#channels"}});
+    h.sh->workspaceChanged();
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Externals|Channels|Direct messages");
+
+    // A section that disappears doesn't erase the saved order. It returns
+    // to its place when there are external conversations again.
+    h.store.updateConversation(eng, [](Conversation &c) { c.extShared = false; });
+    h.store.updateConversation(mira, [](Conversation &c) { c.extShared = false; });
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|Direct messages");
+    h.store.updateConversation(eng, [](Conversation &c) { c.extShared = true; });
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Externals|Channels|Direct messages");
+}
+
+TEST("sections: adjacent custom section moves also update Slack's order") {
+    Harness h;
+    shell::Sidebar &sb = h.sh->sidebar();
+    h.backend.createSection("Projects", "", kNoConv);
+    h.backend.createSection("Later", "", kNoConv);
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Later|Projects|Channels|Direct messages");
+    REQUIRE(h.store.sections().size() == 2);
+    const std::string projects = h.store.sections()[1].id;
+    REQUIRE(sb.moveSection(projects, -1));
+    pump();
+    CHECK_STR(h.store.sections()[0].id, projects);
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Later|Channels|Direct messages");
+}
+
 TEST("sections: a new section sits under Starred and takes its rows out of the others") {
     Harness         h;
     shell::Sidebar &sb  = h.sh->sidebar();
@@ -702,6 +877,18 @@ TEST("sections: the conversation and section header menus") {
     CHECK_STR(labels(m.chatItems(eng)[1].sub), "New section…");
     const std::string sort = "|-|Sort|Default(on)|Alphabetically|By most recent|-|Unreads on top";
     CHECK_STR(labels(m.sectionItems("", {})), "Create a section…" + sort);
+    CHECK(
+        labels(m.sectionItems("", {}, std::pair{true, false}, false))
+            .ends_with("|Show unread conversations when collapsed")
+    );
+    CHECK(
+        labels(m.sectionItems("", {}, std::pair{true, false}, true))
+            .ends_with("|Show unread conversations when collapsed(on)")
+    );
+    CHECK_STR(
+        labels(m.sectionItems("", {}, std::pair{true, false})),
+        "Create a section…|-|Move section up|Move section down(off)" + sort
+    );
     h.backend.createSection("Projects", "", eng);
     h.backend.createSection("Later", "", kNoConv);
     pump();

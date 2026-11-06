@@ -849,7 +849,17 @@ TEST("slack features: custom sidebar sections — the list, moves, create, a ref
     e.be->createSection("Ops", "", e.conv("C1"));
     REQUIRE(pumpUntil([&] { return e.store.sectionOf("C1") != nullptr; }));
     CHECK_STR(e.store.sections()[0].id, "L9");
-    CHECK_STR(std::string(Log().get("users.channelSections.create")["form"]["name"].str()), "Ops");
+    {
+        // Slack returns invalid_arguments if the emoji field is omitted,
+        // even when a section is created without an icon.
+        // Value borrows its Document: keep the log alive while checking
+        // fields, including the empty string which Slack requires.
+        const Log         log;
+        const json::Value form = log.get("users.channelSections.create")["form"];
+        CHECK_STR(std::string(form["name"].str()), "Ops");
+        CHECK(form.has("emoji"));
+        CHECK_STR(std::string(form["emoji"].str()), "");
+    }
 
     // Refused: the banner says so, and Slack's list puts it back.
     ctl("POST",
@@ -863,6 +873,79 @@ TEST("slack features: custom sidebar sections — the list, moves, create, a ref
     REQUIRE(pumpUntil([&] { return e.store.findSection("L2") != nullptr; }));
     REQUIRE(!e.errors.empty());
     CHECK(e.errors.back().find("section_not_found") != std::string::npos);
+}
+
+TEST("slack features: leaving a custom section restores Slack Connect grouping") {
+    if (!haveServer())
+        return;
+    Env e(R"({
+        "users.conversations": {"ok": true, "channels": [
+            {"id": "C1", "name": "partner", "is_member": true, "is_ext_shared": true},
+            {"id": "D1", "is_im": true, "user": "UMIRA", "is_ext_shared": true}],
+            "response_metadata": {"next_cursor": ""}},
+        "users.channelSections.list": {"ok": true, "channel_sections": [
+            {"channel_section_id": "L1", "type": "standard", "name": "Projects",
+             "channel_ids_page": {"channel_ids": ["C1", "D1"], "count": 2}},
+            {"channel_section_id": "LEXT", "type": "slack_connect", "name": "Externals",
+             "channel_ids_page": {"channel_ids": [], "count": 0}},
+            {"channel_section_id": "LCH", "type": "channels", "name": "Channels",
+             "channel_ids_page": {"channel_ids": [], "count": 0}}]}})");
+    REQUIRE(e.connect());
+    REQUIRE(pumpUntil([&] { return e.store.sections().size() == 1; }));
+    REQUIRE(e.store.sectionOf("C1") != nullptr);
+    e.be->moveToSection(e.conv("C1"), {});
+    e.be->moveToSection(e.conv("D1"), {});
+    REQUIRE(pumpUntil([] {
+        return count("users.channelSections.channels.bulkUpdate") == 2;
+    }));
+    const Log log;
+    for (int i = 0; i < 2; ++i) {
+        const json::Value form = log.get("users.channelSections.channels.bulkUpdate", i)["form"];
+        const std::string insert(form["insert"].str());
+        CHECK(insert.find(R"("channel_section_id":"LEXT")") != std::string::npos);
+    }
+}
+
+TEST("slack features: external sharing is not ordinary Grid sharing") {
+    if (!haveServer())
+        return;
+    Env e(R"({"users.conversations": {"ok": true, "channels": [
+        {"id": "C1", "name": "general", "is_member": true, "is_shared": true,
+         "is_ext_shared": true},
+        {"id": "C2", "name": "internal-grid", "is_member": true, "is_shared": true,
+         "is_org_shared": true, "is_ext_shared": false},
+        {"id": "D1", "is_im": true, "user": "UMIRA", "is_ext_shared": true}],
+        "response_metadata": {"next_cursor": ""}}})");
+    REQUIRE(e.connect());
+    REQUIRE(e.conv("C1") != kNoConv && e.conv("C2") != kNoConv && e.conv("D1") != kNoConv);
+    CHECK(e.store.conversation(e.conv("C1")).extShared.value_or(false));
+    CHECK_FALSE(e.store.conversation(e.conv("C2")).extShared.value_or(true));
+    CHECK(e.store.conversation(e.conv("D1")).extShared.value_or(false));
+
+    // A partial roster without the flag must not erase previously known
+    // sharing state. An explicit false must, however, move the row back.
+    set(R"({"users.conversations": {"ok": true, "channels": [
+        {"id": "C1", "name": "general", "is_member": true},
+        {"id": "D1", "is_im": true, "user": "UMIRA"}],
+        "response_metadata": {"next_cursor": ""}}})");
+    const int calls = count("users.conversations");
+    e.be->reloadConversationsForTest();
+    REQUIRE(pumpUntil([&] { return count("users.conversations") > calls; }));
+    pumpFor(100);
+    CHECK(e.store.conversation(e.conv("C1")).extShared.value_or(false));
+    CHECK(e.store.conversation(e.conv("D1")).extShared.value_or(false));
+
+    set(R"({"users.conversations": {"ok": true, "channels": [
+        {"id": "C1", "name": "general", "is_member": true, "is_ext_shared": false},
+        {"id": "D1", "is_im": true, "user": "UMIRA", "is_ext_shared": false}],
+        "response_metadata": {"next_cursor": ""}}})");
+    const int calls2 = count("users.conversations");
+    e.be->reloadConversationsForTest();
+    REQUIRE(pumpUntil([&] {
+        return count("users.conversations") > calls2 &&
+               !e.store.conversation(e.conv("C1")).extShared.value_or(true);
+    }));
+    CHECK_FALSE(e.store.conversation(e.conv("D1")).extShared.value_or(true));
 }
 
 TEST("slack features: an OAuth token has no custom sections") {

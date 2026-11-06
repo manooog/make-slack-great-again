@@ -1116,6 +1116,8 @@ void SlackBackend::Read::carryLocal(
         fresh.localName = old.localName;
     if (fresh.members.empty())
         fresh.members = old.members;
+    if (!fresh.extShared)
+        fresh.extShared = old.extShared; // some roster/info responses omit this flag
     fresh.lastRead = std::max(fresh.lastRead, old.lastRead);
     fresh.latest   = std::max(fresh.latest, old.latest);
     if (fresh.canvasTitle.empty()) { // conversations.list omits properties
@@ -1676,8 +1678,9 @@ void SlackBackend::sectionCall(
 void SlackBackend::createSection(std::string name, std::string emoji, ConvRef first) {
     std::string form;
     addParam(form, "name", name);
-    if (!emoji.empty())
-        addParam(form, "emoji", emoji);
+    // This undocumented endpoint requires the emoji key even when no emoji
+    // is selected. Omitting it returns invalid_arguments; an empty value is valid.
+    addParam(form, "emoji", emoji);
     // The id is Slack's: the section shows once it answers.
     sectionCall(
         "users.channelSections.create",
@@ -1734,16 +1737,19 @@ void SlackBackend::moveToSection(ConvRef conv, const std::string &id) {
     const std::string            old     = from ? from->id : std::string();
     if (old == id)
         return;
-    // Out of a section it goes back to Slack's own one for its kind.
+    // Out of a custom section: put Slack Connect conversations back in
+    // Slack's own slack_connect system section, not ordinary Channels/DMs.
     std::string to = id;
     if (to.empty()) {
         const bool app = cv.kind == model::ConvKind::Dm && cv.dmUser != model::kNoUser &&
                          _store.user(cv.dmUser).bot;
-        const auto it  = _read->systemSections.find(
-            app             ? "recent_apps"
-            : cv.isDirect() ? "direct_messages"
-                            : "channels"
+        const char *defaultType =
+            app ? "recent_apps" : cv.isDirect() ? "direct_messages" : "channels";
+        auto it = _read->systemSections.find(
+            cv.extShared.value_or(false) && !app ? "slack_connect" : defaultType
         );
+        if (it == _read->systemSections.end())
+            it = _read->systemSections.find(defaultType); // older API responses
         if (it != _read->systemSections.end())
             to = it->second;
     }

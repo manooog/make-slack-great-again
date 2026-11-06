@@ -1,7 +1,8 @@
 // The conversation sidebar:
-// uniform 30 px rows under a 6 px top inset — the "Activity", "Threads",
-// "Saved messages" and "Scheduled messages" entries, then the Starred / Channels /
-// Direct messages / Agents & apps sections (a click on a header collapses
+// overview shortcuts ("Activity", "Threads", "Saved messages", "Scheduled
+// messages") have their own compact navigation treatment and a separator
+// before the collapsible Starred / Channels /
+// Direct messages / Agents & apps / Externals sections (a click on a header collapses
 // it, hiding every row; hovering shows the chevron that says what a click
 // does, and on the right the header's "+" — Channels: "Add channels",
 // Direct messages: open one — and "⋮" More actions), "N more channels"
@@ -30,6 +31,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace shell {
@@ -110,6 +112,20 @@ public:
     const Sorts          &sorts() const { return _sorts; }
     std::function<void()> onSortsChanged;
     void                  setSort(const std::string &key, SectionSort sort);
+    // A collapsed section normally hides everything. These section keys
+    // instead keep its unread conversation rows visible.
+    using CollapsedUnreads = std::unordered_set<std::string>;
+    void                  setCollapsedUnreads(CollapsedUnreads enabled);
+    const CollapsedUnreads &collapsedUnreads() const { return _collapsedUnreads; }
+    bool                  showUnreadWhenCollapsed(const std::string &key) const;
+    void                  toggleCollapsedUnreads(const std::string &key);
+    std::function<void()> onCollapsedUnreadsChanged;
+    // Workspace-local ordering of section *headers*, independent of the
+    // conversation order inside each section and of Slack's own web layout.
+    void                  setSectionOrder(std::vector<std::string> order);
+    const std::vector<std::string> &sectionOrder() const { return _sectionOrder; }
+    bool                  moveSection(const std::string &key, int step);
+    std::function<void()> onSectionOrderChanged;
     // A section's key: a custom one's id, "#starred", "#channels",
     // "#direct", "#apps" for the built-ins ("" for the Team).
     static std::string    sectionKey(int kind, const std::string &id);
@@ -226,11 +242,14 @@ private:
     std::vector<SectionHeader *>           _sections;
     std::vector<ui::View *>                _nav; // Activity, Threads, Saved, Scheduled messages
     std::vector<const char *>              _navTitles;
+    ui::View                *_navDivider = nullptr;
     ui::View                *_savedRow = nullptr, *_threadsRow = nullptr, *_scheduledRow = nullptr;
     ui::View                *_activityRow = nullptr;
     Nav                      _navSelected = Nav::None;
     VisitStamps              _visited; // opened here (visit stamps)
     Sorts                    _sorts;
+    CollapsedUnreads         _collapsedUnreads;
+    std::vector<std::string> _sectionOrder;
     Filters                  _filters;
     model::ConvRef           _selected        = model::kNoConv;
     model::Store::ObserverId _observer        = 0;
@@ -246,7 +265,7 @@ private:
     int                      _rebuilds        = 0;
     bool                     _revealOnRebuild = false;
     int                      _hiddenChannels  = 0;
-    bool                     _collapsed[5]    = {};         // starred, channels, DMs, apps, team
+    bool                     _collapsed[7]    = {}; // starred, channels, DMs, apps, team, [5] custom, externals
     std::unordered_map<std::string, bool> _collapsedCustom; // the user's sections, by id
     uint64_t _sectionsRev     = 0;       // Store::sectionsRevision at the last rebuild
     ConvRow *_dragRow         = nullptr; // a row being dragged
