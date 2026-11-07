@@ -510,6 +510,19 @@ TEST("slack realtime: contention raises the parallel-usage notice once") {
     CHECK(e.parallel == 1);
 }
 
+TEST("slack realtime: the session DM activity sweep reconciles unread counts") {
+    if (!haveServer())
+        return;
+    Env e(false, false); // OAuth: no client.counts or Socket Mode
+    REQUIRE(e.connect());
+    const ConvRef dm = e.conv("D1");
+    REQUIRE(dm != kNoConv);
+    REQUIRE(pumpUntil([&] { return count("conversations.info") > 0; }, 5000));
+    REQUIRE(pumpUntil([&] { return e.store.conversation(dm).unread == 4; }, 5000));
+    CHECK(e.store.conversation(dm).mentions == 4);
+    CHECK(e.store.conversation(dm).lastRead == model::parseTs("1700000000.000000"));
+}
+
 TEST("slack realtime: a reconnect backfills the roster and the DM badges") {
     if (!haveServer())
         return;
@@ -526,6 +539,42 @@ TEST("slack realtime: a reconnect backfills the roster and the DM badges") {
     REQUIRE(pumpUntil([&] { return e.store.conversation(e.conv("D1")).unread == 4; }, 5000));
     CHECK(e.store.conversation(e.conv("D1")).mentions == 4);
     CHECK(e.store.conversation(e.conv("D1")).lastRead == model::parseTs("1700000000.000000"));
+}
+
+TEST("slack realtime: reconnect resync clears DMs read on another client") {
+    if (!haveServer())
+        return;
+    Env e;
+    REQUIRE(e.connect());
+    REQUIRE(e.live());
+    const ConvRef dm = e.conv("D1");
+    REQUIRE(dm != kNoConv);
+
+    const auto reconnect = [&](int opens) {
+        ctl("POST", "/_ctl/ws/close", R"({"code": 1001})");
+        REQUIRE(pumpUntil([&] { return count("ws-open") == opens && e.socket->connected(); }));
+    };
+
+    reconnect(2);
+    REQUIRE(pumpUntil([&] { return e.store.conversation(dm).unread == 4; }, 5000));
+    CHECK(e.store.conversation(dm).mentions == 4);
+    const int firstSweep = count("conversations.info");
+
+    // Another Slack client reads the DM after our first reconnect. The next
+    // server snapshot must clear the stale local badge, not max it forever.
+    set(R"({"conversations.info?channel=D1": {"ok": true, "channel": {
+        "id": "D1", "is_im": true, "user": "UMIRA",
+        "unread_count": 0, "mention_count": 0,
+        "last_read": "1700000600.000000",
+        "latest": {"ts": "1700000600.000000"}
+    }}})");
+    pumpFor(1400); // the reconnect unread sweep is throttled to two minutes
+    reconnect(3);
+    REQUIRE(pumpUntil([&] { return count("conversations.info") > firstSweep; }, 5000));
+    REQUIRE(pumpUntil([&] { return e.store.conversation(dm).lastRead ==
+                                    model::parseTs("1700000600.000000"); }, 5000));
+    CHECK(e.store.conversation(dm).unread == 0);
+    CHECK(e.store.conversation(dm).mentions == 0);
 }
 
 TEST("slack realtime: a reconnect soon after a full DM sweep asks only the most active") {

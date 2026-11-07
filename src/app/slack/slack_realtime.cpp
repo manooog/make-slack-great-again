@@ -633,22 +633,8 @@ void SlackBackend::Live::resyncUnreads() {
 }
 
 void SlackBackend::Live::applyPatches() {
-    for (const auto &[id, info] : patches) {
-        const ConvRef r = s.findConversation(id);
-        if (r == kNoConv)
-            continue;
-        const model::Conversation &c = s.conversation(r);
-        // For a DM every unread is a red-badge mention.
-        if (info.lastRead <= c.lastRead && info.latest <= c.latest && info.unread <= c.unread &&
-            info.unread <= c.mentions)
-            continue;
-        s.updateConversation(r, [&info](model::Conversation &x) {
-            x.lastRead = std::max(x.lastRead, info.lastRead);
-            x.latest   = std::max(x.latest, info.latest);
-            x.unread   = std::max(x.unread, info.unread);
-            x.mentions = std::max(x.mentions, info.unread);
-        });
-    }
+    for (const auto &[id, info] : patches)
+        b.reconcileDirectConversation(id, info);
     patches.clear();
 }
 
