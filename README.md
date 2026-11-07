@@ -97,7 +97,7 @@ Implementation: [#1](https://github.com/zce/make-slack-great-again/pull/1), [#17
 
 ## Download
 
-Stable fork versions are published intentionally at [GitHub Releases](https://github.com/zce/make-slack-great-again/releases), using independent `vMAJOR.MINOR.PATCH` version tags. PR test builds are available as downloadable **Actions artifacts** on the associated PR's CI run; they are not formal releases. See [Maintaining this fork](#maintaining-this-fork) for the release process.
+Stable fork versions are published intentionally at [GitHub Releases](https://github.com/zce/make-slack-great-again/releases), using independent `vMAJOR.MINOR.PATCH` version tags. Pull-request builds are available as downloadable **Actions artifacts** on the associated PR's CI run, not as formal releases: Linux provides a test-enabled executable, while Windows provides the portable MinGW executable and its checksum for manual testing. Both PR artifacts are retained for 14 days. See [Maintaining this fork](#maintaining-this-fork) for the release process.
 
 The existing `v0.1.0` release predates Windows support and remains Linux-only. Subsequent releases from this pipeline provide:
 
@@ -148,9 +148,9 @@ MSGA automatically uses proxy settings without a separate settings page:
 
 1. Environment variables take precedence: `https_proxy`/`HTTPS_PROXY` for HTTPS and WSS, `http_proxy`/`HTTP_PROXY` for HTTP and WS, then `all_proxy`/`ALL_PROXY` as a fallback. Lowercase takes precedence over uppercase.
 2. `no_proxy`/`NO_PROXY` bypasses the proxy for matching hosts, domain suffixes, IP addresses, IP CIDR ranges, and optional ports.
-3. If no matching environment proxy is set, MSGA reads the current user's GNOME GSettings manual proxy configuration, including its ignored hosts. If neither source specifies a proxy, the connection is direct.
+3. If no matching environment proxy is set, GNOME sessions use the current user's GSettings proxy configuration. Manual mode uses scheme-specific endpoints and ignored hosts; **None** is explicitly direct. Automatic/PAC mode and failed settings discovery return an observable proxy error instead of silently bypassing the selected configuration. Non-GNOME sessions use direct connections when no environment proxy applies.
 
-HTTP proxies (`http://127.0.0.1:7890`) and unauthenticated SOCKS5 proxies (`socks5://127.0.0.1:1080`, `socks5h://...`) are supported for HTTP, HTTPS, WS and WSS. SOCKS5 resolves the destination hostname through the proxy. HTTPS and WSS connections always retain the original destination's TLS certificate validation. Proxy failures **do not** silently fall back to direct connections.
+HTTP proxies (`http://127.0.0.1:7890`) and unauthenticated SOCKS5 proxies (`socks5://127.0.0.1:1080`, `socks5h://...`) are supported for HTTP, HTTPS, WS and WSS. Plain HTTP/WS uses the HTTP forward-proxy request form; HTTPS/WSS uses CONNECT. SOCKS5 resolves destination hostnames through the proxy. HTTPS/WSS retain the original destination's TLS certificate validation. Omitted ports default to 80 for HTTP and 1080 for SOCKS5. Proxy failures **do not** silently fall back to direct connections.
 
 Example using a local Mihomo mixed port:
 
@@ -158,7 +158,7 @@ Example using a local Mihomo mixed port:
 ALL_PROXY=http://127.0.0.1:7890 msga
 ```
 
-When started from a desktop launcher, MSGA inherits the desktop session's environment, which may differ from a terminal shell's environment. GNOME GSettings is used when no proxy environment variable applies. Restart MSGA after changing GNOME proxy settings. Automatic PAC/WPAD and proxy authentication are not implemented. Other platforms retain their native OS network proxy handling.
+When started from a desktop launcher, MSGA inherits the desktop session's environment, which may differ from a terminal shell's environment. Environment variables are read per request; GNOME GSettings is read once per process, so restart MSGA after changing GNOME proxy settings. Automatic PAC/WPAD and proxy authentication are not implemented. Other platforms retain their native OS network proxy handling.
 
 ## Coming from slk?
 
@@ -265,7 +265,7 @@ This section is the source of truth for fork-specific development, upstream sync
 
 The `.github/workflows/ci.yml` workflow runs on pull requests, pushes to `master` and manual dispatches:
 
-- **Pull requests:** Ubuntu 24.04/GCC builds and runs the full test suite; Ubuntu 24.04/Clang performs a compile check. The GCC job uploads a test-enabled Linux executable for manual testing (14-day retention). The Windows x86_64/MinGW job builds the portable release executable and verifies that it has no MinGW runtime DLL dependencies; Windows CTest is not run.
+- **Pull requests:** Ubuntu 24.04/GCC builds and runs the full test suite; Ubuntu 24.04/Clang performs a compile check. The GCC job uploads a test-enabled Linux executable. The Windows x86_64/MinGW job builds the portable executable, verifies that it has no MinGW runtime DLL dependencies, and uploads it with its checksum for manual testing. Both PR artifacts have 14-day retention; Windows CTest is not run.
 - **Master pushes and manual runs:** both Linux compiler jobs run the full test suite. CTest currently starts with two workers; tests sharing global resources must declare `RESOURCE_LOCK` or `RUN_SERIAL`. The Windows job also builds and validates the portable executable.
 - **Successful master pushes:** the GCC job makes a separate production build with tests, demo and upstream self-update disabled, then uploads the dynamically linked Linux x86_64 executable, SHA256 checksum and `DEPENDENCIES.txt`. The Windows job uploads `msga-windows-x86_64.exe` with its SHA256 checksum. Both production artifacts have 30-day retention.
 - Actions are pinned to reviewed commit SHAs. Keep PR test artifacts and production release artifacts distinct.
