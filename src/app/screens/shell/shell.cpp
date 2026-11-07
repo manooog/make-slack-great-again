@@ -726,6 +726,13 @@ public:
         composer =
             static_cast<Composer *>(panel->setComposer(std::make_unique<Composer>(ctx, drafts)));
         composer->setThreadMode(true);
+        // Reply from any message in this thread focuses its existing composer
+        // rather than reopening a new thread or leaving keyboard focus behind.
+        panel->list().onReply = [this](ConvRef c, Ts root) {
+            if ((c != conv || root != this->root) && _ctx.openThread)
+                _ctx.openThread(c, root);
+            composer->edit().focus();
+        };
         // "Also send to channel": one reply's worth; an edit or attachments
         // untick it until they are gone.
         composer->broadcastWanted      = [this] { return panel->broadcastWanted(); };
@@ -1457,10 +1464,11 @@ public:
 // the *whole window*, not just the space left of the close button.
 class TitleContent final : public View {
 public:
-    View *heading = nullptr, *search = nullptr;
+    View *heading = nullptr, *pageTitle = nullptr, *search = nullptr;
 
     void layout() override {
-        const bool centered = heading && !heading->visible();
+        const bool centered = heading && !heading->visible() &&
+                              (!pageTitle || !pageTitle->visible());
         float padL = 0, padR = 0;
         if (centered && parent() && search) {
             const float before = frame().x;
@@ -1479,6 +1487,27 @@ public:
         }
         View::layout();
     }
+};
+
+// Match the conversation star: a bare titlebar action with ink-only hover.
+class PageRefreshButton final : public Clickable {
+public:
+    PageRefreshButton() {
+        setLook({C::None, C::None, C::None, C::None, 0});
+        setRole(Role::Button);
+        setTooltip(tr("Refresh"));
+        style().size(28, 28).noShrink().items(Align::Center);
+        _glyph = add<Label>("↻", Font::HeaderTitle, C::SidebarTextMuted);
+        _glyph->setHitTransparent(true);
+    }
+    bool onEvent(Event &e) override {
+        const bool handled = Clickable::onEvent(e);
+        if (e.type == EventType::PointerEnter || e.type == EventType::PointerLeave)
+            _glyph->setColor(hovered() ? C::SidebarText : C::SidebarTextMuted);
+        return handled;
+    }
+private:
+    Label *_glyph = nullptr;
 };
 
 // Search stays gently highlighted; hovering adds only one more wash from the
@@ -1514,6 +1543,11 @@ void Shell::buildTitleBar(View *parent) {
     _titleLabel->setAlign(text::LayoutOptions::Align::Center);
     _titleLabel->setHitTransparent(true);
     _titleLabel->style().margins(112, 0, 112, 1);
+    _pageTitle = _titleBar->add<Label>("", Font::UnifiedTitle);
+    _pageTitle->setAlign(text::LayoutOptions::Align::Center);
+    _pageTitle->setHitTransparent(true);
+    _pageTitle->style().margins(112, 0, 112, 1);
+    _pageTitle->setVisible(false);
 #else
     _titleBarH = kTitleBarH;
     _titleBar->style().row().height(kTitleBarH).noShrink().items(Align::Center);
@@ -1557,8 +1591,25 @@ void Shell::buildTitleBar(View *parent) {
     auto *content = _titleBar->add<TitleContent>();
     content->style().row().height(kTitleBarH).flex(1).items(Align::Center);
     _header = content->add<ConvHeader>(_ctx, _avatars);
+    _pageHeading = content->add<View>();
+    _pageHeading->style().row().flex(1).padding(16, 0, 8, 0).spacing(8)
+        .items(Align::Center);
+    _pageTitle = _pageHeading->add<Label>("", Font::HeaderTitle, C::SidebarText);
+    _pageTitle->setMaxLines(1);
+    _pageTitle->setHitTransparent(true);
+    _pageTitle->style().shrink = 1;
+    _pageAction = _pageHeading->add<PageRefreshButton>();
+    _pageAction->onClick = [this] {
+        for (Page p : {Page::Activity, Page::Threads, Page::Saved, Page::Scheduled})
+            if (pageOpen(p)) {
+                pageView(p)->open();
+                return;
+            }
+    };
+    _pageHeading->setVisible(false);
     auto *search = content->add<TitleSearchTrigger>();
     content->heading = _header;
+    content->pageTitle = _pageHeading;
     content->search = search;
     search->style().row().width(252).height(32).padding(12, 0).spacing(9)
         .items(Align::Center).noShrink();
@@ -1815,7 +1866,13 @@ void Shell::buildMain(View *parent) {
     stack->style().stack().flex(1);
 #ifdef MSGA_HAVE_MESSAGES
     _messages = stack->add<screens::MessageList>(_ctx);
-    static_cast<screens::MessageList *>(_messages)->setTypingRow(false);
+    auto *messageList = static_cast<screens::MessageList *>(_messages);
+    messageList->setTypingRow(false);
+    messageList->onReply = [this](ConvRef c, Ts root) {
+        openThread(c, root);
+        if (Composer *reply = threadComposer())
+            reply->edit().focus();
+    };
 #else
     _messages = stack->add<MessageStandIn>(_ctx, _avatars);
 #endif
@@ -2483,6 +2540,24 @@ void Shell::showPage(Page p) {
         if (o != p)
             leavePage(o);
     leaveConversationChrome(false);
+    // Overview pages use the same title slot as channel/DM headers.
+    if (_pageTitle) {
+        switch (p) {
+        case Page::Activity:  _pageTitle->setText(tr("Activity")); break;
+        case Page::Threads:   _pageTitle->setText(tr("Threads")); break;
+        case Page::Saved:     _pageTitle->setText(tr("Saved messages")); break;
+        case Page::Scheduled: _pageTitle->setText(tr("Scheduled messages")); break;
+        case Page::None:      break;
+        }
+#ifndef __APPLE__
+        if (_pageHeading) _pageHeading->setVisible(true);
+#else
+        _pageTitle->setVisible(true);
+#endif
+    }
+#ifdef __APPLE__
+    if (_titleLabel) _titleLabel->setVisible(false);
+#endif
     _sidebar->selectNav(p);
     page->setVisible(true);
     page->open();
@@ -2514,6 +2589,11 @@ void Shell::leavePage(Page p) {
     if (!pageOpen(p))
         return;
     pageView(p)->setVisible(false);
+    if (_pageHeading) _pageHeading->setVisible(false);
+#ifdef __APPLE__
+    if (_pageTitle) _pageTitle->setVisible(false);
+    if (_titleLabel) _titleLabel->setVisible(true);
+#endif
     if (_sidebar->selectedNav() == p)
         _sidebar->selectNav(Page::None);
     _composer->setVisible(true);

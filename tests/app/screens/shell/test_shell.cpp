@@ -441,6 +441,47 @@ TEST("drafts: stashed per conversation and thread on every leave path") {
     CHECK_FALSE(h.sh->drafts().has({design, root}));
 }
 
+#ifdef MSGA_HAVE_MESSAGES
+TEST("thread: Reply in thread from the main hover toolbar focuses the reply composer") {
+    Harness h;
+    const ConvRef design = h.conv("C0DESIGN");
+    const Ts root = h.backend.findTs(design, "Can someone export the hero");
+    REQUIRE(root != 0);
+    REQUIRE(h.store.findMessage(design, root)->replyCount == 0);
+    auto *messages = static_cast<screens::MessageList *>(h.sh->messagesView());
+    messages->scrollToMessage(root, false, false);
+    pump();
+    int i = -1;
+    for (size_t j = 0; j < messages->items().size(); ++j)
+        if (messages->items()[j].ts == root &&
+            messages->items()[j].kind == screens::MessageList::ItemKind::Message) {
+            i = int(j);
+            break;
+        }
+    REQUIRE(i >= 0);
+    ui::View *row = messages->list().viewFor(i);
+    REQUIRE(row != nullptr);
+    const ui::RectF rect = row->windowRect();
+    app().platform().testHooks()->injectPointerMove(
+        h.win->native(), {rect.x + std::min(180.f, rect.w / 2), rect.y + rect.h / 2}
+    );
+    pump();
+    ui::View *reply = nullptr;
+    std::function<void(ui::View *)> find = [&](ui::View *v) {
+        if (v->tooltip() == "Reply in thread" && v->visible())
+            reply = v;
+        for (size_t j = 0; j < v->childCount(); ++j)
+            find(v->child(j));
+    };
+    find(messages);
+    REQUIRE(reply != nullptr);
+    static_cast<ui::Clickable *>(reply)->activate();
+    pump();
+    CHECK(h.sh->threadOpen());
+    CHECK(h.sh->threadComposer()->edit().focused());
+}
+#endif
+
 // ── Quick switcher ──────────────────────────────────────────────────────────
 
 TEST("global search: Ctrl+K includes message text, not only conversation names") {
@@ -879,11 +920,11 @@ TEST("sections: the conversation and section header menus") {
     CHECK_STR(labels(m.sectionItems("", {})), "Create a section…" + sort);
     CHECK(
         labels(m.sectionItems("", {}, std::pair{true, false}, false))
-            .ends_with("|Show unread conversations when collapsed")
+            .ends_with("|Show unread when collapsed")
     );
     CHECK(
         labels(m.sectionItems("", {}, std::pair{true, false}, true))
-            .ends_with("|Show unread conversations when collapsed(on)")
+            .ends_with("|Show unread when collapsed(on)")
     );
     CHECK_STR(
         labels(m.sectionItems("", {}, std::pair{true, false})),
@@ -2537,6 +2578,54 @@ TEST("threads page: the sidebar entry opens the followed threads, newest first")
     CHECK(h.sh->composer().visible());
 }
 
+TEST("threads page: hover and right-click actions work on roots and replies") {
+    Harness h;
+    h.sh->showPage(shell::Shell::Page::Threads);
+    shell::ThreadsPage &page = *h.sh->threadsPage();
+    waitForThreads(page);
+    REQUIRE(page.cardCount() > 0);
+    auto &card = page.card(0);
+    auto labels = [](const std::vector<ui::MenuItem> &items) {
+        std::string out;
+        for (const auto &item : items) {
+            if (!out.empty()) out += '|';
+            out += item.separator ? "-" : item.label;
+        }
+        return out;
+    };
+    const std::string rootMenu = labels(card.messageMenuItems(card.root()));
+    CHECK(rootMenu.starts_with("Open thread|Add reaction|Forward message|-|Copy link|Copy message"));
+    CHECK(rootMenu.find("Reply in thread") == std::string::npos);
+    const auto *replies = h.store.replies(card.conv(), card.root());
+    REQUIRE(replies && !replies->empty());
+    const std::string replyMenu = labels(card.messageMenuItems(replies->back().ts));
+    CHECK(replyMenu.find("Add reaction") != std::string::npos);
+    CHECK(replyMenu.find("Reply in thread") == std::string::npos);
+
+    // First message row has a compact toolbar that appears on hover.
+    pump(4);
+    auto *row = card.child(1)->child(0);
+    REQUIRE(row != nullptr);
+    REQUIRE(row->childCount() == 2);
+    auto *bar = row->child(1);
+    CHECK_FALSE(bar->visible());
+    const ui::RectF r = row->windowRect();
+    auto *hooks = app().platform().testHooks();
+    hooks->injectPointerMove(h.win->native(), {r.x + 90, r.y + 8});
+    pump(4);
+    CHECK(bar->visible());
+    CHECK(bar->childCount() == 4);
+    CHECK_STR(bar->child(0)->tooltip(), "Add reaction");
+    CHECK_STR(bar->child(3)->tooltip(), "More actions");
+
+    hooks->injectButton(h.win->native(), plat::Button::Right, true);
+    hooks->injectButton(h.win->native(), plat::Button::Right, false);
+    pump(4);
+    REQUIRE(h.win->topPopup() != nullptr);
+    auto *menu = static_cast<ui::Menu *>(h.win->topPopup());
+    CHECK(labels(menu->items()).find("Reply in thread") == std::string::npos);
+}
+
 TEST("threads page: a card's reply box posts into the thread and the card follows") {
     Harness h;
     h.sh->showPage(shell::Shell::Page::Threads);
@@ -2721,6 +2810,38 @@ TEST("activity page: the sidebar entry opens the feed, newest first; the tabs fi
     CHECK(!h.sh->pageOpen(shell::Shell::Page::Activity));
     CHECK(h.sh->sidebar().selectedNav() != shell::Sidebar::Nav::Activity);
     CHECK(h.sh->composer().visible());
+}
+
+TEST("overview pages: page titles live in the global titlebar") {
+    Harness h;
+    REQUIRE(h.sh->pageTitle());
+#ifndef __APPLE__
+    REQUIRE(h.sh->pageAction());
+#endif
+    struct Check { shell::Shell::Page page; const char *title; };
+    for (const Check x : {
+        Check{shell::Shell::Page::Activity, "Activity"},
+        Check{shell::Shell::Page::Threads, "Threads"},
+        Check{shell::Shell::Page::Saved, "Saved messages"}
+    }) {
+        h.sh->showPage(x.page);
+        pump(2);
+        CHECK(h.sh->pageOpen(x.page));
+        CHECK_STR(h.sh->pageTitle()->text(), x.title);
+        CHECK(h.sh->pageTitle()->parent()->visible() ||
+              h.sh->pageTitle()->visible());
+        CHECK_FALSE(h.sh->header().visible());
+    }
+    h.sh->showPage(shell::Shell::Page::Activity);
+    pump(2);
+    CHECK(h.sh->activityPage()->child(0) == &h.sh->activityPage()->tabs());
+    CHECK(h.sh->activityPage()->tabs().frame().y == 0);
+    h.sh->open(h.conv("C0DESIGN"));
+    CHECK_FALSE(h.sh->pageOpen(shell::Shell::Page::Activity));
+#ifndef __APPLE__
+    CHECK_FALSE(h.sh->pageTitle()->parent()->visible());
+#endif
+    CHECK(h.sh->header().visible());
 }
 
 TEST("activity page: an item opens its message or its thread and is read") {
@@ -3249,8 +3370,10 @@ TEST("headerless shell: search stays centered and message pane has symmetric sid
     // workspace navigation and the right-hand window controls.
     auto *titleContent = h.sh->header().parent();
     REQUIRE(titleContent);
-    REQUIRE(titleContent->childCount() >= 2);
-    auto *search = titleContent->child(1);
+    REQUIRE(titleContent->childCount() >= 3);
+    // The overview title occupies a separate, hidden slot while signed out.
+    // The search is still the last child and remains centered in that state.
+    auto *search = titleContent->child(titleContent->childCount() - 1);
     const auto r = search->windowRect();
     CHECK(std::abs(r.x + r.w / 2 - h.win->size().w / 2) < 2.f);
 
