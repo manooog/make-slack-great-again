@@ -10,6 +10,78 @@ msga is a Slack client first and foremost. Channels, DMs, threads, reactions, fi
 
 Everything below the UI is msga's own code: a thin OS layer for windows, input and desktop services (Wayland and X11 on Linux, AppKit on macOS, Win32 on Windows), an HTTP and WebSocket client (WinHTTP on Windows, NSURLSession on macOS, msga's own client over Mbed TLS on Linux), and a CPU renderer with FreeType and HarfBuzz for text. The first goal is a small binary that uses few resources.
 
+## What this fork changes
+
+This fork keeps the upstream native C++ Slack client and concentrates its changes on a Slack-first workflow, more dependable message handling, a cleaner desktop experience and independently maintained releases. The highlights below describe changes made in this fork rather than features inherited unchanged from upstream.
+
+### Slack-focused product scope
+
+- Removed the Claude Code workspace and agent-session integration, including its agent UI, process/worktree handling, approvals, linked agent threads and related voice-dictation code, assets and tests.
+- Kept Slack-native messaging features and the independent **Summarize down** capability; removing the agent integration does not remove ordinary Slack bot messages.
+- Kept the fork maintainable alongside upstream through a dedicated sync workflow and documented fork-specific changes.
+
+Implementation: [#3](https://github.com/zce/make-slack-great-again/pull/3), [#8](https://github.com/zce/make-slack-great-again/pull/8), [#1](https://github.com/zce/make-slack-great-again/pull/1).
+
+### Navigation and conversation workflow
+
+- Reworked the shell around a more compact single-sidebar layout and integrated navigation/profile actions into the desktop chrome.
+- Added dedicated Sidebar handling for custom Sections and Slack Connect **Externals**, with workspace-specific section ordering and collapsed-unread preferences.
+- Improved message hover actions and context menus, including clearer **Reply in thread** behavior and returning focus to the existing thread composer when replying inside a thread.
+- Added keyboard navigation between unread conversations and a shortcut to jump to the first unread message. A selected conversation remains visible in a collapsed group after it becomes read, until navigation moves elsewhere.
+
+Implementation: [#4](https://github.com/zce/make-slack-great-again/pull/4), [#11](https://github.com/zce/make-slack-great-again/pull/11), [#12](https://github.com/zce/make-slack-great-again/pull/12), [#13](https://github.com/zce/make-slack-great-again/pull/13).
+
+### Unified message search
+
+- The title-bar search, `Ctrl+K` and `Ctrl+F` (use `Cmd` on macOS) share one message-first popup. `Ctrl+K` searches globally; `Ctrl+F` starts scoped to the current conversation.
+- Added paginated Slack message search with **Load more**, scope handling and support for Slack search operators passed through to the API.
+- Improved result context with conversation, sender and timestamp details, highlighted matches and readable previews.
+- Search failures are represented as errors rather than being mistaken for an empty result set; asynchronous requests are guarded so stale responses do not replace the active query.
+
+This remains a compact search popup, not a full Slack search center or file-content search interface.
+
+Implementation: [#6](https://github.com/zce/make-slack-great-again/pull/6), [#14](https://github.com/zce/make-slack-great-again/pull/14).
+
+### Message delivery and live-state reliability
+
+- Failed outgoing messages remain visible with their content and recovery actions instead of disappearing when a send fails.
+- Definitive failures can be retried; unconfirmed deliveries are marked **Uncertain** and are not automatically resent. This avoids turning a lost response into a duplicate message. Unconfirmed outgoing messages are also preserved across application restarts.
+- Improved Activity and Threads refresh behavior with in-context retry feedback and single-flight refresh handling.
+- Added explicit **Offline** and **Reconnecting** feedback for the live connection.
+- Distinguished genuine live arrivals from history, cache and backfill updates so loading older content or opening an old link does not replay desktop notifications.
+- Added RTM typing indicators and richer presence/DND status. In session-sign-in mode, message delivery continues to use polling; the RTM connection is used for presence/typing behavior, not as a replacement message-delivery transport.
+
+Implementation: [#15](https://github.com/zce/make-slack-great-again/pull/15), [#16](https://github.com/zce/make-slack-great-again/pull/16), [#19](https://github.com/zce/make-slack-great-again/pull/19), [#21](https://github.com/zce/make-slack-great-again/pull/21).
+
+### Slack links and message navigation
+
+- Added routing for Slack's native `slack://` channel/user/open links alongside MSGA's `msga://` links.
+- Improved permalink handling for older messages, thread roots and specific thread replies, including workspace and channel context.
+- The command line can open an unmodified Slack HTTPS permalink. MSGA does not take over every HTTPS link in the browser by default.
+
+Implementation: [#2](https://github.com/zce/make-slack-great-again/pull/2), [#9](https://github.com/zce/make-slack-great-again/pull/9).
+
+### Linux desktop integration
+
+- Added Wayland window rounding and themed shadows.
+- Added auto-hiding overlay scrollbars.
+- Added a selectable UI font family.
+- Corrected Linux XDG data/cache directory handling.
+- Added Linux proxy discovery from environment variables and GNOME settings, including `no_proxy` handling. See [Network proxy on Linux](#network-proxy-on-linux) for precedence, supported schemes and limitations.
+
+Implementation: [#5](https://github.com/zce/make-slack-great-again/pull/5), [#7](https://github.com/zce/make-slack-great-again/pull/7), [#18](https://github.com/zce/make-slack-great-again/pull/18), [#20](https://github.com/zce/make-slack-great-again/pull/20), [#22](https://github.com/zce/make-slack-great-again/pull/22).
+
+### Independent CI and releases
+
+- Maintains a fork-specific SemVer release sequence independently of upstream's application version.
+- CI builds with GCC and Clang, runs the test suite, and publishes separate PR test artifacts and production build artifacts.
+- Public releases are manually triggered and can only publish the production artifact from a successful CI run for the exact selected `master` commit; checksums are verified before publishing.
+- The upstream in-app updater is disabled so it cannot replace the fork build.
+
+Fork releases currently provide **Linux x86_64** binaries. macOS and Windows packages shown by upstream are not fork releases.
+
+Implementation: [#1](https://github.com/zce/make-slack-great-again/pull/1), [#17](https://github.com/zce/make-slack-great-again/pull/17), [#23](https://github.com/zce/make-slack-great-again/pull/23).
+
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-blue)
 ![C++](https://img.shields.io/badge/language-C%2B%2B20-00599C?logo=cplusplus&logoColor=white)
 ![Release](https://img.shields.io/github/v/release/zce/make-slack-great-again)
