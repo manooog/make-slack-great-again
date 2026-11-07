@@ -1519,25 +1519,56 @@ public:
     }
 };
 
-// Match the conversation star: a bare titlebar action with ink-only hover.
-class PageRefreshButton final : public Clickable {
+// Same 28 px target / 15 px vector size as the conversation Star.
+// The very same icon turns during a refresh: no font glyphs, size changes or
+// swapping spinner shapes. Hover only changes the ink, never the background.
+class PageRefreshButton final : public GlyphButton {
 public:
-    PageRefreshButton() {
-        setLook({C::None, C::None, C::None, C::None, 0});
-        setRole(Role::Button);
-        setTooltip(tr("Refresh"));
-        style().size(28, 28).noShrink().items(Align::Center);
-        _glyph = add<Label>("↻", Font::HeaderTitle, C::SidebarTextMuted);
-        _glyph->setHitTransparent(true);
+    PageRefreshButton()
+        : GlyphButton(Icon::RotateCw, 28, 15, C::SidebarTextMuted, tr("Refresh")) {
+        setHoverRepaint(true);
     }
-    bool onEvent(Event &e) override {
-        const bool handled = Clickable::onEvent(e);
-        if (e.type == EventType::PointerEnter || e.type == EventType::PointerLeave)
-            _glyph->setColor(hovered() ? C::SidebarText : C::SidebarTextMuted);
-        return handled;
+    ~PageRefreshButton() override {
+        if (_timer)
+            ui::app()->cancelTimer(_timer);
+    }
+    void setLoading(bool loading) {
+        if (loading == _loading)
+            return;
+        _loading = loading;
+        setEnabled(!loading);
+        if (loading) {
+            _angle = 0;
+            _timer = ui::app()->addTimer(33, true, [this] {
+                _angle = std::fmod(_angle + 12.f, 360.f); // one turn in ~1 s
+                update();
+            });
+        } else {
+            if (_timer)
+                ui::app()->cancelTimer(_timer);
+            _timer = 0;
+        }
+        update();
+    }
+    void paint(gfx::Painter &p) override {
+        Clickable::paint(p);
+        constexpr float kIconPx = 15;
+        const RectF r{
+            snapPx((width() - kIconPx) / 2),
+            snapPx((height() - kIconPx) / 2),
+            kIconPx,
+            kIconPx,
+        };
+        const gfx::Color ink = color(hovered() ? C::SidebarText : C::SidebarTextMuted);
+        if (_loading)
+            gfx::drawIconRotated(p, Icon::RotateCw, r, ink, _angle);
+        else
+            gfx::drawIcon(p, Icon::RotateCw, r, ink);
     }
 private:
-    Label *_glyph = nullptr;
+    bool _loading = false;
+    plat::TimerId _timer = 0;
+    float _angle = 0;
 };
 
 // Search stays gently highlighted; hovering adds only one more wash from the
@@ -1631,7 +1662,7 @@ void Shell::buildTitleBar(View *parent) {
     _pageAction = _pageHeading->add<PageRefreshButton>();
     _pageAction->onClick = [this] {
         for (Page p : {Page::Activity, Page::Threads, Page::Saved, Page::Scheduled})
-            if (pageOpen(p)) {
+            if (pageOpen(p) && !pageView(p)->refreshing()) {
                 pageView(p)->open();
                 return;
             }
@@ -1657,6 +1688,8 @@ void Shell::buildTitleBar(View *parent) {
     // already exposes Settings. No duplicate toolbar entry or Help shortcut.
     _titleActions->style().row().height(kTitleBarH).padding(0, 0, 16, 0)
         .spacing(8).items(Align::Center).noShrink();
+    _connectionNotice = _titleActions->add<Label>("", Font::Small, C::SidebarTextMuted);
+    _connectionNotice->setVisible(false);
 #endif
     strip->onStyleChanged = [this] { syncChrome(); };
     syncChrome();
@@ -1982,6 +2015,30 @@ void Shell::setSignedIn(bool on) {
     _signedOut->setVisible(!on);
     // A workspace opening with nothing loaded yet: the waiting state.
     setWaiting(on && _ctx.store().conversationCount() == 0);
+}
+
+void Shell::setConnectionNotice(ConnectionNotice state) {
+    _connectionNoticeState = state;
+    if (_connectionNotice) {
+        _connectionNotice->setText(
+            state == ConnectionNotice::Offline ? tr("Offline") :
+            state == ConnectionNotice::Reconnecting ? tr("Reconnecting…") : ""
+        );
+        _connectionNotice->setVisible(state != ConnectionNotice::None);
+    }
+}
+
+void Shell::updatePageRefresh() {
+#ifndef __APPLE__
+    if (!_pageAction)
+        return;
+    for (Page p : {Page::Activity, Page::Threads, Page::Saved, Page::Scheduled})
+        if (pageOpen(p)) {
+            static_cast<PageRefreshButton *>(_pageAction)->setLoading(pageView(p)->refreshing());
+            return;
+        }
+    static_cast<PageRefreshButton *>(_pageAction)->setLoading(false);
+#endif
 }
 
 void Shell::setLive(bool on) {
@@ -2504,6 +2561,7 @@ void Shell::buildThreadsPage(View *stack) {
     _threadsPage->onOpenThread  = [this](ConvRef c, Ts root) { openThread(c, root); };
     _threadsPage->onOpenChannel = [this](ConvRef c) { open(c); };
     _sidebar->onThreads         = [this] { showPage(Page::Threads); };
+    _threadsPage->onRefreshStateChanged = [this] { updatePageRefresh(); };
 }
 
 // ── The Activity page ───────────────────────────────────────────────────────
@@ -2518,6 +2576,7 @@ void Shell::buildActivityPage(View *stack) {
         jumpToMessage(c, ts, thread);
     };
     _sidebar->onActivity = [this] { showPage(Page::Activity); };
+    _activityPage->onRefreshStateChanged = [this] { updatePageRefresh(); };
 }
 
 // ── The overview pages ──────────────────────────────────────────────────────
@@ -2591,6 +2650,7 @@ void Shell::showPage(Page p) {
     _sidebar->selectNav(p);
     page->setVisible(true);
     page->open();
+    updatePageRefresh();
     noteNav({_activeKey, {}, uint8_t(p)}); // back/forward lands here too
 }
 
@@ -2619,6 +2679,7 @@ void Shell::leavePage(Page p) {
     if (!pageOpen(p))
         return;
     pageView(p)->setVisible(false);
+    updatePageRefresh();
     if (_pageHeading) _pageHeading->setVisible(false);
 #ifdef __APPLE__
     if (_pageTitle) _pageTitle->setVisible(false);
@@ -2646,6 +2707,7 @@ void Shell::buildSavedPage(View *stack) {
     };
     _savedPage->onOpenChannel = [this](ConvRef c) { open(c); };
     _sidebar->onSavedMessages = [this] { showPage(Page::Saved); };
+    _savedPage->onRefreshStateChanged = [this] { updatePageRefresh(); };
 }
 
 // ── The Scheduled messages page ─────────────────────────────────────────────
@@ -2655,6 +2717,7 @@ void Shell::buildScheduledPage(View *stack) {
     _scheduledPage->setVisible(false);
     _scheduledPage->onOpenChannel = [this](ConvRef c) { open(c); };
     _sidebar->onScheduled         = [this] { showPage(Page::Scheduled); };
+    _scheduledPage->onRefreshStateChanged = [this] { updatePageRefresh(); };
 }
 
 void Shell::jumpToMessage(ConvRef conv, Ts ts, Ts thread) {
