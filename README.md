@@ -88,6 +88,10 @@ Implementation: [#1](https://github.com/zce/make-slack-great-again/pull/1), [#17
 
 ## Demo
 
+![msga light](gfx/screenshots/zce-light.png)
+
+![msga dark](gfx/screenshots/zce-dark.png)
+
 ![msga in action](gfx/screenshots/recording-1.webp)
 
 ## Download
