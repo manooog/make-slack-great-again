@@ -2,26 +2,26 @@
 set -euo pipefail
 
 if [[ $# -ne 3 ]]; then
-  echo "Usage: verify-release-ci-run.sh <workflow-id> <commit-sha> <repository>" >&2
+  echo "Usage: verify-release-ci-run.sh <workflow-path> <commit-sha> <repository>" >&2
   exit 2
 fi
 
-workflow_id="$1"
+expected_workflow_path="$1"
 expected_sha="$2"
 expected_repo="$3"
 
-if [[ ! "$workflow_id" =~ ^[0-9]+$ ]]; then
-  echo "Expected a numeric workflow ID" >&2
+if [[ -z "$expected_workflow_path" || "$expected_workflow_path" == /* ]]; then
+  echo "Expected a repository-relative workflow path" >&2
   exit 2
 fi
 
-# A workflow's display name is user-editable and not unique. The immutable
-# workflow_id ties the run to this repository's .github/workflows/ci.yml.
+# A workflow's display name is user-editable and not unique. Match the
+# repository-relative workflow path as well as the run's commit provenance.
 jq -e \
-  --argjson workflow_id "$workflow_id" \
+  --arg workflow_path "$expected_workflow_path" \
   --arg sha "$expected_sha" \
   --arg repo "$expected_repo" '
-    .workflow_id == $workflow_id and
+    .path == $workflow_path and
     .name == "CI" and
     .event == "push" and
     .head_branch == "master" and
