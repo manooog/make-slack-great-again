@@ -653,7 +653,7 @@ std::string titles(shell::Sidebar &sb) {
 }
 } // namespace
 
-TEST("sections: Externals groups Slack Connect channels and DMs, with manual overrides") {
+TEST("sections: External connections group Slack Connect channels and DMs, with manual overrides") {
     Harness         h;
     shell::Sidebar &sb   = h.sh->sidebar();
     const ConvRef   eng  = h.conv("C0ENG"), mira = h.conv("D0MIRA");
@@ -663,29 +663,29 @@ TEST("sections: Externals groups Slack Connect channels and DMs, with manual ove
     h.store.updateConversation(eng, [](Conversation &c) { c.extShared = true; });
     h.store.updateConversation(mira, [](Conversation &c) { c.extShared = true; });
     pump();
-    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Externals|Direct messages");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages|External connections");
     const auto order = sb.order();
     const auto pos = [&](ConvRef c) { return std::find(order.begin(), order.end(), c); };
     REQUIRE(pos(eng) != order.end() && pos(mira) != order.end() && pos(rel) != order.end());
     CHECK(pos(eng) > pos(rel));  // external channel follows regular channels
     CHECK(pos(mira) > pos(rel)); // external DM is in the same section
 
-    REQUIRE(sb.toggleSection("Externals"));
+    REQUIRE(sb.toggleSection("External connections"));
     pump();
     CHECK_FALSE(sb.rowState(eng).visible);
     CHECK_FALSE(sb.rowState(mira).visible);
-    REQUIRE(sb.toggleSection("Externals"));
+    REQUIRE(sb.toggleSection("External connections"));
     pump();
     CHECK(sb.rowState(eng).visible);
 
     // Explicit user placements win; regular channels cannot be dropped into
-    // Externals and external ones cannot be dropped into regular Channels.
-    CHECK_FALSE(sb.dropOnSection(rel, "Externals"));
+    // External connections and external ones cannot be dropped into regular Channels.
+    CHECK_FALSE(sb.dropOnSection(rel, "External connections"));
     CHECK_FALSE(sb.dropOnSection(mira, "Channels"));
     h.backend.createSection("Projects", "", eng);
     pump();
     CHECK_STR(sb.rowSection(eng), h.store.sections()[0].id);
-    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|Externals|Direct messages");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|Direct messages|External connections");
     REQUIRE(sb.dropOnSection(mira, "Starred"));
     pump();
     CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|Direct messages");
@@ -693,7 +693,7 @@ TEST("sections: Externals groups Slack Connect channels and DMs, with manual ove
     // Removing an explicit placement falls back to automatic grouping.
     h.backend.deleteSection(h.store.sections()[0].id);
     pump();
-    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Externals|Direct messages");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages|External connections");
     h.store.updateConversation(eng, [](Conversation &c) { c.extShared = false; });
     pump();
     CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages");
@@ -822,18 +822,18 @@ TEST("sections: moving headers persists a workspace-local order") {
     h.store.updateConversation(mira, [](Conversation &c) { c.extShared = true; });
     h.backend.createSection("Projects", "", kNoConv);
     pump();
-    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|Externals|Direct messages");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|Direct messages|External connections");
 
     // This is a client-side header preference, not a Slack section mutation.
     CHECK_FALSE(sb.moveSection("#starred", -1));
-    CHECK_FALSE(sb.moveSection("#direct", 1));
+    CHECK_FALSE(sb.moveSection("#externals", 1));
     REQUIRE(sb.moveSection("#externals", -1));
     pump();
-    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Externals|Channels|Direct messages");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|External connections|Direct messages");
     REQUIRE(h.settings.sidebarSectionOrders.size() == 1);
     const auto &pref = h.settings.sidebarSectionOrders[0];
     CHECK(pref.sections == sb.sectionOrder());
-    CHECK_STR(pref.sections[2], "#externals");
+    CHECK_STR(pref.sections[3], "#externals");
     CHECK(h.settings.toFile().find("sidebarSectionOrders") != std::string::npos);
 
     // Reading settings on workspace switch restores the same local order.
@@ -841,7 +841,7 @@ TEST("sections: moving headers persists a workspace-local order") {
     h.settings.sidebarSectionOrders.push_back({workspace + "-other", {"#direct", "#channels"}});
     h.sh->workspaceChanged();
     pump();
-    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Externals|Channels|Direct messages");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|External connections|Direct messages");
 
     // A section that disappears doesn't erase the saved order. It returns
     // to its place when there are external conversations again.
@@ -851,7 +851,7 @@ TEST("sections: moving headers persists a workspace-local order") {
     CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|Direct messages");
     h.store.updateConversation(eng, [](Conversation &c) { c.extShared = true; });
     pump();
-    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Externals|Channels|Direct messages");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|External connections|Direct messages");
 }
 
 TEST("sections: adjacent custom section moves also update Slack's order") {
@@ -1094,6 +1094,132 @@ TEST("sort: alphabetically, most recent first, unreads on top; kept per workspac
     const shell::Sidebar::Sorts &loaded = sb.sorts();
     REQUIRE(loaded.size() == 1);
     CHECK(loaded.count("#channels") && loaded.at("#channels").by == shell::SectionSort::By::Alpha);
+}
+
+// ── External connections ────────────────────────────────────────────────────
+
+TEST("sections: a Slack Connect channel sits in External connections, under Direct messages") {
+    Harness         h;
+    shell::Sidebar &sb     = h.sh->sidebar();
+    const ConvRef   random = h.conv("C0RANDOM");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages");
+    const std::vector<ConvRef> before = sb.order();
+    h.store.updateConversation(random, [](Conversation &c) { c.extShared = true; });
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages|External connections");
+    CHECK_STR(sb.rowSection(random), "");
+    // Only the shared channel moved: the rest keep their order, and it ends the list.
+    std::vector<ConvRef> want = before;
+    want.erase(std::find(want.begin(), want.end(), random));
+    want.push_back(random);
+    CHECK(sb.order() == want);
+    h.store.updateConversation(random, [](Conversation &c) { c.extShared = false; });
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages");
+    CHECK(sb.order() == before);
+}
+
+TEST("sections: DMs with a stranger are external too; a starred one stays starred") {
+    Harness         h;
+    shell::Sidebar &sb       = h.sh->sidebar();
+    const ConvRef   mira     = h.conv("D0MIRA");
+    const ConvRef   trio     = h.conv("G0TRIO"); // Mira and Jonas
+    const UserRef   u        = h.store.findUser("U0MIRA");
+    h.store.user(u).stranger = true;
+    h.store.usersChanged(u);
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages|External connections");
+    // Both her DM and the group DM she is in end the list.
+    std::vector<ConvRef> order = sb.order();
+    REQUIRE(order.size() >= 2);
+    std::vector<ConvRef> tail(order.end() - 2, order.end());
+    std::sort(tail.begin(), tail.end());
+    std::vector<ConvRef> want = {mira, trio};
+    std::sort(want.begin(), want.end());
+    CHECK(tail == want);
+    h.backend.setStarred(mira, true);
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages|External connections");
+    order = sb.order();
+    CHECK(order.back() == trio);
+    CHECK(std::find(order.begin(), order.end(), mira) < order.end() - 1); // starred, above
+}
+
+// ── VIP unreads ──────────────────────────────────────────────────────────────
+
+namespace {
+void makeVip(Harness &h, const char *id) {
+    const UserRef u     = h.store.findUser(id);
+    h.store.user(u).vip = true;
+    h.store.usersChanged(u);
+    pump();
+}
+} // namespace
+
+TEST("sections: an unread VIP DM sits in its own VIP unreads section, above everything") {
+    Harness         h;
+    shell::Sidebar &sb  = h.sh->sidebar();
+    const ConvRef   sam = h.conv("D0SAM"); // read, in the fixture
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages");
+    makeVip(h, "U0SAM");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages"); // read: none yet
+    h.backend.markUnread(sam, h.store.conversation(sam).latest);
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|VIP unreads|Starred|Channels|Direct messages");
+    CHECK(sb.order()[0] == sam);
+    // Its header folds nothing away: it has no chevron to show it would.
+    REQUIRE(sb.toggleSection("VIP unreads"));
+    pump();
+    CHECK(sb.rowState(sam).visible);
+    // Reading it drops the section again.
+    h.backend.markRead(sam, h.store.conversation(sam).latest);
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages");
+}
+
+TEST("sections: a starred VIP DM is lifted while unread, then back to Starred") {
+    Harness         h;
+    shell::Sidebar &sb  = h.sh->sidebar();
+    const ConvRef   sam = h.conv("D0SAM");
+    h.backend.setStarred(sam, true);
+    makeVip(h, "U0SAM");
+    h.backend.markUnread(sam, h.store.conversation(sam).latest);
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|VIP unreads|Starred|Channels|Direct messages");
+    CHECK(sb.order()[0] == sam);
+    h.backend.markRead(sam, h.store.conversation(sam).latest);
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages");
+    CHECK(h.store.conversation(sam).starred);
+}
+
+TEST("sections: a group DM is a VIP unread only when the VIP wrote the unread message") {
+    Harness         h;
+    shell::Sidebar &sb   = h.sh->sidebar();
+    const ConvRef   trio = h.conv("G0TRIO"); // Mira and Jonas
+    makeVip(h, "U0JONAS");
+    // Mira writes: a VIP is in the group, but not the one who wrote.
+    h.backend.postAs(trio, h.store.findUser("U0MIRA"), "lunch?");
+    pump();
+    REQUIRE(h.store.conversation(trio).unread > 0);
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages");
+    // Jonas writes: now it is.
+    h.backend.postAs(trio, h.store.findUser("U0JONAS"), "yes");
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|VIP unreads|Starred|Channels|Direct messages");
+    CHECK(sb.order()[0] == trio);
+}
+
+TEST("sections: a muted VIP's unreads don't jump the queue") {
+    Harness       h;
+    const ConvRef sam = h.conv("D0SAM");
+    makeVip(h, "U0SAM");
+    h.backend.setMuted(sam, true);
+    h.backend.markUnread(sam, h.store.conversation(sam).latest);
+    pump();
+    CHECK_STR(
+        titles(h.sh->sidebar()), "Activity|Threads|Starred|Channels|Direct messages"
+    ); // muted: never VIP
 }
 
 // ── Files: the chooser helper, attachments, drops, Save as ──────────────────

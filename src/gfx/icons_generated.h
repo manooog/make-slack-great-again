@@ -18,6 +18,7 @@ enum class Icon : uint16_t {
     Bookmark,
     Bot,
     Braces,
+    Building,
     Camera,
     Canvas,
     Captions,
@@ -104,13 +105,13 @@ enum class Icon : uint16_t {
     PresenceOffline,
     PresenceOfflinePaused,
 };
-constexpr int kIconCount = 96;
+constexpr int kIconCount = 97;
 
 // Path data for drawIcon() (format: src/tools/icons.py).
 namespace iconData {
 constexpr int kUnit = 32; // quanta per viewBox unit
-extern const uint8_t  kData[9216];
-extern const uint16_t kOffsets[97];
+extern const uint8_t  kData[9384];
+extern const uint16_t kOffsets[98];
 } // namespace iconData
 
 } // namespace gfx
