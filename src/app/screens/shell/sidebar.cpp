@@ -1523,16 +1523,16 @@ SectionHeader *Sidebar::sectionAt(PointF windowPos) const {
 // Where the dragged row would land (null: nowhere new): a custom section,
 // Starred, or out of its custom section / Starred via the other built-ins.
 static bool accepts(const SectionHeader *to, const SectionHeader *from, bool external) {
-    if (!to || to == from || to->kind == Vip || to->kind == Team)
+    if (!to || to == from || to->kind == Sidebar::Vip || to->kind == Sidebar::Team)
         return false;
-    if (to->kind == Custom || to->kind == Starred)
+    if (to->kind == Sidebar::Custom || to->kind == Sidebar::Starred)
         return true;
-    // External connections are derived from Slack metadata, not user-defined sections.
-    if (to->kind == External)
-        return external && (from->kind == Custom || from->kind == Starred);
+    // Sidebar::External connections are derived from Slack metadata, not user-defined sections.
+    if (to->kind == Sidebar::External)
+        return external && (from->kind == Sidebar::Custom || from->kind == Sidebar::Starred);
     if (external)
         return false;
-    return from->kind == Custom || from->kind == Starred;
+    return from->kind == Sidebar::Custom || from->kind == Sidebar::Starred;
 }
 
 void Sidebar::dragRow(ConvRow *row, PointF windowPos) {
