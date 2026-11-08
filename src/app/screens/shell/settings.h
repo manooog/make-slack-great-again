@@ -52,9 +52,10 @@ struct Settings {
     // ── Appearance ──────────────────────────────────────────────────────────
     int                      paletteLight = 0, paletteDark = 1; // ui::Palette per content mode
     ui::CustomPalette        custom;
-    int                      fontSize = 1; // 0 small, 1 medium, 2 large (App::setUserTextScale)
+    int                      fontSize    = 1;   // 0 small, 1 medium, 2 large, 3 custom
+    int                      fontPercent = 100; // custom: % of medium
     std::string              fontFamily; // empty = automatic UI font; applies on restart
-    std::string              language = "system"; // "system", "en", "ja"
+    std::string              language    = "system"; // "system", "en", "ja"
     bool                     use24h = false, threadsInline = false, linkPreviews = true;
     // use24h came from the file; without it the clock follows the language
     // (Japanese convention is 24-hour).
@@ -129,7 +130,7 @@ struct Settings {
     std::vector<CollapsedUnreadPref> sidebarCollapsedUnreads;
     bool                         trayMonochrome = true; // the custom tray icon turned monochrome
 
-    float       fontScale() const { return fontSize == 0 ? 0.9f : fontSize == 2 ? 1.15f : 1.f; }
+    float              fontScale() const; // App::setUserTextScale
     // The palettes and custom palette into the toolkit (ui::setPalette …).
     void        applyPalettes() const;
     AiProvider *provider(std::string_view id);

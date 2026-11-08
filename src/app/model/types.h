@@ -62,6 +62,7 @@ struct User {
     // Deactivated, or a Slack Connect stranger (conversations.open rejects
     // them): never offered as someone to message (Find a channel's People).
     bool        deleted = false, stranger = false;
+    bool        vip = false; // viewer's own VIP list, not a fact about this user
 
     // What the UI shows: the display name, else the handle, else the id.
     std::string_view label() const;
@@ -280,7 +281,7 @@ struct Conversation {
     Ts                   latest      = 0;
     bool                 starred     = false;
     bool                 muted       = false;
-    bool                 member      = true; // channels: joined; DMs: open (not closed)
+    bool                 member      = true;  // channels: joined; DMs: open (not closed)
     // Slack Connect: absent if the API did not report sharing; true/false
     // when it did. An absent field on a partial refresh keeps the last value.
     std::optional<bool>  extShared;

@@ -86,6 +86,11 @@ public:
     Sidebar(screens::Context &ctx, Avatars &avatars);
     ~Sidebar() override;
 
+    // A section header's kind. Every Custom section (Store::sections) shares
+    // this one value, told apart by sectionId. Team lists teammates, not
+    // conversations.
+    enum Kind : uint8_t { Starred, Channels, Direct, Apps, Team, Custom, External, Vip, KindCount };
+
     // The Settings → Appearance / Notifications choices the list follows.
     struct Filters {
         int                relevantDays   = 14;
@@ -126,8 +131,8 @@ public:
     const std::vector<std::string> &sectionOrder() const { return _sectionOrder; }
     bool                  moveSection(const std::string &key, int step);
     std::function<void()> onSectionOrderChanged;
-    // A section's key: a custom one's id, "#starred", "#channels",
-    // "#direct", "#apps" for the built-ins ("" for the Team).
+    // A section's key: a custom one's id, a "#"-prefixed name for every
+    // other built-in ("" for the Team, which has no sort or collapse state).
     static std::string    sectionKey(int kind, const std::string &id);
 
     void                        rebuild();                   // from the Store (roster changed)
@@ -210,6 +215,11 @@ private:
     model::NotifyLevel level(const model::Conversation &c) const;
     bool               muted(const model::Conversation &c) const;
     bool               isApp(const model::Conversation &c) const;
+    bool               isExternal(const model::Conversation &c) const;
+    bool               isVip(const model::Conversation &c) const;
+    // The section kind this conversation belongs in. Shared by rebuild() and
+    // the Meta-event flip check so they can't disagree.
+    Kind               classify(const model::Conversation &c) const;
     bool               relevant(model::ConvRef c) const;
     void               applyCollapse(SectionHeader *h);
     // A conversation row dragged onto a section (ConvRow's press handling).
@@ -268,7 +278,9 @@ private:
     int                      _rebuilds        = 0;
     bool                     _revealOnRebuild = false;
     int                      _hiddenChannels  = 0;
-    bool                     _collapsed[7]    = {}; // starred, channels, DMs, apps, team, [5] custom, externals
+
+    // By Kind; Custom uses _collapsedCustom (keyed by sectionId) instead.
+    bool                     _collapsed[KindCount] = {};
     std::unordered_map<std::string, bool> _collapsedCustom; // the user's sections, by id
     uint64_t _sectionsRev     = 0;       // Store::sectionsRevision at the last rebuild
     ConvRow *_dragRow         = nullptr; // a row being dragged
