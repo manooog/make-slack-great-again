@@ -68,7 +68,7 @@ public:
     virtual void setMuted(ConvRef conv, bool muted);
     virtual void setNotifyLevel(ConvRef conv, NotifyLevel level);
     // Leaves a channel, closes a DM (it comes back with the next message or
-    // openDm), removes an agent session from the list. member = false.
+    // openDm). member = false.
     virtual void leave(ConvRef conv);
     // The DM with `user` (opened or created); done gets kNoConv on failure.
     virtual void openDm(UserRef user, std::function<void(ConvRef)> done);
@@ -156,8 +156,8 @@ public:
         if (done)
             done(false, "not supported");
     }
-    // "Rename session…" / "Name conversation…": a name only this client
-    // shows ("" = the service's own again).
+    // "Name conversation…": a name only this client shows ("" = the
+    // service's own again).
     virtual void setLocalName(ConvRef conv, std::string name) {
         _store.updateConversation(conv, [&](Conversation &c) { c.localName = std::move(name); });
     }
@@ -337,9 +337,6 @@ public:
         if (done)
             done({});
     }
-    // What the service predicts I'll type next (Claude Code's suggested
-    // reply); "" = none.
-    virtual std::string promptSuggestion(ConvRef) const { return {}; }
 
     // ── Channel canvases ────────────────────────────────────────────────────
     // A conversation's canvas is Conversation::canvasId / canvasTitle; these
@@ -537,17 +534,9 @@ public:
 
     Store &store() { return _store; }
 
-    // Something the user should hear about that no call is waiting for (a
-    // queued message Claude Code never took): the shell's error banner.
-    // Set by whoever puts the backend on screen.
+    // Something the user should hear about that no call is waiting for:
+    // the shell's error banner. Set by whoever puts the backend on screen.
     std::function<void(const std::string &message)> onError;
-    // A message send() took that never went out after all (Claude Code's
-    // session didn't take it): its text and files as given, for the composer
-    // of (conv, thread) to have back. Set like onError.
-    std::function<void(
-        ConvRef conv, Ts thread, const std::string &text, const std::vector<std::string> &files
-    )>
-                                             onUnsent;
     // A message reminder went off: its saved item
     // (Store::findSaved) carries the preview. Set like onError.
     std::function<void(ConvRef conv, Ts ts)> onReminderDue;

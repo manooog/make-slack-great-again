@@ -1191,7 +1191,6 @@ Shell::Shell(
     _thread->composer->onCommand = [this](const std::string &name, const std::string &args) {
         runCommand(_thread->composer->conv(), _thread->composer->thread(), name, args);
     };
-    _thread->composer->setPopupArea(_thread->panel);
 #endif
 
     _observer = ctx.store.observe(model::Store::kAnyConv, [this](const model::Change &ch) {
@@ -1278,27 +1277,6 @@ void Shell::runCommand(ConvRef conv, Ts thread, const std::string &name, const s
         showError(result.error);
     if (result.open != kNoConv)
         open(result.open);
-}
-
-// A conversation nobody can post to from here
-// (Conversation::readOnly, e.g. a session a terminal drives) locks the
-// composer and says why; re-run on every change, since it flips while the
-// chat is open. The suggested reply is handed on only when it changes: a
-// send drops it, and the service may still report it until the next turn.
-void Shell::applyComposerAccess() {
-    if (_current == kNoConv || _current >= _ctx.store().conversationCount())
-        return;
-    const std::string suggestion = _ctx.backend.promptSuggestion(_current);
-    if (suggestion != _composerSuggestion) {
-        _composerSuggestion = suggestion;
-        _composer->setSuggestion(suggestion);
-    }
-    // Unlocked, the placeholder names the chat: a rename goes in too.
-    const std::string &reason = _ctx.store().conversation(_current).readOnly;
-    if (reason == _composerLock && !reason.empty())
-        return;
-    _composerLock = reason;
-    _composer->setLockReason(reason);
 }
 
 Shell::~Shell() {
@@ -1997,27 +1975,6 @@ void Shell::commandsChanged(const std::string &key) {
                 c->commandsChanged();
 }
 
-void Shell::giveBackUnsent(
-    const std::string              &key,
-    const model::Store             &store,
-    ConvRef                         conv,
-    Ts                              thread,
-    const std::string              &text,
-    const std::vector<std::string> &files
-) {
-    // The composer holding that conversation's input, shown or not, takes it:
-    // its draft is what it holds.
-    if (key == _drafts.scope())
-        for (Composer *c : {_composer, threadComposer()})
-            if (c && c->conv() == conv && c->thread() == thread) {
-                c->giveBack(text, files);
-                return;
-            }
-    TextEdit edit;
-    loadMrkdwn(edit, store, text);
-    _drafts.putBack(key, {conv, thread}, edit.empty() ? std::string() : edit.html(), files);
-}
-
 // Only when the signed-out page that follows is
 // out of sight (hidden to the tray; plat cannot tell "minimized" on every
 // OS, so a minimized window is not nudged) — the app telling the user
@@ -2147,9 +2104,6 @@ void Shell::open(ConvRef conv) {
     updateHuddleBanner();
     _composer->setTarget(conv, 0);
     _composer->setEnabled(conv != model::kNoConv); // disabled until one is open
-    _composerLock.clear();
-    _composerSuggestion = _ctx.backend.promptSuggestion(conv); // setTarget gave it
-    applyComposerAccess();
     _typing->setTarget(conv, 0);
     _sidebar->select(conv);
     showCanvas(false);
@@ -2195,8 +2149,6 @@ void Shell::leaveWorkspace() {
         _pendingNav = {}; // a manual switch cancels a jump
     _composer->setTarget(kNoConv, 0);
     _composer->setEnabled(false);
-    _composerLock.clear();
-    _composerSuggestion.clear();
     _typing->setTarget(kNoConv, 0);
     _sidebar->select(kNoConv);
     showCanvas(false);
@@ -2835,7 +2787,7 @@ void Shell::onChange(const model::Change &ch) {
         if (ch.conv == _current)
             updateHeader();
         if (ch.conv == _current || ch.kind == K::Roster)
-            applyComposerAccess(); // the lock flips while the chat is open
+            _composer->refreshPlaceholder(); // a rename follows while the chat is open
         // A poll or a roster reload brings a burst of Meta: count once after
         // it (each count walks every conversation of every workspace). A
         // Roster was counted already (refreshWorkspaceIcon → refreshRail).

@@ -5,8 +5,7 @@
 //    Enter / Escape to handleKey();
 //  - the link popup (URL, Display text, Cancel / Insert), the schedule-send
 //    popup (Send at, Cancel / Schedule), the GIF picker (GIPHY key setup,
-//    search), and the undo-send chip ("Message sent · Undo Ctrl+Z");
-//  - HistorySearch: Ctrl+R's earlier-prompt search on the composer box, over a dimmed message area.
+//    search), and the undo-send chip ("Message sent · Undo Ctrl+Z").
 #pragma once
 
 #include "screens/common/context.h"
@@ -101,64 +100,5 @@ struct GifHooks {
     std::function<void(std::string, std::string)> picked; // url, title
 };
 ui::Popup *showGifPicker(ui::Window &w, ui::RectF anchor, screens::Context &ctx, GifHooks hooks);
-
-// The entries holding every word
-// of the query (case-insensitively; an empty query matches all), and where
-// the words are in a text (byte start, length), sorted and merged.
-std::vector<size_t> historyFilter(const std::vector<std::string> &entries, std::string_view query);
-std::vector<std::pair<size_t, size_t>>
-historyMatches(std::string_view text, std::string_view query);
-
-// Ctrl+R in the composer: the matches on top,
-// newest at the bottom next to the search field under them; ↑ / Ctrl+R go
-// to older ones, ↓ to newer, PageUp / PageDown five at a time, Enter or a
-// click takes one into the editor (not sent), Esc or a click on the dimmed
-// area above closes it (the focus back to the composer), the focus going
-// anywhere else just closes it.
-class HistorySearch : public ui::Popup {
-public:
-    // `entries` newest first (repeats keep the newest); `box` is the
-    // composer's box and `area` what is dimmed above it (window rects).
-    static HistorySearch *open(
-        ui::Window              &w,
-        std::vector<std::string> entries,
-        std::string_view         query,
-        ui::RectF                box,
-        ui::RectF                area
-    );
-    ~HistorySearch() override;
-
-    std::function<void(const std::string &)> onPicked;
-    std::function<void()>                    onCancelled; // Esc, a click on the shade
-
-    const std::string       &query() const;
-    std::vector<std::string> matches() const; // newest first
-    std::string              selectedEntry() const;
-    int                      selected() const { return _sel; }
-    ui::TextEdit            &field() const { return *_field; }
-    void                     select(int match);
-    void                     pick();
-    void                     dismiss();
-
-    void layout() override;
-
-private:
-    HistorySearch(std::vector<std::string> entries, ui::RectF box);
-    void refilter();
-    bool key(const ui::Event &e);
-
-    std::vector<std::string>     _entries;
-    std::vector<std::string>     _folded;  // _entries through foldCase
-    std::vector<size_t>          _matches; // into _entries, newest first
-    std::vector<ui::Clickable *> _rows;    // by match
-    ui::ScrollView              *_scroll = nullptr;
-    ui::Label                   *_empty  = nullptr;
-    ui::TextEdit                *_field  = nullptr;
-    ui::Popup                   *_shade  = nullptr;
-    ui::RectF                    _box;
-    ui::SizeF                    _winSize;
-    int                          _sel    = 0;
-    bool                         _closed = false;
-};
 
 } // namespace shell

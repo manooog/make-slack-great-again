@@ -347,8 +347,7 @@ public:
     uint64_t                    sectionsRevision() const { return _sectionsRev; }
 
     // ── Typing ──────────────────────────────────────────────────────────────
-    // sinceMs: an agent "thinking" since then (Typing::sinceMs); 0 = typing.
-    void setTyping(ConvRef c, UserRef u, Ts thread, bool on, int64_t sinceMs = 0);
+    void setTyping(ConvRef c, UserRef u, Ts thread, bool on);
     const std::vector<Typing> &typing(ConvRef c) const;
 
     // ── Custom emoji ────────────────────────────────────────────────────────

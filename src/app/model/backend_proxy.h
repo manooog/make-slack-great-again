@@ -82,7 +82,6 @@ public:
     void        loadMembers(ConvRef c, MembersDone done) override;
     bool        gifSearchAvailable() const override;
     void        searchGifs(std::string query, std::function<void(std::vector<Gif>)> done) override;
-    std::string promptSuggestion(ConvRef c) const override;
     void searchPage(std::string query, std::string cursor, SearchPageDone done) override;
     void loadMessage(ConvRef c, Ts ts, MessageDone done) override;
     void loadThreadsView(std::string cursor, ThreadsViewDone done) override;

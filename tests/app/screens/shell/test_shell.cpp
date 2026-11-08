@@ -1799,22 +1799,6 @@ TEST("drafts: files are stashed with the text") {
     CHECK_FALSE(d.has(k));
 }
 
-TEST("drafts: a message put back goes in front, its files join") {
-    Store                        ws, other;
-    shell::DraftStash            d;
-    const shell::DraftStash::Key k{3, 0};
-    d.setScope("ws");
-    d.setStoreOf([&](const std::string &scope) { return scope == "ws" ? &ws : &other; });
-    d.putBack("ws", k, "lost", {"/tmp/a"});
-    CHECK_STR(d.get(k), "lost");
-    d.putBack("ws", k, "first", {"/tmp/a", "/tmp/b"});
-    CHECK(d.get(k).find("first") < d.get(k).find("lost"));
-    CHECK((d.files(k) == std::vector<std::string>{"/tmp/a", "/tmp/b"}));
-    // Another workspace's draft, not this one's.
-    d.putBack("other", k, "x", {});
-    CHECK(d.get(k).find('x') == std::string::npos);
-}
-
 // ── Dialogs and the undo toast ──────────────────────────────────────────────
 
 namespace {
@@ -3739,14 +3723,6 @@ TEST("header: names, presence, DND and my phantom state follow the Store") {
     st.usersChanged();
     pump();
     CHECK(w.sh->header().avatarPresence() == int(P::Away));
-    st.user(mira).unavailable = true; // an unreachable peer is phantom too
-    st.usersChanged();
-    pump();
-    CHECK(w.sh->header().avatarPresence() == int(P::Phantom));
-    st.user(mira).dnd = true;
-    st.usersChanged();
-    pump();
-    CHECK(w.sh->header().avatarPresence() == int(P::PhantomDnd));
     // A name that changes later: the title and "Message …" follow.
     st.user(mira).displayName = "Mira O.";
     st.usersChanged();

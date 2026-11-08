@@ -124,12 +124,8 @@ struct Fake : fake::FakeBackend {
     } scheduled;
     std::string scheduledText;
     bool        gifSearchAvailable() const override { return gifs; }
-    std::string promptSuggestion(ConvRef c) const override {
-        return c == suggestFor ? std::string("run the  tests\nagain") : std::string();
-    }
     bool                  broadcast = false, huddles = false, schedule = false, gifs = true;
     int                   broadcasts = 0;
-    ConvRef               suggestFor = kNoConv;
     std::string           membersError, lastBlocks;
     bool                  holdMembers = false;
     std::function<void()> heldMembers;
@@ -1208,6 +1204,20 @@ TEST("composer: the window's is disabled until a conversation opens; an embedded
     CHECK_STR(c.edit().text(), "note");
 }
 
+TEST("composer: the placeholder follows a conversation rename") {
+    Harness       h;
+    const ConvRef jonas = h.conv("D0JONAS");
+    h.sh->open(jonas);
+    pump();
+    auto &c = h.composer();
+    CHECK_STR(c.edit().accessibleName(), "Message Jonas Weber");
+    h.store.updateConversation(
+        jonas, [](model::Conversation &cv) { cv.localName = "Jonas (work)"; }
+    );
+    pump();
+    CHECK_STR(c.edit().accessibleName(), "Message Jonas (work)");
+}
+
 TEST("composer: a mention pill shows the name as Settings → Names does") {
     Harness      h;
     auto        &c    = h.composer();
@@ -1359,49 +1369,14 @@ TEST("composer: undo send takes the message back and returns the text") {
     CHECK_FALSE(c.undoOffered());
 }
 
-TEST("composer: a message that never went out comes back, in front of what's typed") {
+TEST("composer: giving a message back keeps what was typed since and its files") {
     Harness           h;
-    const ConvRef     design = h.conv("C0DESIGN");
-    const ConvRef     jonas  = h.conv("D0JONAS");
-    const std::string png    = MSGA_TEST_ASSETS "/images/blog-hero.png";
-    const std::string scope  = h.sh->drafts().scope();
-    auto             &c      = h.composer();
-    // Shown: the editor gets it, what was typed since on the next line.
+    const std::string png = MSGA_TEST_ASSETS "/images/blog-hero.png";
+    auto             &c   = h.composer();
     c.edit().insertText("typed since");
-    h.sh->giveBackUnsent(scope, h.store, design, 0, "lost *bold* & <@U0MIRA>", {png});
+    c.giveBack("lost *bold* & <@U0MIRA>", {png});
     CHECK_STR(c.mrkdwn(), "lost *bold* & <@U0MIRA>\ntyped since");
     CHECK(c.attachments() == std::vector<std::string>{png});
-    c.clearAttachments();
-    c.edit().clear();
-    // Moved on: it waits in front of that conversation's draft.
-    h.sh->open(jonas);
-    pump();
-    c.edit().insertText("draft");
-    h.sh->open(design);
-    pump();
-    h.sh->giveBackUnsent(scope, h.store, jonas, 0, "lost", {png});
-    CHECK(c.edit().empty());
-    h.sh->open(jonas);
-    pump();
-    CHECK_STR(c.mrkdwn(), "lost\ndraft");
-    CHECK(c.attachments() == std::vector<std::string>{png});
-    // Another workspace's: its own drafts, not the one shown.
-    c.clearAttachments();
-    c.edit().clear();
-    h.sh->giveBackUnsent(scope + "-other", h.store, jonas, 0, "elsewhere", {});
-    CHECK(c.edit().empty());
-}
-
-TEST("composer: a suggested reply is the placeholder, Tab takes it") {
-    Harness h;
-    h.backend.suggestFor = h.conv("D0JONAS");
-    h.sh->open(h.conv("D0JONAS"));
-    pump();
-    auto &c = h.composer();
-    CHECK_STR(c.suggestion(), "run the tests again");
-    CHECK_STR(c.edit().accessibleName(), "run the tests again  \xE2\x86\x92");
-    REQUIRE(c.acceptSuggestion());
-    CHECK_STR(c.edit().text(), "run the tests again");
 }
 
 TEST("composer: CommonMark habits go out as mrkdwn") {

@@ -720,7 +720,7 @@ msgstr "メールアプリがないため、アドレスをコピーしました
 msgid "%1m"
 msgstr "%1分"
 
-#: src/app/screens/messages/rows.cpp src/app/screens/shell/typing_indicator.cpp
+#: src/app/screens/messages/rows.cpp
 msgid "%1h %2m"
 msgstr "%1時間%2分"
 
@@ -2269,14 +2269,6 @@ msgstr "GIFが見つかりませんでした。"
 msgid "Paste a key first."
 msgstr "先にキーを貼り付けてください。"
 
-#: src/app/screens/shell/composer_popups.cpp
-msgid "No earlier prompt matches"
-msgstr "一致する以前のプロンプトはありません"
-
-#: src/app/screens/shell/composer_popups.cpp src/app/screens/shell/shortcuts.cpp
-msgid "Search earlier prompts"
-msgstr "以前のプロンプトを検索"
-
 #: src/app/screens/shell/context_menus.cpp
 msgid "Star channel"
 msgstr "チャンネルにスターを付ける"
@@ -3239,24 +3231,8 @@ msgid "Threads you're following will appear here."
 msgstr "フォロー中のスレッドがここに表示されます。"
 
 #: src/app/screens/shell/typing_indicator.cpp
-msgid "%1s"
-msgstr "%1秒"
-
-#: src/app/screens/shell/typing_indicator.cpp
-msgid "%1m %2s"
-msgstr "%1分%2秒"
-
-#: src/app/screens/shell/typing_indicator.cpp
 msgid "<b>You</b> are typing on another device…"
 msgstr "<b>あなた</b>が別のデバイスで入力中…"
-
-#: src/app/screens/shell/typing_indicator.cpp
-msgid "%1 is thinking (%2)…"
-msgstr "%1が考え中（%2）…"
-
-#: src/app/screens/shell/typing_indicator.cpp
-msgid "%1 are thinking…"
-msgstr "%1が考え中…"
 
 #: src/app/screens/shell/update_bar.cpp
 msgid "A new version of msga is ready to install."
@@ -3480,6 +3456,24 @@ msgstr "ダウンロードに失敗しました: %1"
 #: src/app/update/updater.cpp
 msgid "Downloaded update is corrupt (checksum mismatch)."
 msgstr "ダウンロードした更新ファイルが破損しています（チェックサム不一致）。"
+
+#~ msgid "No earlier prompt matches"
+#~ msgstr "一致する以前のプロンプトはありません"
+
+#~ msgid "Search earlier prompts"
+#~ msgstr "以前のプロンプトを検索"
+
+#~ msgid "%1s"
+#~ msgstr "%1秒"
+
+#~ msgid "%1m %2s"
+#~ msgstr "%1分%2秒"
+
+#~ msgid "%1 is thinking (%2)…"
+#~ msgstr "%1が考え中（%2）…"
+
+#~ msgid "%1 are thinking…"
+#~ msgstr "%1が考え中…"
 
 #~ msgid "Version"
 #~ msgstr "バージョン"
