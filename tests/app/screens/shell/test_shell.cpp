@@ -653,7 +653,7 @@ std::string titles(shell::Sidebar &sb) {
 }
 } // namespace
 
-TEST("sections: Externals groups Slack Connect channels and DMs, with manual overrides") {
+TEST("sections: External connections group Slack Connect channels and DMs, with manual overrides") {
     Harness         h;
     shell::Sidebar &sb   = h.sh->sidebar();
     const ConvRef   eng  = h.conv("C0ENG"), mira = h.conv("D0MIRA");
@@ -663,29 +663,29 @@ TEST("sections: Externals groups Slack Connect channels and DMs, with manual ove
     h.store.updateConversation(eng, [](Conversation &c) { c.extShared = true; });
     h.store.updateConversation(mira, [](Conversation &c) { c.extShared = true; });
     pump();
-    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Externals|Direct messages");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages|External connections");
     const auto order = sb.order();
     const auto pos = [&](ConvRef c) { return std::find(order.begin(), order.end(), c); };
     REQUIRE(pos(eng) != order.end() && pos(mira) != order.end() && pos(rel) != order.end());
     CHECK(pos(eng) > pos(rel));  // external channel follows regular channels
     CHECK(pos(mira) > pos(rel)); // external DM is in the same section
 
-    REQUIRE(sb.toggleSection("Externals"));
+    REQUIRE(sb.toggleSection("External connections"));
     pump();
     CHECK_FALSE(sb.rowState(eng).visible);
     CHECK_FALSE(sb.rowState(mira).visible);
-    REQUIRE(sb.toggleSection("Externals"));
+    REQUIRE(sb.toggleSection("External connections"));
     pump();
     CHECK(sb.rowState(eng).visible);
 
     // Explicit user placements win; regular channels cannot be dropped into
-    // Externals and external ones cannot be dropped into regular Channels.
-    CHECK_FALSE(sb.dropOnSection(rel, "Externals"));
+    // External connections and external ones cannot be dropped into regular Channels.
+    CHECK_FALSE(sb.dropOnSection(rel, "External connections"));
     CHECK_FALSE(sb.dropOnSection(mira, "Channels"));
     h.backend.createSection("Projects", "", eng);
     pump();
     CHECK_STR(sb.rowSection(eng), h.store.sections()[0].id);
-    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|Externals|Direct messages");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|Direct messages|External connections");
     REQUIRE(sb.dropOnSection(mira, "Starred"));
     pump();
     CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|Direct messages");
@@ -693,7 +693,7 @@ TEST("sections: Externals groups Slack Connect channels and DMs, with manual ove
     // Removing an explicit placement falls back to automatic grouping.
     h.backend.deleteSection(h.store.sections()[0].id);
     pump();
-    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Externals|Direct messages");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages|External connections");
     h.store.updateConversation(eng, [](Conversation &c) { c.extShared = false; });
     pump();
     CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages");
@@ -822,18 +822,18 @@ TEST("sections: moving headers persists a workspace-local order") {
     h.store.updateConversation(mira, [](Conversation &c) { c.extShared = true; });
     h.backend.createSection("Projects", "", kNoConv);
     pump();
-    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|Externals|Direct messages");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|Direct messages|External connections");
 
     // This is a client-side header preference, not a Slack section mutation.
     CHECK_FALSE(sb.moveSection("#starred", -1));
-    CHECK_FALSE(sb.moveSection("#direct", 1));
+    CHECK_FALSE(sb.moveSection("#externals", 1));
     REQUIRE(sb.moveSection("#externals", -1));
     pump();
-    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Externals|Channels|Direct messages");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|External connections|Direct messages");
     REQUIRE(h.settings.sidebarSectionOrders.size() == 1);
     const auto &pref = h.settings.sidebarSectionOrders[0];
     CHECK(pref.sections == sb.sectionOrder());
-    CHECK_STR(pref.sections[2], "#externals");
+    CHECK_STR(pref.sections[3], "#externals");
     CHECK(h.settings.toFile().find("sidebarSectionOrders") != std::string::npos);
 
     // Reading settings on workspace switch restores the same local order.
@@ -841,7 +841,7 @@ TEST("sections: moving headers persists a workspace-local order") {
     h.settings.sidebarSectionOrders.push_back({workspace + "-other", {"#direct", "#channels"}});
     h.sh->workspaceChanged();
     pump();
-    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Externals|Channels|Direct messages");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|External connections|Direct messages");
 
     // A section that disappears doesn't erase the saved order. It returns
     // to its place when there are external conversations again.
@@ -851,7 +851,7 @@ TEST("sections: moving headers persists a workspace-local order") {
     CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|Direct messages");
     h.store.updateConversation(eng, [](Conversation &c) { c.extShared = true; });
     pump();
-    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Externals|Channels|Direct messages");
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Projects|Channels|External connections|Direct messages");
 }
 
 TEST("sections: adjacent custom section moves also update Slack's order") {
