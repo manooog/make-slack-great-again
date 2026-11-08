@@ -579,37 +579,6 @@ void FakeBackend::userTyping(ConvRef, Ts) {
     // Nobody is watching the fake workspace type.
 }
 
-void FakeBackend::search(std::string query, std::function<void(std::vector<SearchHit>)> done) {
-    std::vector<SearchHit> hits;
-    // Trimmed, case-insensitive substring over the rendered text (so a query
-    // never matches markup like "<@U…>").
-    std::string_view       q = query;
-    while (!q.empty() && q.front() == ' ')
-        q.remove_prefix(1);
-    while (!q.empty() && q.back() == ' ')
-        q.remove_suffix(1);
-    if (!q.empty()) {
-        for (ConvRef c = 0; c < _store.conversationCount(); ++c) {
-            const auto &conv = _store.conversation(c);
-            auto        scan = [&](const std::vector<model::Message> &msgs, Ts thread) {
-                for (const auto &m : msgs)
-                    if (utf8::containsFolded(mrkdwn::parse(m.text).text, q))
-                        hits.push_back(SearchHit{c, m.ts, thread, m.text, m.user});
-            };
-            scan(conv.messages, 0);
-            for (const auto &t : conv.threads)
-                scan(t.replies, t.root);
-        }
-        std::sort(hits.begin(), hits.end(), [](const SearchHit &a, const SearchHit &b) {
-            return a.ts > b.ts;
-        });
-    }
-    later(kReadLatencyMs * 4, [done = std::move(done), hits = std::move(hits)]() mutable {
-        if (done)
-            done(std::move(hits));
-    });
-}
-
 // The fixture backend honors the common Slack scope/author operators and
 // paginates its local results, so the popup can exercise real page transitions
 // without a network connection. Date operators are passed to Slack directly.
@@ -641,37 +610,60 @@ void FakeBackend::searchPage(std::string query, std::string cursor, SearchPageDo
         }
         begin = end;
     }
-    search(words, [this, cursor = std::move(cursor), inChannel, inUser, fromUser,
-                   done = std::move(done)](std::vector<SearchHit> hits) {
-        std::vector<SearchHit> filtered;
-        for (SearchHit &h : hits) {
-            const auto &conv = _store.conversation(h.conv);
-            if (!inChannel.empty() && conv.id != inChannel && conv.name != inChannel)
-                continue;
-            if (!inUser.empty() &&
-                (conv.kind != model::ConvKind::Dm ||
-                 conv.dmUser == model::kNoUser || _store.user(conv.dmUser).id != inUser))
-                continue;
-            if (!fromUser.empty()) {
-                if (h.user == model::kNoUser) continue;
-                const auto &sender = _store.user(h.user);
-                if (sender.id != fromUser && sender.name != fromUser &&
-                    sender.label() != fromUser) continue;
+
+    std::vector<SearchHit> hits;
+    // Case-insensitive substring over the rendered text (so a query never
+    // matches markup like "<@U…>").
+    if (!words.empty()) {
+        for (ConvRef c = 0; c < _store.conversationCount(); ++c) {
+            const auto &conv = _store.conversation(c);
+            auto        scan = [&](const std::vector<model::Message> &msgs, Ts thread) {
+                for (const auto &m : msgs)
+                    if (utf8::containsFolded(mrkdwn::parse(m.text).text, words))
+                        hits.push_back(SearchHit{c, m.ts, thread, m.text, m.user});
+            };
+            scan(conv.messages, 0);
+            for (const auto &t : conv.threads)
+                scan(t.replies, t.root);
+        }
+        std::sort(hits.begin(), hits.end(), [](const SearchHit &a, const SearchHit &b) {
+            return a.ts > b.ts;
+        });
+    }
+    later(
+        kReadLatencyMs * 4,
+        [this, cursor = std::move(cursor), inChannel, inUser, fromUser,
+         done = std::move(done), hits = std::move(hits)]() mutable {
+            std::vector<SearchHit> filtered;
+            for (SearchHit &h : hits) {
+                const auto &conv = _store.conversation(h.conv);
+                if (!inChannel.empty() && conv.id != inChannel && conv.name != inChannel)
+                    continue;
+                if (!inUser.empty() &&
+                    (conv.kind != model::ConvKind::Dm ||
+                     conv.dmUser == model::kNoUser || _store.user(conv.dmUser).id != inUser))
+                    continue;
+                if (!fromUser.empty()) {
+                    if (h.user == model::kNoUser) continue;
+                    const auto &sender = _store.user(h.user);
+                    if (sender.id != fromUser && sender.name != fromUser &&
+                        sender.label() != fromUser) continue;
+                }
+                filtered.push_back(std::move(h));
             }
-            filtered.push_back(std::move(h));
+            constexpr size_t count = 20;
+            const size_t start = cursor.empty() || cursor == "*"
+                ? 0 : size_t(std::strtoull(cursor.c_str(), nullptr, 10));
+            SearchPage result;
+            if (start < filtered.size()) {
+                const size_t end = std::min(start + count, filtered.size());
+                result.hits.assign(filtered.begin() + start, filtered.begin() + end);
+                if (end < filtered.size())
+                    result.nextCursor = std::to_string(end);
+            }
+            if (done) done(std::move(result));
         }
-        constexpr size_t count = 20;
-        const size_t start = cursor.empty() || cursor == "*"
-            ? 0 : size_t(std::strtoull(cursor.c_str(), nullptr, 10));
-        SearchPage result;
-        if (start < filtered.size()) {
-            const size_t end = std::min(start + count, filtered.size());
-            result.hits.assign(filtered.begin() + start, filtered.begin() + end);
-            if (end < filtered.size())
-                result.nextCursor = std::to_string(end);
-        }
-        if (done) done(std::move(result));
-    });
+    );
 }
 
 // ── Canvases ────────────────────────────────────────────────────────────────

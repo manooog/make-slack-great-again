@@ -1694,12 +1694,6 @@ void SlackBackend::setPhoto(std::string path, Done done) {
 
 // ── Search ──────────────────────────────────────────────────────────────────
 
-void SlackBackend::search(std::string query, std::function<void(std::vector<SearchHit>)> done) {
-    searchPage(std::move(query), "*", [done = std::move(done)](SearchPage result) {
-        if (done) done(std::move(result.hits));
-    });
-}
-
 void SlackBackend::searchPage(std::string query, std::string cursor, SearchPageDone done) {
     // search.messages supports cursormark pagination. Keep timestamp order
     // so each workspace can be merged into one newest-first result stream.

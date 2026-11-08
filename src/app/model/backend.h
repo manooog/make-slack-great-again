@@ -56,8 +56,8 @@ public:
         return false;
     }
     virtual void markRead(ConvRef conv, Ts ts) = 0;
-    // What follows, down to search(), defaults to nothing for a backend
-    // without it: no-ops; openDm gives kNoConv, search finds nothing.
+    // What follows, down to searchPage(), defaults to nothing for a backend
+    // without it: no-ops; openDm gives kNoConv, searchPage finds nothing.
     virtual void edit(ConvRef conv, Ts ts, std::string text);
     virtual void remove(ConvRef conv, Ts ts);
     virtual void react(ConvRef conv, Ts ts, std::string_view name, bool add);
@@ -439,9 +439,9 @@ public:
         std::string           error;      // nonempty on API/transport failure, never an empty success
     };
     using SearchPageDone = std::function<void(SearchPage)>;
-    // Messages containing `query`, newest first. Use "*" for the first page,
-    // then pass the previous page's nextCursor unchanged.
-    virtual void search(std::string query, std::function<void(std::vector<SearchHit>)> done);
+    // One page of messages containing `query`, newest first. Use "*" for the
+    // first page, then pass the previous page's nextCursor unchanged. A
+    // backend without search answers an empty page.
     virtual void searchPage(std::string query, std::string cursor, SearchPageDone done);
 
     // The sidebar's "Threads" page (Capabilities::threadsView):

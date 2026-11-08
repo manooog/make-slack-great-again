@@ -47,7 +47,7 @@ int main(int argc, char **argv) {
             be.userTyping(0, 0);
             be.loadHistory(0, 0, nullptr);
             be.loadThread(0, 0, nullptr);
-            be.search("q", [](std::vector<model::Backend::SearchHit>) {});
+            be.searchPage("q", "*", [](model::Backend::SearchPage) {});
             std::printf("%s %zu\n", store.emojiFor(arg).unicode.c_str(), store.indexOf(0, 1));
             app->quit();
         });

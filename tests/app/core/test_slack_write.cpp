@@ -522,17 +522,19 @@ TEST("slack write: search maps channel, ts and thread; unknown channels are skip
             {"channel":{"id":"C404"},"ts":"1700000003.000400"}]},
             "response_metadata":{"next_cursor":"search-page-2"}}])"
     );
-    std::vector<model::Backend::SearchHit> hits;
-    bool                                   got = false;
-    e.be->search("hello world", [&](std::vector<model::Backend::SearchHit> h) {
-        hits = std::move(h);
-        got  = true;
+    model::Backend::SearchPage initial;
+    bool                       got = false;
+    e.be->searchPage("hello world", "*", [&](model::Backend::SearchPage result) {
+        initial = std::move(result);
+        got     = true;
     });
     REQUIRE(pumpUntil([&] { return got; }));
-    REQUIRE(hits.size() == 2);
-    CHECK(hits[0].conv == e.general && hits[0].ts == model::parseTs("1700000001.000200"));
-    CHECK(hits[0].thread == 0);
-    CHECK(hits[1].conv == e.dm && hits[1].thread == model::parseTs("1700000000.000100"));
+    REQUIRE(initial.hits.size() == 2);
+    CHECK(initial.hits[0].conv == e.general &&
+          initial.hits[0].ts == model::parseTs("1700000001.000200"));
+    CHECK(initial.hits[0].thread == 0);
+    CHECK(initial.hits[1].conv == e.dm &&
+          initial.hits[1].thread == model::parseTs("1700000000.000100"));
     const Log   log;
     json::Value q = log.get("search.messages")["form"];
     CHECK_STR(q["query"].str(), "hello world");
