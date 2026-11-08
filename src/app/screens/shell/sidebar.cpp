@@ -968,7 +968,7 @@ void Sidebar::rebuild() {
     }
 
     // Starred and custom sections win over automatic grouping; external
-    // External conversations share one section across channels and DMs.
+    // conversations share one section across channels and DMs.
     std::vector<ConvRef> lists[4], hiddenCh, external, vipUnread;
     const auto           listed = [&](ConvRef c) {
         return !_filters.unreadsOnly || c == _selected || paintsUnread(store.conversation(c));
@@ -1109,8 +1109,8 @@ void Sidebar::rebuild() {
         // Starred and Agents & apps are hidden while they have no rows.
         if (!lists[s].empty() || (s != Starred && s != Apps))
             entries.push_back({Kind(s), defs[s].icon, defs[s].title, &lists[s], {}});
-        // Default placement: Channels, External connections, then Direct messages.
-        if (s == Channels && !external.empty())
+        // Default placement: Channels, Direct messages, then External connections.
+        if (s == Direct && !external.empty())
             entries.push_back({External, Icon::Building, tr("External connections"), &external, {}});
     }
     if (!_sectionOrder.empty()) {
@@ -1527,7 +1527,7 @@ static bool accepts(const SectionHeader *to, const SectionHeader *from, bool ext
         return false;
     if (to->kind == Sidebar::Custom || to->kind == Sidebar::Starred)
         return true;
-    // Sidebar::External connections are derived from Slack metadata, not user-defined sections.
+    // External connections are derived from Slack metadata, not user-defined sections.
     if (to->kind == Sidebar::External)
         return external && (from->kind == Sidebar::Custom || from->kind == Sidebar::Starred);
     if (external)
