@@ -4,9 +4,8 @@
 // the account's Slack theme, message reminders going off, the Threads
 // entry's unread state, the Activity page's feed, the dead-conversation
 // cache, the rate-limit and send-failure banners, mentioned channels and
-// user groups, the app-keys OAuth sign-in. Nothing here talks to the real Slack.
+// user groups. Nothing here talks to the real Slack.
 #include "app/cache/workspace_cache.h"
-#include "app/slack/oauth.h"
 #include "app/slack/slack_backend.h"
 #include "app/slack/slack_json.h"
 #include "support/fake_slack_server.h"
@@ -14,7 +13,6 @@
 #include "base/str.h"
 #include "support/test.h"
 #include "base/time.h"
-#include "plat/testing.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -27,37 +25,15 @@
 namespace {
 
 using fakeslack::app;
+using fakeslack::count;
 using fakeslack::ctl;
+using fakeslack::Log;
 using fakeslack::pumpFor;
 using fakeslack::pumpUntil;
+using fakeslack::set;
 using model::ConvRef;
 using model::kNoConv;
 using model::Ts;
-
-void set(const std::string &json) {
-    ctl("POST", "/_ctl/set", json);
-}
-
-struct Log {
-    json::Document doc;
-    Log() { doc.parse(ctl("GET", "/_ctl/log").body, nullptr); }
-    int count(std::string_view method) const {
-        int n = 0;
-        for (json::Value r : doc.root())
-            n += r["method"].str() == method;
-        return n;
-    }
-    json::Value get(std::string_view method, int n = 0) const {
-        for (json::Value r : doc.root())
-            if (r["method"].str() == method && n-- == 0)
-                return r;
-        return {};
-    }
-};
-
-int count(std::string_view method) {
-    return Log().count(method);
-}
 
 const char *kWorkspace = R"({
  "auth.test": {"ok": true, "user_id": "UME", "team_id": "T1", "team": "Lumen",
@@ -858,47 +834,6 @@ TEST("slack features: mentioned channels and user groups resolve; dead ids persi
     cache::WorkspaceCache::remove(app(), "slack:T1");
 }
 
-TEST("slack features: an OAuth callback delivered twice exchanges the code once") {
-    if (!haveServer())
-        return;
-    plat::TestHooks *hooks = app().testHooks();
-    if (!hooks)
-        return;
-    ctl("POST", "/_ctl/reset");
-    // The first exchange answers late; a second one (the same code again)
-    // would fail at once, end the flow — and the late answer would then land
-    // on a destroyed flow (issue #96).
-    set(R"({"oauth.v2.access": [
-              {"ok": true, "authed_user": {"access_token": "xoxp-new"},
-               "team": {"id": "T9", "name": "Nine"}, "__delay": 0.3},
-              {"ok": false, "error": "invalid_code"}]})");
-    net::Client client{app()};
-    auto        flow = std::make_unique<slack::OAuthFlow>(
-        app(), client, slack::AppConfig{"cid", "secret", "xapp-1"}
-    );
-    int         called = 0;
-    std::string token, error;
-    flow->start([&](slack::Credentials c, std::string err) {
-        ++called;
-        token = c.token;
-        error = std::move(err);
-        app().post([&] { flow.reset(); }); // as Accounts does (releaseLater)
-    });
-    std::string opened;
-    REQUIRE(hooks->lastOpenedUrl(&opened));
-    const std::string state = net::queryValue(opened.substr(opened.find('?')), "state");
-    REQUIRE(!state.empty());
-    const std::string url = "msga://oauth/callback?code=c1&state=" + state;
-    CHECK(flow->handleCallback(url));
-    CHECK_FALSE(flow->handleCallback(url)); // a second launch's copy
-    REQUIRE(pumpUntil([&] { return called > 0; }));
-    pumpFor(500);
-    CHECK(called == 1);
-    CHECK_STR(error, "");
-    CHECK_STR(token, "xoxp-new");
-    CHECK(count("oauth.v2.access") == 1);
-}
-
 TEST("slack features: custom sidebar sections — the list, moves, create, a refused edit") {
     if (!haveServer())
         return;
@@ -1219,7 +1154,14 @@ TEST("slack features: an Activity item is marked read and unread with its key") 
     REQUIRE(!f.page.items.empty());
     e.be->setActivityRead(f.page.items[0], true);
     e.be->setActivityRead(f.page.items[0], false);
-    REQUIRE(pumpUntil([&] { return count("activity.markUnread") == 1; }, 3000));
+    REQUIRE(pumpUntil(
+        [&] {
+            const Log pending;
+            return pending.count("activity.markRead") == 1 &&
+                   pending.count("activity.markUnread") == 1;
+        },
+        3000
+    ));
     const Log      log;
     json::Document entries;
     REQUIRE(entries.parse(std::string(log.get("activity.markRead")["form"]["entries"].str())));
