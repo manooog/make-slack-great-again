@@ -966,26 +966,31 @@ TEST("backend: calls a service lacks default to nothing") {
     CHECK(s.conversationCount() == 0);
 }
 
-TEST("backend proxy: searchPage follows the active workspace") {
+TEST("backend proxy: searchPage follows the active target") {
     struct SearchBackend : NullBackend {
-        explicit SearchBackend(Store &store) : NullBackend(store) {}
+        std::string identity;
+        SearchBackend(Store &store, std::string identity)
+            : NullBackend(store), identity(std::move(identity)) {}
         void searchPage(std::string, std::string cursor, SearchPageDone done) override {
             SearchPage page;
             page.hits.resize(1);
-            page.nextCursor = cursor == "*" ? "next" : "";
+            page.hits[0].text = identity;
+            page.nextCursor  = cursor;
             if (done) done(std::move(page));
         }
     };
     Store         s;
-    SearchBackend first{s}, second{s};
+    SearchBackend first{s, "first"}, second{s, "second"};
     BackendProxy  proxy{s, first};
     Backend::SearchPage result;
     proxy.searchPage("q", "*", [&](Backend::SearchPage page) { result = std::move(page); });
-    CHECK(result.hits.size() == 1);
-    CHECK_STR(result.nextCursor, "next");
+    REQUIRE(result.hits.size() == 1);
+    CHECK_STR(result.hits[0].text, "first");
+    CHECK_STR(result.nextCursor, "*");
     proxy.setTarget(second);
     result = {};
     proxy.searchPage("q", "next", [&](Backend::SearchPage page) { result = std::move(page); });
-    CHECK(result.hits.size() == 1);
-    CHECK(result.nextCursor.empty());
+    REQUIRE(result.hits.size() == 1);
+    CHECK_STR(result.hits[0].text, "second");
+    CHECK_STR(result.nextCursor, "next");
 }
