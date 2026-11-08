@@ -35,21 +35,21 @@ expect_rejected() {
 }
 
 # The exact CI workflow and commit are accepted.
-run_json "$workflow_path" CI push master "$sha" "$repo" |
+run_json "$workflow_path" CI push dev "$sha" "$repo" |
   bash "$guard" "$workflow_path" "$sha" "$repo"
 
 # A different workflow with the same display name must not authorize release.
 expect_rejected "same name, different workflow path" \
-  "$(run_json ".github/workflows/build.yml" CI push master "$sha" "$repo")"
+  "$(run_json ".github/workflows/build.yml" CI push dev "$sha" "$repo")"
 expect_rejected "different commit" \
-  "$(run_json "$workflow_path" CI push master "ffffffffffffffffffffffffffffffffffffffff" "$repo")"
+  "$(run_json "$workflow_path" CI push dev "ffffffffffffffffffffffffffffffffffffffff" "$repo")"
 expect_rejected "pull request event" \
-  "$(run_json "$workflow_path" CI pull_request master "$sha" "$repo")"
-expect_rejected "non-master branch" \
+  "$(run_json "$workflow_path" CI pull_request dev "$sha" "$repo")"
+expect_rejected "non-dev branch" \
   "$(run_json "$workflow_path" CI push feature/test "$sha" "$repo")"
 expect_rejected "different repository" \
-  "$(run_json "$workflow_path" CI push master "$sha" "someone-else/repo")"
+  "$(run_json "$workflow_path" CI push dev "$sha" "someone-else/repo")"
 expect_rejected "different workflow name" \
-  "$(run_json "$workflow_path" Build push master "$sha" "$repo")"
+  "$(run_json "$workflow_path" Build push dev "$sha" "$repo")"
 
 echo "Release CI provenance checks passed."

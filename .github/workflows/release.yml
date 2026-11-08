@@ -1,7 +1,7 @@
 name: Release
 
 # Public releases are intentional, not a side-effect of every merge.
-# Only an artifact from a successful push-to-master CI run of this exact
+# Only an artifact from a successful push-to-dev CI run of this exact
 # commit can be published. Never use the upstream msga.app updater.
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       ci_run_id:
-        description: 'Optional master CI run ID to wait for (defaults to this commit)'
+        description: 'Optional dev CI run ID to wait for (defaults to this commit)'
         required: false
         type: string
 
@@ -20,14 +20,14 @@ permissions:
   actions: read
 
 concurrency:
-  group: release-master
+  group: release-dev
   cancel-in-progress: false
 
 run-name: Release v${{ inputs.version }}
 
 jobs:
   publish:
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
@@ -63,7 +63,7 @@ jobs:
 
           # The release button can be clicked immediately after a push. The
           # corresponding CI run may not have been registered yet, or may still
-          # be running. Wait for that exact master push instead of racing it.
+          # be running. Wait for that exact dev push instead of racing it.
           run_id="$REQUESTED_RUN_ID"
           if [[ -n "$run_id" && ! "$run_id" =~ ^[0-9]+$ ]]; then
             echo "ci_run_id must be a numeric GitHub Actions run ID" >&2
@@ -82,12 +82,12 @@ jobs:
           for attempt in $(seq 1 "$max_attempts"); do
             if [[ -z "$run_id" ]]; then
               runs_json="$(gh api -X GET "repos/${GH_REPO}/actions/runs" \
-                -f head_sha="$GITHUB_SHA" -f branch=master -f event=push -F per_page=50)"
+                -f head_sha="$GITHUB_SHA" -f branch=dev -f event=push -F per_page=50)"
               run_id="$(jq -r --arg sha "$GITHUB_SHA" --arg repo "$GH_REPO" --arg path "$workflow_path" '
                 [.workflow_runs[]
                   | select(
                     .head_sha == $sha and
-                    .head_branch == "master" and
+                    .head_branch == "dev" and
                     .event == "push" and
                     .path == $path and
                     .head_repository.full_name == $repo
@@ -97,11 +97,11 @@ jobs:
             fi
 
             if [[ -z "$run_id" ]]; then
-              echo "[$attempt/$max_attempts] Waiting for the master CI run for $GITHUB_SHA to appear..."
+              echo "[$attempt/$max_attempts] Waiting for the dev CI run for $GITHUB_SHA to appear..."
             else
               run_json="$(gh api "repos/${GH_REPO}/actions/runs/${run_id}")"
               if ! scripts/verify-release-ci-run.sh "$workflow_path" "$GITHUB_SHA" "$GH_REPO" <<< "$run_json"; then
-                echo "CI run $run_id is not the master push from $workflow_path for this exact commit" >&2
+                echo "CI run $run_id is not the dev push from $workflow_path for this exact commit" >&2
                 exit 1
               fi
 
@@ -110,13 +110,13 @@ jobs:
 
               if [[ "$ci_status" == "completed" ]]; then
                 if [[ "$ci_conclusion" != "success" ]]; then
-                  echo "Master CI run $run_id completed with conclusion: $ci_conclusion" >&2
+                  echo "Dev CI run $run_id completed with conclusion: $ci_conclusion" >&2
                   exit 1
                 fi
                 break
               fi
 
-              echo "[$attempt/$max_attempts] Master CI run $run_id is $ci_status; waiting..."
+              echo "[$attempt/$max_attempts] Dev CI run $run_id is $ci_status; waiting..."
             fi
 
             if (( attempt < max_attempts )); then
@@ -125,7 +125,7 @@ jobs:
           done
 
           if [[ "$ci_status" != "completed" || "$ci_conclusion" != "success" ]]; then
-            echo "Timed out waiting for successful master CI for $GITHUB_SHA (waited up to 20 minutes)" >&2
+            echo "Timed out waiting for successful dev CI for $GITHUB_SHA (waited up to 20 minutes)" >&2
             exit 1
           fi
 
@@ -172,7 +172,7 @@ jobs:
           CI_RUN_ID: ${{ steps.verify.outputs.run_id }}
         run: |
           set -euo pipefail
-          notes="Verified fork builds from master (commit \`${GITHUB_SHA}\`, CI run ${CI_RUN_ID}). Assets: Linux x86_64 dynamically linked binary and Windows x86_64 statically linked MinGW executable. Upstream in-app updater disabled. See README.md for platform and runtime guidance; the Linux dependency list is attached as DEPENDENCIES.txt."
+          notes="Verified fork builds from dev (commit \`${GITHUB_SHA}\`, CI run ${CI_RUN_ID}). Assets: Linux x86_64 dynamically linked binary and Windows x86_64 statically linked MinGW executable. Upstream in-app updater disabled. See README.md for platform and runtime guidance; the Linux dependency list is attached as DEPENDENCIES.txt."
           assets=(
             dist/SHA256SUMS
             dist/linux/DEPENDENCIES.txt

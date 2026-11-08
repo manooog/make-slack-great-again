@@ -215,11 +215,11 @@ Regression coverage lives in `tests/app/core/test_slack*`,
   with MSYS2/MinGW. Test processes isolate HOME/XDG state, and the fake Slack
   and LLM servers bind process-specific loopback ports. Sanitizer validation
   may limit CTest parallelism without changing ordinary CI's four workers.
-- Release first checks out the dispatch commit, then validates a push-to-master
+- Release first checks out the dispatch commit, then validates a push-to-dev
   CI run's workflow path, repository, branch and exact commit SHA. A display
   name alone is not identity. Only a completed successful run supplies the named
   production artifacts; waiting, download or checksum failures block publication.
 - Release dispatches share a non-cancelling concurrency group. Preview artifacts
   are never used as production artifacts. Upstream synchronization pushes only
   a proposal branch with a lease, opens a PR, and explicitly dispatches CI;
-  it never merges into master or publishes a release.
+  it never merges into dev or publishes a release.

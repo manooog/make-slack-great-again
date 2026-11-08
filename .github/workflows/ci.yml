@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [dev]
   pull_request:
   workflow_dispatch:
 
@@ -154,7 +154,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      # Make the actual production binary during successful master CI, so
+      # Make the actual production binary during successful dev CI, so
       # publishing can reuse this verified SHA's artifact without compiling again.
       - name: Configure production build
         if: github.event_name == 'push' && matrix.artifact
@@ -297,7 +297,7 @@ jobs:
           retention-days: 14
 
       - name: Upload production artifact
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: msga-windows-x86_64-release

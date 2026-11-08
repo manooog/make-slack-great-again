@@ -24,7 +24,7 @@ jq -e \
     .path == $workflow_path and
     .name == "CI" and
     .event == "push" and
-    .head_branch == "master" and
+    .head_branch == "dev" and
     .head_sha == $sha and
     .head_repository.full_name == $repo
   ' >/dev/null

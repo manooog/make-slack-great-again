@@ -18,7 +18,7 @@ This fork keeps the upstream native C++ Slack client and concentrates its change
 
 - Removed the Claude Code workspace and agent-session integration, including its agent UI, process/worktree handling, approvals, linked agent threads and related voice-dictation code, assets and tests.
 - Kept Slack-native messaging features and the independent **Summarize down** capability; removing the agent integration does not remove ordinary Slack bot messages.
-- Kept upstream synchronization reviewable: daily sync proposals are opened as PRs rather than applied directly to `master`.
+- Kept upstream synchronization reviewable: daily sync proposals are opened as PRs rather than applied directly to `dev`.
 
 Implementation: [#3](https://github.com/zce/make-slack-great-again/pull/3), [#8](https://github.com/zce/make-slack-great-again/pull/8), [#1](https://github.com/zce/make-slack-great-again/pull/1).
 
@@ -78,7 +78,7 @@ Implementation: [#5](https://github.com/zce/make-slack-great-again/pull/5), [#7]
 
 - Maintains a fork-specific SemVer release sequence independently of upstream's application version.
 - CI builds Linux with GCC and Clang and builds the Windows x86_64 production executable with MSYS2/MinGW. The Linux jobs run the test suite; the Windows job validates the portable release build and checks that it has no MinGW runtime DLL dependency.
-- Public releases are manually triggered and publish the Linux and Windows production artifacts from a successful CI run for the exact selected `master` commit; checksums are verified before publishing.
+- Public releases are manually triggered and publish the Linux and Windows production artifacts from a successful CI run for the exact selected `dev` commit; checksums are verified before publishing.
 - The upstream in-app updater is disabled so it cannot replace the fork build.
 
 Fork releases provide **Linux x86_64** and **Windows x86_64** binaries. macOS packages shown by upstream are not fork releases.
@@ -115,7 +115,7 @@ Grab a [fork release](https://github.com/zce/make-slack-great-again/releases) an
 - **Slack session (recommended).** Click *Sign in with Chrome* (or Chromium, Brave, Edge or Vivaldi, whichever you have) and log in to Slack the normal way. msga picks the session up from a private, throwaway browser profile and closes the window. There is nothing to register, nothing to build and no tokens to copy, and everything runs on your own account's limits. New messages arrive by polling, as there is no live push in this mode. (Already have the Slack desktop app on Linux? *Import from local Slack* takes its session in one click. You can also paste the session cookie by hand.)
 - **Your own Slack app.** Register a free Slack app for live message push (Socket Mode), then paste its client ID, client secret and app-level token into **Settings → General → Slack connection**.
 
-Both are covered step by step in the **[Slack setup guide](https://github.com/punarinta/make-slack-great-again/blob/master/docs/SETUP_SLACK.md)**. Most people want session sign-in, because it needs no setup at all.
+Both are covered step by step in the **[Slack setup guide](https://github.com/punarinta/make-slack-great-again/blob/dev/docs/SETUP_SLACK.md)**. Most people want session sign-in, because it needs no setup at all.
 
 ## Slack deep links
 
@@ -178,7 +178,7 @@ You can build msga yourself, for example to bake your own Slack app keys into th
 
 ### Step 1. Add Slack app keys (optional)
 
-To build in your own Slack app's keys, follow the **[Slack setup guide](https://github.com/punarinta/make-slack-great-again/blob/master/docs/SETUP_SLACK.md)**: create a Slack app with its scopes, Socket Mode and events. The guide ends by writing the keys into `credentials.cmake` (copy `credentials.cmake.example`; the file is gitignored). The same file takes an optional GIPHY key for the GIF picker. Keys pasted in **Settings → General** take precedence over the built-in ones.
+To build in your own Slack app's keys, follow the **[Slack setup guide](https://github.com/punarinta/make-slack-great-again/blob/dev/docs/SETUP_SLACK.md)**: create a Slack app with its scopes, Socket Mode and events. The guide ends by writing the keys into `credentials.cmake` (copy `credentials.cmake.example`; the file is gitignored). The same file takes an optional GIPHY key for the GIF picker. Keys pasted in **Settings → General** take precedence over the built-in ones.
 
 The upstream app version lives in `version.cmake` (tracked in git). Fork GitHub Release tags use an independent SemVer sequence; see [Maintaining this fork](#maintaining-this-fork).
 
@@ -259,19 +259,19 @@ This section is the source of truth for fork-specific development, upstream sync
 
 ### Branches and upstream synchronization
 
-- `master` is the reviewed branch used for releases. Do not commit directly to it; use short-lived `feat/*`, `fix/*` or `docs/*` branches and pull requests.
-- `.github/workflows/upstream-sync.yml` checks upstream daily and can also be run manually. It merges `punarinta/make-slack-great-again:master` into `automation/upstream-sync` and opens or updates a reviewable PR. It never updates `master` automatically.
+- `dev` is the reviewed branch used for releases. Do not commit directly to it; use short-lived `feat/*`, `fix/*` or `docs/*` branches and pull requests.
+- `.github/workflows/upstream-sync.yml` checks upstream daily and can also be run manually. It merges `punarinta/make-slack-great-again:dev` into `automation/upstream-sync` and opens or updates a reviewable PR. It never updates `dev` automatically.
 - Merge upstream-sync PRs with a **merge commit**. Do not squash or rebase them: preserving the common upstream ancestry keeps future syncs manageable.
-- A merge conflict intentionally fails the workflow and must be resolved by a maintainer. Never force-update `master`.
+- A merge conflict intentionally fails the workflow and must be resolved by a maintainer. Never force-update `dev`.
 - The repository setting **Settings → Actions → General → Workflow permissions → Allow GitHub Actions to create and approve pull requests** must be enabled for the scheduled workflow to open PRs.
 
 ### CI
 
-The `.github/workflows/ci.yml` workflow runs on pull requests, pushes to `master` and manual dispatches:
+The `.github/workflows/ci.yml` workflow runs on pull requests, pushes to `dev` and manual dispatches:
 
 - **Pull requests:** Ubuntu 24.04/GCC builds and runs the full test suite; Ubuntu 24.04/Clang performs a compile check. The GCC job uploads a test-enabled Linux executable. The Windows x86_64/MinGW job builds the portable executable, verifies that it has no MinGW runtime DLL dependencies, and uploads it with its checksum for manual testing. Both PR artifacts have 14-day retention; Windows CTest is not run.
-- **Master pushes and manual runs:** both Linux compiler jobs run the full test suite. CTest starts with four workers; tests sharing global resources must declare `RESOURCE_LOCK` or `RUN_SERIAL`. The Windows job also builds and validates the portable executable.
-- **Successful master pushes:** the GCC job makes a separate production build with tests, demo and upstream self-update disabled, then uploads the dynamically linked Linux x86_64 executable, SHA256 checksum and `DEPENDENCIES.txt`. The Windows job uploads `msga-windows-x86_64.exe` with its SHA256 checksum. Both production artifacts have 30-day retention.
+- **Dev pushes and manual runs:** both Linux compiler jobs run the full test suite. CTest starts with four workers; tests sharing global resources must declare `RESOURCE_LOCK` or `RUN_SERIAL`. The Windows job also builds and validates the portable executable.
+- **Successful dev pushes:** the GCC job makes a separate production build with tests, demo and upstream self-update disabled, then uploads the dynamically linked Linux x86_64 executable, SHA256 checksum and `DEPENDENCIES.txt`. The Windows job uploads `msga-windows-x86_64.exe` with its SHA256 checksum. Both production artifacts have 30-day retention.
 - Actions are pinned to reviewed commit SHAs. Keep PR test artifacts and production release artifacts distinct.
 
 ### Memory validation
@@ -289,13 +289,13 @@ Both scripts use `tests/assets/fixture.json` unless a top-level `demo/fixture.js
 
 ### Releases
 
-Public fork releases are **manual**, not an automatic side effect of merging a PR. From Actions → Release → Run workflow on `master`, enter the next version without the leading `v`. The same operation can be started with GitHub CLI:
+Public fork releases are **manual**, not an automatic side effect of merging a PR. From Actions → Release → Run workflow on `dev`, enter the next version without the leading `v`. The same operation can be started with GitHub CLI:
 
 ```sh
-gh workflow run release.yml --ref master -f version=0.1.0
+gh workflow run release.yml --ref dev -f version=0.1.0
 ```
 
-The optional `ci_run_id` input is an advanced override. The release workflow waits up to **20 minutes** for the successful push-triggered CI run for the exact selected `master` commit. It validates the run's branch, repository and commit, downloads both platform production artifacts from that run, verifies their SHA256 checksums, combines them into one release-level `SHA256SUMS`, and publishes them **without rebuilding**. If CI fails or does not finish within the wait window, no release is published. Existing tags and releases are never silently overwritten.
+The optional `ci_run_id` input is an advanced override. The release workflow waits up to **20 minutes** for the successful push-triggered CI run for the exact selected `dev` commit. It validates the run's branch, repository and commit, downloads both platform production artifacts from that run, verifies their SHA256 checksums, combines them into one release-level `SHA256SUMS`, and publishes them **without rebuilding**. If CI fails or does not finish within the wait window, no release is published. Existing tags and releases are never silently overwritten.
 
 Fork release versions use an independent, monotonically increasing **SemVer** sequence (`v0.1.0`, `v0.1.1`, `v0.2.0`, etc.). A version such as `v0.2.0-rc.1` is published as a pre-release; stable releases are marked **Latest**. The upstream integer `MSGA_VERSION` in `version.cmake` is retained for runtime compatibility and is **not** the fork release number. Do not change it just to publish a fork release; historical `v44-zce.*` tags remain intact.
 
@@ -317,4 +317,4 @@ The upstream in-app updater must remain disabled: it downloads from `msga.app` a
 
 ## License
 
-msga is free software under the [GNU General Public License v3.0 or later](https://github.com/punarinta/make-slack-great-again/blob/master/LICENSE). The third-party code it uses is listed in [THIRD_PARTY_LICENSES](https://github.com/punarinta/make-slack-great-again/blob/master/THIRD_PARTY_LICENSES).
+msga is free software under the [GNU General Public License v3.0 or later](https://github.com/punarinta/make-slack-great-again/blob/dev/LICENSE). The third-party code it uses is listed in [THIRD_PARTY_LICENSES](https://github.com/punarinta/make-slack-great-again/blob/dev/THIRD_PARTY_LICENSES).

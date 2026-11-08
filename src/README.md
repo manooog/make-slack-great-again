@@ -70,7 +70,7 @@ cmake --build build && ctest --test-dir build
 
 The fork does not use the upstream release scripts. GitHub Actions builds a
 GCC/Ubuntu 24.04 Linux x86_64 preview artifact for PR testing and a separate
-production artifact on successful pushes to master. The production artifact is
+production artifact on successful pushes to dev. The production artifact is
 dynamically linked; its dependency list and checksum travel with it. Clang on
 Ubuntu 24.04 provides cross-compiler verification. Public releases reuse the
 production artifact from the successful CI run for the exact selected commit;
