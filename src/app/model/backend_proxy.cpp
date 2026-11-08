@@ -160,8 +160,8 @@ void BackendProxy::searchGifs(std::string query, std::function<void(std::vector<
 std::string BackendProxy::promptSuggestion(ConvRef c) const {
     return _t->promptSuggestion(c);
 }
-void BackendProxy::search(std::string query, std::function<void(std::vector<SearchHit>)> done) {
-    _t->search(std::move(query), std::move(done));
+void BackendProxy::searchPage(std::string query, std::string cursor, SearchPageDone done) {
+    _t->searchPage(std::move(query), std::move(cursor), std::move(done));
 }
 void BackendProxy::loadMessage(ConvRef c, Ts ts, MessageDone done) {
     _t->loadMessage(c, ts, std::move(done));

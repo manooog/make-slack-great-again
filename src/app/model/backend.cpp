@@ -28,23 +28,9 @@ void Backend::deleteFile(ConvRef, Ts, const std::string &) {}
 void Backend::setReminder(ConvRef, Ts, int64_t) {}
 void Backend::userTyping(ConvRef, Ts) {}
 
-void Backend::search(std::string, std::function<void(std::vector<SearchHit>)> done) {
+void Backend::searchPage(std::string, std::string, SearchPageDone done) {
     if (done)
         done({});
-}
-
-void Backend::searchPage(std::string query, std::string cursor, SearchPageDone done) {
-    if (cursor != "*") {
-        if (done) done({});
-        return;
-    }
-    search(std::move(query), [done = std::move(done)](std::vector<SearchHit> hits) {
-        if (done) {
-            SearchPage result;
-            result.hits = std::move(hits);
-            done(std::move(result));
-        }
-    });
 }
 
 // ── Sidebar sections, kept in this client ──────────────────────────────────

@@ -364,16 +364,16 @@ TEST("fake backend: connect and reads complete asynchronously") {
     REQUIRE(waitFor(*app, [&] { return histDone; }));
     CHECK_FALSE(s.conversation(c1).hasMoreBefore);
 
-    std::vector<model::Backend::SearchHit> hits;
-    bool                                   searched = false;
-    be.search("REPLY", [&](std::vector<model::Backend::SearchHit> h) {
-        hits     = std::move(h);
+    model::Backend::SearchPage page;
+    bool                       searched = false;
+    be.searchPage("REPLY", "*", [&](model::Backend::SearchPage result) {
+        page     = std::move(result);
         searched = true;
     });
     REQUIRE(waitFor(*app, [&] { return searched; }));
-    CHECK(hits.size() == 2);
-    CHECK(hits[0].ts > hits[1].ts); // newest first
-    CHECK(hits[0].thread != 0);
+    CHECK(page.hits.size() == 2);
+    CHECK(page.hits[0].ts > page.hits[1].ts); // newest first
+    CHECK(page.hits[0].thread != 0);
 
     CHECK(be.findTs(c1, "THE OLDEST") == s.conversation(c1).messages[0].ts);
     CHECK_STR(be.aiReply("summarise the PALETTE thread"), "palette summary");

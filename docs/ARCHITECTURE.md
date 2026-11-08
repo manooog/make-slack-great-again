@@ -77,8 +77,9 @@ wires workspace actions and starts saved workspaces.
 
 - Conversation quick switcher ranks names locally from active Store using fuzzy
   matching and visit recency.
-- Message search is a backend capability (`Backend::search`) and returns
-  server results; it is not a second local message database.
+- Message search is a backend capability (`Backend::searchPage`) and returns
+  one page of server results with Slack's cursor; it is not a second local
+  message database.
 - QuickSwitcher keeps each workspace's next cursor, failed cursor, error and
   pagination flag together in `SearchPageState`. A query generation rejects
   stale responses; starting a new query resets all workspace page states.

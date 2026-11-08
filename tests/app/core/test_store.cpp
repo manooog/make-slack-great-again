@@ -1,3 +1,4 @@
+#include "app/model/backend_proxy.h"
 #include "app/model/null_backend.h"
 #include "app/model/store.h"
 #include "app/model/store_slot.h"
@@ -954,10 +955,42 @@ TEST("backend: calls a service lacks default to nothing") {
     b.openDm(1, [&](ConvRef c) { dm = c; });
     CHECK(dm == kNoConv);
     int hits = -1;
-    b.search("x", [&](std::vector<Backend::SearchHit> h) { hits = int(h.size()); });
+    b.searchPage("x", "*", [&](Backend::SearchPage page) { hits = int(page.hits.size()); });
+    CHECK(hits == 0);
+    hits = -1;
+    b.searchPage("x", "next", [&](Backend::SearchPage page) { hits = int(page.hits.size()); });
     CHECK(hits == 0);
     b.edit(0, 1, "x"); // no-ops
     b.setPinned(0, 1, true);
     b.userTyping(0, 0);
     CHECK(s.conversationCount() == 0);
+}
+
+TEST("backend proxy: searchPage follows the active target") {
+    struct SearchBackend : NullBackend {
+        std::string identity;
+        SearchBackend(Store &store, std::string identity)
+            : NullBackend(store), identity(std::move(identity)) {}
+        void searchPage(std::string, std::string cursor, SearchPageDone done) override {
+            SearchPage page;
+            page.hits.resize(1);
+            page.hits[0].text = identity;
+            page.nextCursor  = cursor;
+            if (done) done(std::move(page));
+        }
+    };
+    Store         s;
+    SearchBackend first{s, "first"}, second{s, "second"};
+    BackendProxy  proxy{s, first};
+    Backend::SearchPage result;
+    proxy.searchPage("q", "*", [&](Backend::SearchPage page) { result = std::move(page); });
+    REQUIRE(result.hits.size() == 1);
+    CHECK_STR(result.hits[0].text, "first");
+    CHECK_STR(result.nextCursor, "*");
+    proxy.setTarget(second);
+    result = {};
+    proxy.searchPage("q", "next", [&](Backend::SearchPage page) { result = std::move(page); });
+    REQUIRE(result.hits.size() == 1);
+    CHECK_STR(result.hits[0].text, "second");
+    CHECK_STR(result.nextCursor, "next");
 }
