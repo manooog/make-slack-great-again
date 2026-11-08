@@ -442,7 +442,7 @@ model::Conversation toConversation(const json::Value &o, model::Store &store) {
     c.mentions  = uint32_t(o["mention_count"].integer());
     c.muted     = o["is_muted"].boolean();
     c.starred   = o["is_starred"].boolean();
-    c.extShared = o["is_ext_shared"].boolean();
+
     const std::string_view pref = o["notification_preference"].str();
     c.notify                    = pref == "everything" ? model::NotifyLevel::All
                                   : pref == "mentions" ? model::NotifyLevel::Mentions
