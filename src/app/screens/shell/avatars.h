@@ -114,8 +114,8 @@ public:
     void            setPresence(Presence p, ui::C ring, bool selected = false);
     // The presence dot for a user: none for a bot or a backend
     // without presence; then active, phantom (yellow: `phantom`, e.g. me
-    // with no official client connected, or a peer that can't be reached,
-    // User::unavailable), or away, with a separate DND variant. Null u: none.
+    // with no official client connected), or away, with a separate DND
+    // variant. Null u: none.
     static Presence presenceOf(const model::User *u, bool hasPresence, bool phantom = false);
     Presence        presence() const { return _presence; }
     // The initial-letter placeholder: the first letter of `name` over the

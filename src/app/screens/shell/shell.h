@@ -133,17 +133,6 @@ public:
     // Workspace `key`'s slash commands changed (Backend::onCommandsChanged):
     // a "/" list open in its composers follows.
     void commandsChanged(const std::string &key);
-    // A message workspace `key` never sent (Backend::onUnsent): back in the
-    // composer showing (conv, thread) — in front of what's typed there since,
-    // its files attached again — or else in front of that draft.
-    void giveBackUnsent(
-        const std::string              &key,
-        const model::Store             &store,
-        model::ConvRef                  conv,
-        model::Ts                       thread,
-        const std::string              &text,
-        const std::vector<std::string> &files
-    );
     // The error banner: a backend failure no call waits for, shown for a few seconds.
     void               showError(const std::string &message);
     ui::Label         *errorBanner() const { return _errorBanner; } // tests
@@ -428,7 +417,6 @@ private:
     // and back when the section menu changed one.
     void loadSorts();
     void storeSorts();
-    void applyComposerAccess();
     void runCommand(
         model::ConvRef conv, model::Ts thread, const std::string &name, const std::string &args
     );
@@ -546,8 +534,7 @@ private:
     ScheduledPage                     *_scheduledPage = nullptr;
     std::vector<int>                   _shortcutIds; // Window shortcuts owned by this Shell
     std::shared_ptr<int>               _alive = std::make_shared<int>(0);
-    // The error banner (5 s), and what the composer was last given
-    // (applyComposerAccess hands changes on only).
+    // The error banner (5 s).
     ui::Label                 *_errorBanner      = nullptr;
     bool                       _ownsBackendError = false; // set ctx.backend.onError
     plat::TimerId              _errorTimer       = 0;
@@ -557,7 +544,6 @@ private:
     void                       noteActivity();
     bool                       _windowVisible = true;
     void                       syncWindowVisible(); // after a hide, show or state change
-    std::string                _composerLock, _composerSuggestion;
 
     // The visit stamps' save (coalesced), the update bar and checker,
     // Settings' sample notification and where its outcome goes.

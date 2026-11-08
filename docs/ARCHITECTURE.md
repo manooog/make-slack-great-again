@@ -146,12 +146,12 @@ removing Slack-native functionality with similar terminology:
   in the workspace store. This is data compatibility, not an active integration.
 - The upstream self-updater remains optional for compatibility, but
   `MSGA_SELF_UPDATE` is OFF by default and in CI/release/Nix builds.
-- Some generic UI/model extension points still exist: composer history and
-  suggestions, read-only reasons, and elapsed typing status. No production
-  Slack backend supplies the former agent runtime. Removing these interfaces
-  is a separate contract reduction, not required to remove its processes,
-  credentials, assets or dependencies; they must not be mistaken for a working
-  Claude Code integration. The obsolete Claude cache-import declaration is gone.
+- The orphaned agent-only UI and model hooks are removed: prompt-history
+  search and reply suggestions, read-only composer reasons, elapsed "thinking"
+  typing state, unreachable-user presence, and the unsent-message hand-back.
+  No production Slack backend supplied them; keeping the interfaces would
+  preserve dead UI branches and model state. The obsolete Claude cache-import
+  declaration is also gone.
 
 Regression coverage lives in `tests/app/core/test_slack*`,
 `tests/app/core/test_audio.cpp`, `tests/app/llm/test_llm.cpp` and

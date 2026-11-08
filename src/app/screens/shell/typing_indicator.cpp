@@ -1,10 +1,6 @@
 #include "screens/shell/typing_indicator.h"
 
 #include "base/i18n.h"
-#include "base/str.h"
-#include "base/time.h"
-
-#include <algorithm>
 
 using namespace ui;
 using i18n::tr;
@@ -62,16 +58,6 @@ TypingIndicator::TypingIndicator(screens::Context &ctx) : _ctx(ctx) {
 
 TypingIndicator::~TypingIndicator() {
     _ctx.store.unobserve(_observer);
-    _ctx.app.cancelTimer(_tick);
-}
-
-std::string TypingIndicator::formatElapsed(int64_t ms) {
-    const int64_t s = std::max<int64_t>(0, ms / 1000);
-    if (s < 60)
-        return i18n::arg(tr("%1s"), str::number(s));
-    if (s < 3600)
-        return i18n::arg(tr("%1m %2s"), str::number(s / 60), str::number(s % 60));
-    return i18n::arg(tr("%1h %2m"), str::number(s / 3600), str::number(s / 60 % 60));
 }
 
 void TypingIndicator::setTarget(model::ConvRef conv, model::Ts thread) {
@@ -82,23 +68,10 @@ void TypingIndicator::setTarget(model::ConvRef conv, model::Ts thread) {
 
 void TypingIndicator::refresh() {
     std::vector<model::UserRef> who;
-    int64_t                     since    = 0;
-    bool                        thinking = true;
     if (_conv != model::kNoConv)
         for (const model::Typing &t : _ctx.store().typing(_conv))
-            if (t.thread == _thread) {
+            if (t.thread == _thread)
                 who.push_back(t.user);
-                since = t.sinceMs;
-                thinking &= t.sinceMs > 0;
-            }
-    thinking = thinking && !who.empty();
-    // A timer ticks the "thinking" clocks every second.
-    if (thinking && !_tick)
-        _tick = _ctx.app.addTimer(1000, true, [this] { refresh(); });
-    else if (!thinking && _tick) {
-        _ctx.app.cancelTimer(_tick);
-        _tick = 0;
-    }
     setVisible(!who.empty());
     if (who.empty()) {
         _label->setText({});
@@ -117,16 +90,8 @@ void TypingIndicator::refresh() {
     } else {
         appendTemplate(
             t,
-            thinking && who.size() == 1
-                // %1 kept for the names (a single pass: "%1" isn't re-read)
-                ? i18n::arg(
-                      tr("%1 is thinking (%2)\xE2\x80\xA6"),
-                      "%1",
-                      formatElapsed(base::nowMicros() / 1000 - since)
-                  )
-                : thinking          ? std::string(tr("%1 are thinking\xE2\x80\xA6"))
-                  : who.size() == 1 ? std::string(tr("%1 is typing\xE2\x80\xA6"))
-                                    : std::string(tr("%1 are typing\xE2\x80\xA6")),
+            who.size() == 1 ? std::string(tr("%1 is typing\xE2\x80\xA6"))
+                            : std::string(tr("%1 are typing\xE2\x80\xA6")),
             plain,
             bold,
             [&] {
@@ -142,8 +107,7 @@ void TypingIndicator::refresh() {
             }
         );
     }
-    // The tick with nothing new to say (several thinking, the clock not
-    // shown) keeps the line as laid out.
+    // A refresh with nothing new to say keeps the line as laid out.
     if (t.text == _label->text() && plain == _shownStyle)
         return;
     _shownStyle = plain;

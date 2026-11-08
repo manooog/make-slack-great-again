@@ -1039,7 +1039,6 @@ TEST("shortcuts: stubbed composer keys fall through as with the feature off") {
     h.chord(kCtrl, K::Z); // no undo-send chip: the editor's undo
     CHECK(e.empty());
     h.chord(kCtrl | kShift, K::Space); // no speech-to-text: nothing
-    h.chord(kCtrl, K::R);              // no prompt history: nothing
     CHECK(e.empty());
     CHECK(h.win->topPopup() == nullptr);
 }
