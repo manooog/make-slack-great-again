@@ -18,7 +18,7 @@ This fork keeps the upstream native C++ Slack client and concentrates its change
 
 - Removed the Claude Code workspace and agent-session integration, including its agent UI, process/worktree handling, approvals, linked agent threads and related voice-dictation code, assets and tests.
 - Kept Slack-native messaging features and the independent **Summarize down** capability; removing the agent integration does not remove ordinary Slack bot messages.
-- Kept upstream synchronization reviewable: daily sync proposals are opened as PRs rather than applied directly to `dev`.
+- Kept upstream changes reviewable: upstream updates are pulled on a branch and reviewed through a PR, never applied automatically to `dev`.
 
 Implementation: [#3](https://github.com/zce/make-slack-great-again/pull/3), [#8](https://github.com/zce/make-slack-great-again/pull/8), [#1](https://github.com/zce/make-slack-great-again/pull/1).
 
@@ -255,15 +255,13 @@ For the source layout and the size rules, see [src/README.md](src/README.md).
 
 ## Maintaining this fork
 
-This section is the source of truth for fork-specific development, upstream synchronization, CI and release operations. Keep these instructions here rather than maintaining a second fork guide.
+This section is the source of truth for fork-specific development, upstream updates, CI and release operations. Keep these instructions here rather than maintaining a second fork guide.
 
-### Branches and upstream synchronization
+### Branches and upstream updates
 
 - `dev` is the reviewed branch used for releases. Do not commit directly to it; use short-lived `feat/*`, `fix/*` or `docs/*` branches and pull requests.
-- `.github/workflows/upstream-sync.yml` checks upstream daily and can also be run manually. It merges `punarinta/make-slack-great-again:dev` into `automation/upstream-sync` and opens or updates a reviewable PR. It never updates `dev` automatically.
-- Merge upstream-sync PRs with a **merge commit**. Do not squash or rebase them: preserving the common upstream ancestry keeps future syncs manageable.
-- A merge conflict intentionally fails the workflow and must be resolved by a maintainer. Never force-update `dev`.
-- The repository setting **Settings → Actions → General → Workflow permissions → Allow GitHub Actions to create and approve pull requests** must be enabled for the scheduled workflow to open PRs.
+- No automated upstream-sync workflow is active. Pull upstream changes on a short-lived branch and open a normal PR; never apply them automatically to `dev`.
+- When an upstream update PR is merged, preserve upstream ancestry with a **merge commit** rather than a squash or rebase.
 
 ### CI
 

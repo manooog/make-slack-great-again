@@ -226,9 +226,8 @@ Regression coverage lives in `tests/app/core/test_slack*`,
   name alone is not identity. Only a completed successful run supplies the named
   production artifacts; waiting, download or checksum failures block publication.
 - Release dispatches share a non-cancelling concurrency group. Preview artifacts
-  are never used as production artifacts. Upstream synchronization pushes only
-  a proposal branch with a lease, opens a PR, and explicitly dispatches CI;
-  it never merges into dev or publishes a release.
+  are never used as production artifacts. No automated upstream-sync workflow is
+  active; upstream updates use the normal branch-and-PR path.
 
 ## Dependency and license policy
 
