@@ -994,3 +994,34 @@ TEST("backend proxy: searchPage follows the active target") {
     CHECK_STR(result.hits[0].text, "second");
     CHECK_STR(result.nextCursor, "next");
 }
+
+TEST("backend proxy: retryFailedMessage follows the active target") {
+    struct RetryBackend : NullBackend {
+        bool    result;
+        int     calls = 0;
+        ConvRef conv  = kNoConv;
+        Ts      local = 0;
+        RetryBackend(Store &store, bool result) : NullBackend(store), result(result) {}
+        bool retryFailedMessage(ConvRef c, Ts ts) override {
+            ++calls;
+            conv  = c;
+            local = ts;
+            return result;
+        }
+    };
+    Store        s;
+    RetryBackend first{s, true}, second{s, false};
+    BackendProxy proxy{s, first};
+    CHECK(proxy.retryFailedMessage(11, 22));
+    CHECK(first.calls == 1);
+    CHECK(first.conv == 11);
+    CHECK(first.local == 22);
+    CHECK(second.calls == 0);
+
+    proxy.setTarget(second);
+    CHECK(!proxy.retryFailedMessage(33, 44));
+    CHECK(first.calls == 1);
+    CHECK(second.calls == 1);
+    CHECK(second.conv == 33);
+    CHECK(second.local == 44);
+}
