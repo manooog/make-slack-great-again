@@ -117,10 +117,12 @@ Message Message::clone() const {
     m.threadTs    = threadTs;
     m.latestReply = latestReply;
     m.user        = user;
+    m.pinnedBy    = pinnedBy;
     m.replyCount  = replyCount;
     m.text        = text;
     m.edited      = edited;
     m.pinned      = pinned;
+    m.saved       = saved;
     m.pending     = pending;
     m.delivery    = delivery;
     m.sendId      = sendId;
