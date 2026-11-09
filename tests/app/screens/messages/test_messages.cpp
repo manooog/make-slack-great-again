@@ -1814,7 +1814,9 @@ TEST("actions: a shared message's files open in the viewer, never deleted or for
 }
 
 TEST("actions: a remote CSV's Preview downloads it to a temporary file, removed once read") {
-    Env           e(true);
+    Env                      e(true);
+    std::vector<std::string> errors;
+    e.backend.onError     = [&](const std::string &m) { errors.push_back(m); };
     const ConvRef general = e.conv("C0GENERAL");
     Ts            ts      = 0;
     std::string   url;
@@ -1847,6 +1849,8 @@ TEST("actions: a remote CSV's Preview downloads it to a temporary file, removed 
     pump(2);
     CHECK(e.win->topPopup() == nullptr);
     CHECK_FALSE(file::exists(e.backend.asked.back().to));
+    REQUIRE(errors.size() == 1);
+    CHECK_STR(errors.front(), "Download failed: http 404");
 }
 
 TEST("actions: right click on a message shows the same menu as More actions") {
@@ -2202,7 +2206,9 @@ TEST("image: \"Copy full image\" of a Slack-hosted image copies the original, no
         RemoteImages remote(app().platform(), nullptr, dir);
         FakeNet      fake;
         fake.install(remote);
-        Env e(true);
+        Env                      e(true);
+        std::vector<std::string> errors;
+        e.backend.onError    = [&](const std::string &m) { errors.push_back(m); };
         e.ctx.remote         = &remote;
         const ConvRef design = e.conv("C0DESIGN");
         Ts            ts     = 0;
@@ -2255,6 +2261,8 @@ TEST("image: \"Copy full image\" of a Slack-hosted image copies the original, no
         pump(2);
         CHECK_STR(clipboard(), "before");
         CHECK_FALSE(file::exists(e.backend.asked.back().to));
+        REQUIRE(errors.size() == 1);
+        CHECK_STR(errors.front(), "Download failed: http 404");
     }
     wipe(dir);
 }
@@ -2262,7 +2270,9 @@ TEST("image: \"Copy full image\" of a Slack-hosted image copies the original, no
 TEST("actions: the file bar's Download saves the original where asked, a job until written") {
     const std::string dir = tempDir("download");
     {
-        Env           e(true);
+        Env                      e(true);
+        std::vector<std::string> errors;
+        e.backend.onError     = [&](const std::string &m) { errors.push_back(m); };
         const ConvRef general = e.conv("C0GENERAL");
         Ts            ts      = 0;
         std::string   path;
@@ -2299,6 +2309,20 @@ TEST("actions: the file bar's Download saves the original where asked, a job unt
         pump(6);
         CHECK(model::jobs().count() == 0);
         CHECK(e.backend.asked.size() == 1);
+        // A failed source ends the job and tells the user why.
+        for (model::Message &m : e.store.conversation(general).messages)
+            for (model::File &f : m.extras().files)
+                if (f.name == "signups-week-37.csv")
+                    f.original = "https://files.csv.test/missing.csv";
+        const std::string missing = file::join(dir, "missing.csv");
+        REQUIRE(hooks->fileDialogRespond({missing}));
+        e.list->downloadFile(ts, path);
+        pump(10); // the save dialog's callback starts the job
+        REQUIRE(until([&] { return model::jobs().count() == 0; }));
+        CHECK(e.backend.asked.size() == 2);
+        REQUIRE(errors.size() == 1);
+        CHECK_STR(errors.front(), "Download failed: http 404");
+        CHECK_FALSE(file::exists(missing));
     }
     wipe(dir);
 }
@@ -2595,6 +2619,47 @@ TEST("loading: the ring and its hints until the first page, then No messages yet
     CHECK(e.list->state() == State::Loading);
     e.list->setWaiting(false);
     CHECK(e.list->state() == State::None);
+}
+
+TEST("loading: a failed first history page stops paging and reports the error") {
+    using State = MessageList::State;
+    HoldEnv                  e;
+    std::vector<std::string> errors;
+    e.backend.onError = [&](const std::string &m) { errors.push_back(m); };
+    const ConvRef c   = e.conv("C3");
+    e.list->showConversation(c);
+    REQUIRE(until([&] { return !e.backend.history.empty(); }));
+    REQUIRE(e.list->state() == State::Loading);
+    const size_t requests = e.backend.history.size();
+    e.backend.history.front()(false, "channel_not_found");
+    pump(200); // past the edge-check delay: a failure must not re-request
+    CHECK(e.backend.history.size() == requests);
+    CHECK(e.list->state() == State::Error);
+    CHECK_STR(e.list->stateText(), "Couldn't load messages");
+    REQUIRE(errors.size() == 1);
+    CHECK_STR(errors.front(), "Couldn't load messages: channel_not_found");
+}
+
+TEST("loading: a failed thread page reports the error without staying loading") {
+    using State = MessageList::State;
+    HoldEnv                  e;
+    std::vector<std::string> errors;
+    e.backend.onError                  = [&](const std::string &m) { errors.push_back(m); };
+    const ConvRef  c                   = e.conv("C4");
+    model::Message root                = msg(e.mira, 3000, "root");
+    root.replyCount                    = 1;
+    const Ts                    rootTs = root.ts;
+    std::vector<model::Message> page;
+    page.push_back(std::move(root));
+    e.store.addPage(c, std::move(page));
+    e.list->showThread(c, rootTs);
+    REQUIRE(e.list->state() == State::Loading);
+    REQUIRE(e.backend.threads.size() == 1);
+    e.backend.threads.front()(false, "thread_not_found");
+    pump();
+    CHECK(e.list->state() != State::Loading);
+    REQUIRE(errors.size() == 1);
+    CHECK_STR(errors.front(), "Couldn't load messages: thread_not_found");
 }
 
 TEST("loading: a thread shows the ring, not its root, until the replies are in") {

@@ -385,6 +385,15 @@ TEST("sidebar footer: a presence change the service refuses says why and settles
     );
 }
 
+TEST("shell: a workspace session expiry reaches the visible banner") {
+    Harness h;
+    h.sh->notifySessionExpired("Design");
+    CHECK(h.sh->errorBanner()->visible());
+    CHECK_STR(
+        h.sh->errorBanner()->text(), "Your Design session has expired. Sign in again."
+    );
+}
+
 TEST("sidebar footer: the presence tooltip says what the presence link is doing") {
     using PresenceLink = Backend::PresenceLink;
     Harness               h;

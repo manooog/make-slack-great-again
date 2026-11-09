@@ -128,7 +128,7 @@ public:
     void                       notifyReminderDue(
         const std::string &key, model::Store &store, model::ConvRef conv, model::Ts ts
     );
-    // "Session expired", when the window is hidden.
+    // "Session expired": the visible banner, or a notification when hidden.
     void notifySessionExpired(const std::string &workspace);
     // Workspace `key`'s slash commands changed (Backend::onCommandsChanged):
     // a "/" list open in its composers follows.

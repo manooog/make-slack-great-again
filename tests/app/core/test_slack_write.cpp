@@ -303,12 +303,16 @@ TEST("slack write: edit, delete and react update the Store and send the right pa
         const model::Message *m = e.store.findMessage(e.general, e.old);
         return m->text == "second" && m->reactions.size() == 1;
     }));
-    // Delete: gone at once; refused, it comes back.
+    // Delete: gone at once; refused, it comes back and the banner says why.
+    std::vector<std::string> errors;
+    e.be->onError = [&](const std::string &m) { errors.push_back(m); };
     script("chat.delete", R"([{"ok":false,"error":"cant_delete_message"}])");
     e.be->remove(e.general, e.old);
     CHECK(!e.store.findMessage(e.general, e.old));
     REQUIRE(pumpUntil([&] { return e.store.findMessage(e.general, e.old) != nullptr; }));
     CHECK(e.store.conversation(e.general).unread == 0);
+    REQUIRE(errors.size() == 1);
+    CHECK_STR(errors.front(), "Couldn't delete the message: cant_delete_message");
     e.be->remove(e.general, e.old);
     REQUIRE(pumpUntil([&] { return Log().count("chat.delete") == 2; }));
     pumpFor(100);
