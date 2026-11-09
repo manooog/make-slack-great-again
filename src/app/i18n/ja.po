@@ -1988,6 +1988,10 @@ msgid "Go ahead, start writing!"
 msgstr "さあ、書き始めましょう！"
 
 #: src/app/screens/shell/canvas_page.cpp
+msgid "Couldn't load the canvas: %1"
+msgstr ""
+
+#: src/app/screens/shell/canvas_page.cpp
 msgid "Could not create canvas: %1"
 msgstr "canvasを作成できませんでした: %1"
 
@@ -2002,6 +2006,10 @@ msgstr "このキャンバスは Slack の組み込みエディタで作成さ�
 #: src/app/screens/shell/canvas_page.cpp
 msgid "You don't have access to this canvas."
 msgstr "このキャンバスにアクセスする権限がありません。"
+
+#: src/app/screens/shell/canvas_page.cpp
+msgid "Couldn't load this canvas. Close and reopen it to try again."
+msgstr ""
 
 #: src/app/screens/shell/canvas_page.cpp
 msgid "Delete canvas"

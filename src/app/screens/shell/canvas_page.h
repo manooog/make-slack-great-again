@@ -56,7 +56,7 @@ public:
     void          confirmDelete(); // the menu's "Delete canvas"
 
 private:
-    enum class ReadOnly : uint8_t { None, NotAddressable, NoAccess };
+    enum class ReadOnly : uint8_t { None, NotAddressable, NoAccess, LoadFailed };
     void loadContent();
     void applyRemoteHtml(const std::string &html);
     void setBody(const std::string &editorHtml);
