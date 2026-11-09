@@ -102,6 +102,14 @@ struct Fake : fake::FakeBackend {
             return fake::FakeBackend::loadMembers(conv, std::move(done));
         done({}, membersError);
     }
+    void loadCanvasContent(const std::string &fileId, CanvasHtmlDone done) override {
+        if (canvasContentError.empty())
+            return fake::FakeBackend::loadCanvasContent(fileId, std::move(done));
+        app().platform().post([error = canvasContentError, done = std::move(done)]() mutable {
+            if (done)
+                done({}, error);
+        });
+    }
     void sendBlocks(
         ConvRef conv, std::string text, std::string blocks, Ts thread, bool bc, Done done
     ) override {
@@ -142,8 +150,9 @@ struct Fake : fake::FakeBackend {
     std::vector<std::string> cancelled;
     std::string              cancelError;
 
-    std::string presenceError; // setPresence fails with it
-    std::string statusError;   // setStatus too
+    std::string presenceError;      // setPresence fails with it
+    std::string statusError;        // setStatus too
+    std::string canvasContentError; // loadCanvasContent fails with it
 
     // The presence link, as a Slack session workspace reports it.
     PresenceLink presenceLink() const override { return link; }
@@ -382,6 +391,15 @@ TEST("sidebar footer: a presence change the service refuses says why and settles
         h.sh->errorBanner()->text(),
         "Could not change presence: missing_scope \xE2\x80\x94 sign in to this workspace again "
         "to grant the new permission"
+    );
+}
+
+TEST("shell: a workspace session expiry reaches the visible banner") {
+    Harness h;
+    h.sh->notifySessionExpired("Design");
+    CHECK(h.sh->errorBanner()->visible());
+    CHECK_STR(
+        h.sh->errorBanner()->text(), "Your Design session has expired. Sign in again."
     );
 }
 
@@ -634,6 +652,22 @@ TEST("canvas: the channel's canvas loads as a title over its markdown body") {
     CHECK(md.find("- **Proposal B ships.** Three onboarding") != std::string::npos);
     CHECK(md.find("[#design](https://lumen.studio/design)") != std::string::npos);
     CHECK(md.find("## Decisions\n\n- **Proposal B") != std::string::npos);
+}
+
+TEST("canvas: a failed content load is read-only and reports the error") {
+    Harness h;
+    h.backend.canvasContentError = "timeout";
+    h.sh->showCanvas(true);
+    shell::CanvasPage &cp = h.sh->canvasPage();
+    REQUIRE(until([&] { return h.sh->errorBanner()->visible(); }));
+    CHECK(cp.notice()->visible());
+    CHECK_STR(cp.notice()->text(), "Couldn't load this canvas. Close and reopen it to try again.");
+    CHECK_STR(h.sh->errorBanner()->text(), "Couldn't load the canvas: timeout");
+    CHECK_FALSE(cp.body().enabled());
+    // Even a programmatic edit is not saved while the base is unknown.
+    cp.body().setText("must not replace the canvas");
+    cp.flushPendingSave();
+    pump();
 }
 
 TEST("canvas: \"Add canvas\" creates it on the first save, then the tab names it") {

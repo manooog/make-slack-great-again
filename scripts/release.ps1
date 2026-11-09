@@ -24,8 +24,9 @@ if ((Test-Path $BuildDir) -and -not (Test-Path (Join-Path $BuildDir 'build.ninja
     Remove-Item $BuildDir -Recurse -Force
 }
 
-# Reconfigure every time: MSGA_DEMO / MSGA_BUILD_TESTS are cached options, so a
-# hand-run `cmake -DMSGA_DEMO=ON build-release` would otherwise stick.
+# Reconfigure every time: MSGA_DEMO / MSGA_BUILD_TESTS / MSGA_SELF_UPDATE are
+# cached options, so a hand-run `cmake -DMSGA_DEMO=ON build-release` would
+# otherwise stick.
 # Keep FetchContent sources outside build-release so CI can cache the pinned
 # FreeType/HarfBuzz sources across clean release builds.
 $FetchContentDir = Join-Path $ProjectRoot '.ci-cache\fetchcontent'
@@ -37,6 +38,7 @@ $ConfigureArgs = @(
     '-DMSGA_STATIC=ON',
     '-DMSGA_DEMO=OFF',
     '-DMSGA_BUILD_TESTS=OFF',
+    '-DMSGA_SELF_UPDATE=OFF',
     '-DMSGA_SIZE_MAP=ON',
     "-DFETCHCONTENT_BASE_DIR=$FetchContentDir"
 )

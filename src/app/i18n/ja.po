@@ -360,7 +360,7 @@ msgstr "再生"
 msgid "Downloading %1"
 msgstr "%1をダウンロード中"
 
-#: src/app/screens/messages/audio_card.cpp
+#: src/app/screens/messages/audio_card.cpp src/app/screens/messages/message_list.cpp
 msgid "Download failed"
 msgstr "ダウンロードに失敗しました"
 
@@ -464,6 +464,10 @@ msgstr "このファイルは空です"
 msgid "Showing the first %1 of %2 rows"
 msgstr "全%2行のうち最初の%1行を表示しています"
 
+#: src/app/screens/messages/message_list.cpp src/app/update/updater.cpp
+msgid "Download failed: %1"
+msgstr "ダウンロードに失敗しました: %1"
+
 #: src/app/screens/messages/message_list.cpp src/app/screens/messages/rows.cpp
 msgid "Loading image…"
 msgstr "画像を読み込み中…"
@@ -491,6 +495,10 @@ msgstr "閉じる"
 #: src/app/screens/messages/message_list.cpp
 msgid "No messages yet"
 msgstr "まだメッセージはありません"
+
+#: src/app/screens/messages/message_list.cpp
+msgid "Couldn't load messages"
+msgstr ""
 
 #: src/app/screens/messages/message_list.cpp
 msgid "Oh my gosh, I really apologize, but your company is a reaaaly active Slack user. Still loading..."
@@ -531,6 +539,10 @@ msgstr "共有"
 #: src/app/screens/messages/message_list.cpp
 msgid "file"
 msgstr "ファイル"
+
+#: src/app/screens/messages/message_list.cpp
+msgid "Couldn't load messages: %1"
+msgstr ""
 
 #: src/app/screens/messages/message_list.cpp src/app/screens/shell/typing_indicator.cpp
 msgid "%1 is typing…"
@@ -1976,6 +1988,10 @@ msgid "Go ahead, start writing!"
 msgstr "さあ、書き始めましょう！"
 
 #: src/app/screens/shell/canvas_page.cpp
+msgid "Couldn't load the canvas: %1"
+msgstr ""
+
+#: src/app/screens/shell/canvas_page.cpp
 msgid "Could not create canvas: %1"
 msgstr "canvasを作成できませんでした: %1"
 
@@ -1990,6 +2006,10 @@ msgstr "このキャンバスは Slack の組み込みエディタで作成さ�
 #: src/app/screens/shell/canvas_page.cpp
 msgid "You don't have access to this canvas."
 msgstr "このキャンバスにアクセスする権限がありません。"
+
+#: src/app/screens/shell/canvas_page.cpp
+msgid "Couldn't load this canvas. Close and reopen it to try again."
+msgstr ""
 
 #: src/app/screens/shell/canvas_page.cpp
 msgid "Delete canvas"
@@ -2629,6 +2649,14 @@ msgstr "macOS に受け付けられました。バナーが表示されない場
 #: src/app/screens/shell/shell.cpp
 msgid "The macOS notification service is unavailable."
 msgstr "macOS の通知サービスを利用できません。"
+
+#: src/app/screens/shell/shell.cpp
+msgid "Your session has expired. Sign in again."
+msgstr ""
+
+#: src/app/screens/shell/shell.cpp
+msgid "Your %1 session has expired. Sign in again."
+msgstr ""
 
 #: src/app/screens/shell/shell.cpp
 msgid "Session expired"
@@ -3325,6 +3353,10 @@ msgid "Couldn't send message: %1"
 msgstr "メッセージを送信できませんでした: %1"
 
 #: src/app/slack/slack_actions.cpp
+msgid "Couldn't delete the message: %1"
+msgstr ""
+
+#: src/app/slack/slack_actions.cpp
 msgid "Couldn't set the reminder: %1"
 msgstr "リマインダーを設定できませんでした: %1"
 
@@ -3452,10 +3484,6 @@ msgstr "このプラットフォームでは自動アップデートはサポー
 #: src/app/update/updater.cpp
 msgid "Could not parse version manifest."
 msgstr "バージョンマニフェストを解析できませんでした。"
-
-#: src/app/update/updater.cpp
-msgid "Download failed: %1"
-msgstr "ダウンロードに失敗しました: %1"
 
 #: src/app/update/updater.cpp
 msgid "Downloaded update is corrupt (checksum mismatch)."

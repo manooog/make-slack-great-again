@@ -140,9 +140,9 @@ public:
     };
     const std::vector<Item> &items() const { return _items; }
     std::string              itemLabel(size_t i) const; // Day: "Today"; Divider: "3 replies"
-    // What the empty list shows, and its text (the hint under the ring, or
-    // "No messages yet").
-    enum class State : uint8_t { None, Loading, Empty };
+    // What the empty list shows, and its text (the hint under the ring,
+    // "No messages yet", or a first-page load failure).
+    enum class State : uint8_t { None, Loading, Empty, Error };
     State              state() const;
     std::string        stateText() const;
     const std::string &typingText() const;
@@ -350,6 +350,7 @@ private:
     MessageRow                *_rows = nullptr; // every message row (live, kept, spare), linked
     bool                       _loadingOlder = false, _loadingThread = false;
     bool                       _threadLoadPending = false, _waiting = false;
+    bool                       _historyFailed = false; // a first page failed: stop auto-paging
     // Selection.
     TextPos                    _selAnchor, _selFocus;
     bool                       _selDragging = false;

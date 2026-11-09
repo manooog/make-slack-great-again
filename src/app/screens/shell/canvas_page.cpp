@@ -205,7 +205,7 @@ void CanvasPage::loadContent() {
                 setReadOnly(ReadOnly::NoAccess);
                 return;
             }
-            if (_ro == ReadOnly::NoAccess)
+            if (_ro == ReadOnly::NoAccess || _ro == ReadOnly::LoadFailed)
                 setReadOnly(ReadOnly::None);
             _permalink = std::move(link);
             if (!title.empty())
@@ -217,6 +217,9 @@ void CanvasPage::loadContent() {
                     if (!error.empty()) {
                         _refetching = false; // the base is unknown
                         _lastHtml.clear();
+                        setReadOnly(ReadOnly::LoadFailed);
+                        if (onError)
+                            onError(i18n::arg(tr("Couldn't load the canvas: %1"), error));
                         return;
                     }
                     applyRemoteHtml(html);
@@ -411,7 +414,9 @@ void CanvasPage::setReadOnly(ReadOnly cause) {
                      "editable through the Slack API — it is read-only here.")
               )
         : cause == ReadOnly::NoAccess ? std::string(tr("You don't have access to this canvas."))
-                                      : std::string()
+        : cause == ReadOnly::LoadFailed
+            ? std::string(tr("Couldn't load this canvas. Close and reopen it to try again."))
+            : std::string()
     );
     _notice->setVisible(readOnly);
     _title->setEnabled(!readOnly);

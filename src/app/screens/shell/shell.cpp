@@ -2055,7 +2055,15 @@ void Shell::sampleNotificationReady(const plat::Notification &n) {
 
 void Shell::notifySessionExpired(const std::string &workspace) {
     plat::App &pa = _ctx.app.platform();
-    if (!_hidden || !pa.notificationsAvailable())
+    if (!_hidden) {
+        showError(
+            workspace.empty()
+                ? std::string(tr("Your session has expired. Sign in again."))
+                : i18n::arg(tr("Your %1 session has expired. Sign in again."), workspace)
+        );
+        return;
+    }
+    if (!pa.notificationsAvailable())
         return;
     plat::Notification n;
     n.title = tr("Session expired");

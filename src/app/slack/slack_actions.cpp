@@ -684,8 +684,14 @@ struct SlackBackend::Write {
                 if (err.empty() || err == "cancelled" || err == "message_not_found")
                     return;
                 LOG_WARN("slack", "chat.delete: %s", err.c_str());
-                if (!transient(err) && restore)
-                    putBack(conv, std::move(*restore));
+                if (!transient(err)) {
+                    if (b.onError)
+                        b.onError(i18n::arg(
+                            i18n::tr("Couldn't delete the message: %1"), friendlySendError(err)
+                        ));
+                    if (restore)
+                        putBack(conv, std::move(*restore));
+                }
             }
         );
     }

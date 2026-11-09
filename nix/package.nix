@@ -34,7 +34,7 @@
 }:
 
 let
-  # set(MSGA_VERSION 39) in version.cmake.
+  # set(MSGA_VERSION 44) in version.cmake.
   version = lib.head (
     builtins.match ".*MSGA_VERSION ([0-9]+).*" (builtins.readFile ../version.cmake)
   );
@@ -54,6 +54,8 @@ llvmPackages.stdenv.mkDerivation {
     root = ../.;
     fileset = lib.fileset.unions [
       ../CMakeLists.txt
+      ../LICENSE
+      ../THIRD_PARTY_LICENSES
       ../version.cmake
       (lib.fileset.maybeMissing ../credentials.cmake)
       ../gfx
@@ -105,6 +107,8 @@ llvmPackages.stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
     install -Dm755 msga $out/bin/msga
+    install -Dm644 $src/LICENSE $out/share/licenses/msga/LICENSE
+    install -Dm644 $src/THIRD_PARTY_LICENSES $out/share/licenses/msga/THIRD_PARTY_LICENSES
     install -Dm644 $src/gfx/msga.desktop $out/share/applications/msga.desktop
     install -Dm644 $src/gfx/icon_256.png $out/share/icons/hicolor/256x256/apps/msga.png
     install -Dm644 $src/gfx/icon.svg $out/share/icons/hicolor/scalable/apps/msga.svg

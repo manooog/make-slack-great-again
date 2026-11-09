@@ -159,7 +159,8 @@ jobs:
           test -s dist/windows/msga-windows-x86_64.exe
           cp dist/linux/msga-linux-x86_64 dist/msga-linux-x86_64
           cp dist/windows/msga-windows-x86_64.exe dist/msga-windows-x86_64.exe
-          (cd dist && sha256sum msga-linux-x86_64 msga-windows-x86_64.exe > SHA256SUMS)
+          cp LICENSE THIRD_PARTY_LICENSES dist/
+          (cd dist && sha256sum msga-linux-x86_64 msga-windows-x86_64.exe LICENSE THIRD_PARTY_LICENSES > SHA256SUMS)
           (cd dist && sha256sum --check SHA256SUMS)
           rm dist/linux/SHA256SUMS dist/windows/SHA256SUMS
           chmod +x dist/msga-linux-x86_64
@@ -172,8 +173,10 @@ jobs:
           CI_RUN_ID: ${{ steps.verify.outputs.run_id }}
         run: |
           set -euo pipefail
-          notes="Verified fork builds from dev (commit \`${GITHUB_SHA}\`, CI run ${CI_RUN_ID}). Assets: Linux x86_64 dynamically linked binary and Windows x86_64 statically linked MinGW executable. Upstream in-app updater disabled. See README.md for platform and runtime guidance; the Linux dependency list is attached as DEPENDENCIES.txt."
+          notes="Verified fork builds from dev (commit \`${GITHUB_SHA}\`, CI run ${CI_RUN_ID}). Assets: Linux x86_64 dynamically linked binary and Windows x86_64 statically linked MinGW executable, plus LICENSE, THIRD_PARTY_LICENSES and SHA256SUMS. Upstream in-app updater disabled. See README.md for platform and runtime guidance; the Linux dependency list is attached as DEPENDENCIES.txt."
           assets=(
+            dist/LICENSE
+            dist/THIRD_PARTY_LICENSES
             dist/SHA256SUMS
             dist/linux/DEPENDENCIES.txt
             dist/msga-linux-x86_64
