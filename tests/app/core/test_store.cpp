@@ -257,6 +257,111 @@ TEST("store: ts strings round-trip as micros") {
     CHECK_STR(formatTs(1758445200000007), "1758445200.000007");
 }
 
+TEST("store: cloning a message preserves every field") {
+    Message original;
+    original.ts          = 100;
+    original.threadTs    = 90;
+    original.latestReply = 110;
+    original.user        = 5;
+    original.pinnedBy    = 3;
+    original.replyCount  = 4;
+    original.text        = "hello <@U3>";
+    original.edited      = true;
+    original.pinned      = true;
+    original.saved       = true;
+    original.pending     = true;
+    original.delivery    = DeliveryState::Uncertain;
+    original.sendId      = "client-1";
+    original.sendError   = "timed out";
+    original.replyUsers  = {5, 3};
+    original.reactions.push_back(Reaction{"tada", 2, {5, 3}});
+    original.extras().subtype = "bot_message";
+
+    const Message copy = original.clone();
+    CHECK(copy.ts == original.ts);
+    CHECK(copy.threadTs == original.threadTs);
+    CHECK(copy.latestReply == original.latestReply);
+    CHECK(copy.user == original.user);
+    CHECK(copy.pinnedBy == original.pinnedBy);
+    CHECK(copy.replyCount == original.replyCount);
+    CHECK_STR(copy.text, original.text);
+    CHECK(copy.edited == original.edited);
+    CHECK(copy.pinned == original.pinned);
+    CHECK(copy.saved == original.saved);
+    CHECK(copy.pending == original.pending);
+    CHECK(copy.delivery == original.delivery);
+    CHECK_STR(copy.sendId, original.sendId);
+    CHECK_STR(copy.sendError, original.sendError);
+    CHECK(copy.replyUsers == original.replyUsers);
+    CHECK(copy.reactions == original.reactions);
+    CHECK(copy == original);
+}
+
+TEST("store: cloning a message deep-copies its extras") {
+    Message original;
+    original.ts           = 200;
+    MessageExtras &extras = original.extras();
+    extras.subtype        = "bot_message";
+    extras.botName        = "buildbot";
+    extras.files.push_back(File{});
+    extras.files.back().name = "build.log";
+    extras.attachments.push_back(Attachment{});
+    extras.attachments.back().title = "Build";
+    extras.attachments.back().fields.push_back(AttachmentField{"status", "failed"});
+    extras.buttons.push_back(Button{});
+    extras.buttons.back().label = "Open";
+    extras.blocks.push_back(Block{});
+    extras.blocks.back().text = "details";
+    extras.huddle.attendees.push_back(3);
+    extras.sendBlocks    = "[]";
+    extras.sendBroadcast = true;
+
+    Message copy = original.clone();
+    REQUIRE(copy.extra);
+    CHECK(copy == original);
+    CHECK(copy.extra != original.extra);
+
+    copy.extra->subtype                        = "changed";
+    copy.extra->botName                        = "changed";
+    copy.extra->files[0].name                  = "changed";
+    copy.extra->attachments[0].title           = "changed";
+    copy.extra->attachments[0].fields[0].value = "changed";
+    copy.extra->buttons[0].label               = "changed";
+    copy.extra->blocks[0].text                 = "changed";
+    copy.extra->huddle.attendees[0]            = 4;
+    copy.extra->sendBlocks                     = "changed";
+    copy.extra->sendBroadcast                  = false;
+
+    CHECK_STR(original.extra->subtype, "bot_message");
+    CHECK_STR(original.extra->botName, "buildbot");
+    CHECK_STR(original.extra->files[0].name, "build.log");
+    CHECK_STR(original.extra->attachments[0].title, "Build");
+    CHECK_STR(original.extra->attachments[0].fields[0].value, "failed");
+    CHECK_STR(original.extra->buttons[0].label, "Open");
+    CHECK_STR(original.extra->blocks[0].text, "details");
+    CHECK(original.extra->huddle.attendees[0] == 3);
+    CHECK_STR(original.extra->sendBlocks, "[]");
+    CHECK(original.extra->sendBroadcast);
+    CHECK_FALSE(copy == original);
+}
+
+TEST("store: cloning a message without extras leaves extras absent") {
+    Message original;
+    original.ts       = 300;
+    original.text     = "plain";
+    original.pinnedBy = 3;
+    original.saved    = true;
+
+    const Message copy = original.clone();
+    CHECK_FALSE(original.extra);
+    CHECK_FALSE(copy.extra);
+    CHECK(copy.ts == original.ts);
+    CHECK_STR(copy.text, original.text);
+    CHECK(copy.pinnedBy == original.pinnedBy);
+    CHECK(copy.saved);
+    CHECK(copy == original);
+}
+
 TEST("store: users are interned and merged in place") {
     Store   s;
     UserRef ghost = s.internUser("U9");
