@@ -1199,6 +1199,99 @@ TEST("slack features: a refused Activity feed reports Slack's code and isn't ask
     CHECK(count("activity.feed") == 1);
 }
 
+TEST("slack features: an Activity refusal before Grid detection recovers after connect") {
+    if (!haveServer())
+        return;
+    // The Activity page is opened before auth.test has said the workspace is
+    // Grid: the refusal is latched while _grid is still false.
+    Env e(R"({
+      "auth.test": {"ok": true, "user_id": "UME", "team_id": "T1", "team": "Lumen",
+                    "enterprise_id": "E1", "url": "https://lumen.slack.com/"},
+      "activity.feed": {"ok": false, "error": "enterprise_is_restricted"},
+      "activity.feed?team_id=T1": {"ok": true, "items": [
+        {"is_unread": true, "feed_ts": "1800000009.000000", "key": "at_user.1",
+         "item": {"type": "at_user", "message": {"ts": "1800000009.000100", "channel": "C1",
+                  "author_user_id": "UMIRA"}}}]},
+      "messages.list": {"ok": true, "messages_data": {"C1": {"messages": [
+        {"ts": "1800000009.000100", "user": "UMIRA", "text": "look"}]}}}})");
+    Feed first = loadFeed(e, model::Backend::ActivityFilter::All, false);
+    REQUIRE(first.called);
+    CHECK(!first.ok);
+    CHECK_STR(first.page.error, "enterprise_is_restricted");
+    {
+        const Log log;
+        REQUIRE(log.count("activity.feed") == 1);
+        CHECK(!log.get("activity.feed")["form"].has("team_id"));
+    }
+    REQUIRE(e.connect());
+    // The refusal happened before Grid was known: the next retry must reach
+    // Slack with the workspace's team_id, not answer from the stale latch.
+    Feed retry = loadFeed(e, model::Backend::ActivityFilter::All, false);
+    REQUIRE(retry.called);
+    CHECK(retry.ok);
+    REQUIRE(retry.page.items.size() == 1);
+    CHECK_STR(retry.page.items[0].message.text, "look");
+    const Log log;
+    REQUIRE(log.count("activity.feed") == 2);
+    CHECK(!log.get("activity.feed")["form"].has("team_id"));
+    CHECK_STR(log.get("activity.feed", 1)["form"]["team_id"].str(), "T1");
+}
+
+TEST("slack features: a pre-connect Activity refusal outside Grid stays latched") {
+    if (!haveServer())
+        return;
+    // auth.test has no enterprise_id: connect must not clear the latch.
+    Env e(R"({"activity.feed": {"ok": false, "error": "enterprise_is_restricted"}})");
+    Feed first = loadFeed(e, model::Backend::ActivityFilter::All, false);
+    REQUIRE(first.called);
+    CHECK(!first.ok);
+    REQUIRE(e.connect());
+    Feed retry = loadFeed(e, model::Backend::ActivityFilter::All, false);
+    REQUIRE(retry.called);
+    CHECK(!retry.ok);
+    CHECK_STR(retry.page.error, "enterprise_is_restricted");
+    CHECK(count("activity.feed") == 1);
+}
+
+TEST("slack features: on Grid the Activity feed refused without team_id goes again with it") {
+    if (!haveServer())
+        return;
+    // Connect first, as usual: the refusal falls back to the team_id form.
+    Env e(R"({
+      "auth.test": {"ok": true, "user_id": "UME", "team_id": "T1", "team": "Lumen",
+                    "enterprise_id": "E1", "url": "https://lumen.slack.com/"},
+      "activity.feed": {"ok": false, "error": "enterprise_is_restricted"},
+      "activity.feed?team_id=T1": {"ok": true, "items": []}})");
+    REQUIRE(e.connect());
+    Feed f = loadFeed(e, model::Backend::ActivityFilter::All, false);
+    REQUIRE(f.called);
+    CHECK(f.ok);
+    {
+        const Log log;
+        REQUIRE(log.count("activity.feed") == 2);
+        CHECK(!log.get("activity.feed")["form"].has("team_id"));
+        CHECK_STR(log.get("activity.feed", 1)["form"]["team_id"].str(), "T1");
+    }
+    // The read-state calls carry it too once the fallback is in effect.
+    model::Backend::ActivityItem item;
+    item.key     = "at_user.1";
+    item.type    = "at_user";
+    item.feedTs  = "1800000009.000000";
+    e.be->setActivityRead(item, true);
+    e.be->setActivityRead(item, false);
+    REQUIRE(pumpUntil(
+        [&] {
+            const Log pending;
+            return pending.count("activity.markRead") == 1 &&
+                   pending.count("activity.markUnread") == 1;
+        },
+        3000
+    ));
+    const Log marks;
+    CHECK_STR(marks.get("activity.markRead")["form"]["team_id"].str(), "T1");
+    CHECK_STR(marks.get("activity.markUnread")["form"]["team_id"].str(), "T1");
+}
+
 TEST("slack features: an OAuth token has no Activity page") {
     if (!haveServer())
         return;
