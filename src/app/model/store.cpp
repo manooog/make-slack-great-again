@@ -366,7 +366,6 @@ void Store::noteUserRevisions() {
             char(u.admin),
             char(u.owner),
             char(u.placeholder),
-            char(u.unavailable),
             char(u.deleted),
             char(u.stranger),
             char(u.vip)
@@ -449,7 +448,6 @@ bool sameMeta(const Conversation &a, const Conversation &b) {
             c.canvasTitle,
             c.canvasId,
             c.localName,
-            c.readOnly,
             c.huddleActive,
             c.huddleLink,
             c.huddleParticipants,
@@ -536,7 +534,7 @@ std::string Store::displayName(ConvRef ref) const {
     const Conversation &c = _convs[ref];
     switch (c.kind) {
     case ConvKind::Dm:
-        if (!c.localName.empty()) // a renamed agent session
+        if (!c.localName.empty()) // a name only this client shows
             return c.localName;
         if (c.dmUser != kNoUser)
             return std::string(user(c.dmUser).label());
@@ -1492,19 +1490,17 @@ bool Store::mentionsMe(std::string_view text) const {
            text.find("<!everyone") != std::string_view::npos;
 }
 
-void Store::setTyping(ConvRef ref, UserRef u, Ts thread, bool on, int64_t sinceMs) {
+void Store::setTyping(ConvRef ref, UserRef u, Ts thread, bool on) {
     if (ref >= _typing.size() || u == me)
         return;
     auto      &list = _typing[ref];
     const auto it   = std::find_if(list.begin(), list.end(), [&](const Typing &t) {
         return t.user == u && t.thread == thread;
     });
-    if (on && it != list.end() && it->sinceMs != sinceMs)
-        it->sinceMs = sinceMs; // the same typer, a turn that began at another time
-    else if (on == (it != list.end()))
+    if (on == (it != list.end()))
         return; // no change: a refreshed indicator fires nothing
-    else if (on)
-        list.push_back(Typing{u, thread, sinceMs});
+    if (on)
+        list.push_back(Typing{u, thread});
     else
         list.erase(it);
     emit({ChangeKind::Typing, ref, thread});

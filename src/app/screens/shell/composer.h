@@ -94,14 +94,6 @@ public:
     std::vector<std::string> files(Key k) const;
     bool                     has(Key k) const;
     void                     erase(Key k);
-    // Adds plain `text` at the end of the draft of (scope, k), after a space
-    // (a dictation that finished after its composer moved on).
-    void                     appendText(const std::string &scope, Key k, std::string_view text);
-    // Puts `html` in front of the draft of (scope, k), what it held on the
-    // next line, and adds `files` to its own (a message that never went out,
-    // Composer::giveBack).
-    void
-    putBack(const std::string &scope, Key k, std::string_view html, std::vector<std::string> files);
 
 private:
     model::Store *storeOf(const std::string &scope) const;
@@ -148,31 +140,15 @@ public:
     // A fixed placeholder, whatever the target (the forward dialog's); ""
     // goes back to the target's ("Message #design", "Reply in thread…").
     void               setPlaceholder(std::string text);
-    // A backend-provided reply suggestion, shown in place of the placeholder while
-    // the editor is empty ("…  →"); → or Tab takes it. "" drops it.
-    void               setSuggestion(std::string text);
-    const std::string &suggestion() const { return _suggestion; }
-    bool               acceptSuggestion();
-    // A conversation nobody can write to from
-    // here (Conversation::readOnly) locks the composer, its reason the
-    // placeholder; "" unlocks it ("Message #design" again).
-    void               setLockReason(std::string reason);
     // The conversation's name changed (a DM peer resolved later): "Message …"
-    // follows, unless locked or fixed.
+    // follows, unless fixed.
     void               refreshPlaceholder();
 
-    // ── History and commands ────────────────────────────────────────────────
-    // The prompt history source (newest first): ↑ / ↓ from an empty
-    // editor step through it, Ctrl+R searches it. Unset: no history.
-    std::function<std::vector<std::string>()> historySource;
-    HistorySearch                            *historySearch() const { return _historySearch; }
+    // ── Commands ────────────────────────────────────────────────────────────
     // "/name args" for a known command msga runs itself (Command::local,
     // Capabilities::slashCommands): asked instead of sending; others go out
     // as ordinary messages.
     std::function<void(const std::string &name, const std::string &args)> onCommand;
-    // What the history search dims above the box (the message
-    // area; default the composer's parent).
-    void setPopupArea(ui::View *v) { _popupArea = v; }
 
     // ── Attachments ─────────────────────────────────────────────────────────
     // Adds files (absolute local paths; folders, missing files and ones
@@ -205,9 +181,9 @@ public:
     // chip) deletes the message and puts the text and files back.
     bool      undoOffered() const { return _undoTs != 0; }
     bool      undoSend();
-    // A message that never went out (Backend::onUnsent), as undo send puts
-    // one back: its mrkdwn in front of what's typed since, its files
-    // attached again. While editing, the draft set aside takes the text.
+    // As undo send puts a message back: its mrkdwn in front of what's typed
+    // since, its files attached again. While editing, the draft set aside
+    // takes the text.
     void      giveBack(std::string_view mrkdwn, const std::vector<std::string> &files);
 
     // Avatars for the @ list (the shell's).
@@ -262,10 +238,6 @@ private:
     bool keyDown(const ui::Event &e); // the composer-scope shortcuts
     void formatAction(shortcuts::Id id);
     void editLast();
-    bool openPromptSearch();
-    bool stepPromptHistory(bool older);
-    void resetPromptHistory();
-    void setHistoryText(const std::string &text, bool caretAtStart);
     void prefixLines(std::string_view prefix, bool numbered);
     void wrapCodeBlock();
     void wrapInline(std::string_view marker);
@@ -289,12 +261,8 @@ private:
     ui::View                *_seps[2]   = {};
     ui::View                *_editBar   = nullptr;
     std::string              _editStash; // the draft set aside while editing
-    std::string              _placeholder, _fixedPlaceholder, _suggestion, _lock;
-    std::vector<std::string> _history; // the source's, while stepping (_historyIndex >= 0)
-    int                      _historyIndex  = -1;
-    HistorySearch           *_historySearch = nullptr;
-    ui::View                *_popupArea     = nullptr;
-    model::Ts                _editTs        = 0;
+    std::string              _placeholder, _fixedPlaceholder;
+    model::Ts                _editTs = 0;
     ui::View                *_box = nullptr, *_chips = nullptr;
     ui::View                *_chipRow  = nullptr;
     PickList                *_pick     = nullptr;

@@ -40,12 +40,6 @@ const Def kDefs[] = {
     // Only while the "Sent · Undo" chip is up and the editor is empty;
     // otherwise Ctrl+Z stays the editor's own undo.
     {Id::UndoSend, Scope::Composer, true, N_("Undo send"), {{K::Z, Ctrl}, kNone}},
-    // Only where the conversation has a prompt history (a Claude Code session).
-    {Id::SearchPromptHistory,
-     Scope::Composer,
-     false,
-     N_("Search earlier prompts"),
-     {{K::R, Ctrl}, kNone}},
 
     {Id::PreviousUnread, Scope::Window, true, N_("Previous unread conversation"),
      {{K::Up, Alt | Shift}, kNone}},

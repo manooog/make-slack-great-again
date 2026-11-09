@@ -196,7 +196,7 @@ Avatar::Presence Avatar::presenceOf(const model::User *u, bool hasPresence, bool
         return Presence::None;
     if (u->active)
         return u->dnd ? Presence::ActiveDnd : Presence::Active;
-    if (phantom || u->unavailable)
+    if (phantom)
         return u->dnd ? Presence::PhantomDnd : Presence::Phantom;
     return u->dnd ? Presence::Dnd : Presence::Away;
 }

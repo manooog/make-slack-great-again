@@ -56,9 +56,6 @@ struct User {
     // Interned from a reference (mention, reaction) before the roster knew
     // them; a later addUser() fills the record in place.
     bool        placeholder = false;
-    // Agent sessions: there, yet not reachable from here (a terminal drives
-    // it, or it waits on an approval) — the yellow dot.
-    bool        unavailable = false;
     // Deactivated, or a Slack Connect stranger (conversations.open rejects
     // them): never offered as someone to message (Find a channel's People).
     bool        deleted = false, stranger = false;
@@ -289,9 +286,6 @@ struct Conversation {
     std::string          canvasTitle; // non-empty: the channel has a canvas
     std::string          canvasId;    // its file ("F0123"); "" while unknown or none
     std::string          localName;   // "Name conversation…": only this client shows it
-    // Why nobody can write here ("This session is running in a terminal…"):
-    // the composer shows it instead of taking text. "" = writable.
-    std::string          readOnly;
     // A live huddle (Capabilities::huddles): its link (Slack's huddle_link,
     // "" = unknown) and who is in it (or only its host before anyone joined).
     bool                 huddleActive = false;
@@ -312,11 +306,8 @@ struct Conversation {
 
 // Someone typing right now (typing events are transient; see Store::setTyping).
 struct Typing {
-    UserRef user    = kNoUser;
-    Ts      thread  = 0;
-    // An agent at work: "thinking (1m 5s)" counted from here (epoch ms);
-    // 0 = plain typing.
-    int64_t sinceMs = 0;
+    UserRef user   = kNoUser;
+    Ts      thread = 0;
 };
 
 } // namespace model

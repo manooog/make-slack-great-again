@@ -160,9 +160,6 @@ bool BackendProxy::gifSearchAvailable() const {
 void BackendProxy::searchGifs(std::string query, std::function<void(std::vector<Gif>)> done) {
     _t->searchGifs(std::move(query), std::move(done));
 }
-std::string BackendProxy::promptSuggestion(ConvRef c) const {
-    return _t->promptSuggestion(c);
-}
 void BackendProxy::searchPage(std::string query, std::string cursor, SearchPageDone done) {
     _t->searchPage(std::move(query), std::move(cursor), std::move(done));
 }
