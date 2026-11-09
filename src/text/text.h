@@ -28,6 +28,7 @@ std::vector<std::string> uiFontFamilies();
 // Select the UI family for future layouts; call before creating views.
 // Empty or unavailable families use the existing default.
 bool setUiFontFamily(std::string_view family);
+bool setMonoFontFamily(std::string_view family);
 
 // At exit (ui::App's destructor): frees the fonts and shaping state. Nothing
 // here may be used afterwards, short of init() again.

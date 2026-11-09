@@ -67,7 +67,7 @@ Implementation: [#2](https://github.com/zce/make-slack-great-again/pull/2), [#9]
 
 - Added Wayland window rounding and themed shadows.
 - Added auto-hiding overlay scrollbars.
-- Added a selectable UI font family.
+- Added selectable UI and code font families.
 - Corrected Linux XDG data/cache directory handling.
 - Hardened Linux proxy transport and GNOME settings behavior: HTTP/WS forward-proxy requests, CONNECT for HTTPS/WSS, SOCKS5 tunneling, explicit Manual/None handling, and visible errors for unsupported PAC/WPAD modes. See [Network proxy on Linux](#network-proxy-on-linux) for precedence, supported schemes and limitations.
 - Hardened desktop-entry executable-path escaping and XDG runtime-directory validation.

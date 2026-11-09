@@ -234,6 +234,31 @@ void uiFontFamily() {
     CHECK(fonts::familyName(fonts::primary(Style{})) == original);
 }
 
+void monoFontFamily() {
+    const auto names = uiFontFamilies();
+    CHECK(!names.empty());
+    const std::string originalUi = fonts::familyName(fonts::primary(Style{}));
+    Style mono;
+    mono.mono = true;
+    const std::string originalMono = fonts::familyName(fonts::primary(mono));
+    if (!names.empty()) {
+        const std::string &chosen = names.back();
+        std::string cased = chosen;
+        for (char &c : cased)
+            if (c >= 'a' && c <= 'z')
+                c = char(c - 'a' + 'A');
+        CHECK(setMonoFontFamily(cased));
+        CHECK(fonts::familyName(fonts::primary(mono)) == chosen);
+        CHECK(fonts::familyName(fonts::primary(Style{})) == originalUi);
+        CHECK(setMonoFontFamily("  " + cased + "  "));
+        CHECK(fonts::familyName(fonts::primary(mono)) == chosen);
+    }
+    CHECK(!setMonoFontFamily("__missing_msga_mono_font__"));
+    CHECK(fonts::familyName(fonts::primary(mono)) == originalMono);
+    CHECK(setMonoFontFamily({}));
+    CHECK(fonts::familyName(fonts::primary(mono)) == originalMono);
+}
+
 void hitRoundtrip() {
     AttributedText t;
     Style          b;
@@ -998,6 +1023,7 @@ constexpr Case kCases[] = {
     {"rtl", rtl},
     {"cjk_fallback", cjkFallback},
     {"ui_font_family", uiFontFamily},
+    {"mono_font_family", monoFontFamily},
     {"hit_roundtrip", hitRoundtrip},
     {"inline_box", inlineBox},
     {"style_boundary", styleBoundary},

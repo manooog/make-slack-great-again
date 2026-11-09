@@ -81,6 +81,7 @@ const struct {
     const char            *secret = nullptr;
 } kStrings[] = {
     {"fontFamily", &Settings::fontFamily},
+    {"monoFamily", &Settings::monoFamily},
     {"language", &Settings::language},
     {"trayIconPath", &Settings::trayIconPath},
     {"soundId", &Settings::soundId},

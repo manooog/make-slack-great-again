@@ -55,6 +55,7 @@ struct Settings {
     int                      fontSize    = 1;   // 0 small, 1 medium, 2 large, 3 custom
     int                      fontPercent = 100; // custom: % of medium
     std::string              fontFamily; // empty = automatic UI font; applies on restart
+    std::string              monoFamily; // empty = automatic code font; applies on restart
     std::string              language    = "system"; // "system", "en", "ja"
     bool                     use24h = false, threadsInline = false, linkPreviews = true;
     // use24h came from the file; without it the clock follows the language

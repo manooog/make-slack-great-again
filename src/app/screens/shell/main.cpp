@@ -380,6 +380,7 @@ int main(int argc, char **argv) {
     // Font selection is applied before any UI layouts have been built.
     // Missing families use the original automatic choice.
     text::setUiFontFamily(settings.fontFamily);
+    text::setMonoFontFamily(settings.monoFamily);
     app->setUserTextScale(settings.fontScale());
     settings.applyPalettes();
 
