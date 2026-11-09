@@ -19,6 +19,9 @@ void BackendProxy::sendWithFiles(
 ) {
     _t->sendWithFiles(c, std::move(text), thread, std::move(files), std::move(d));
 }
+bool BackendProxy::retryFailedMessage(ConvRef c, Ts local) {
+    return _t->retryFailedMessage(c, local);
+}
 void BackendProxy::edit(ConvRef c, Ts ts, std::string text) {
     _t->edit(c, ts, std::move(text));
 }

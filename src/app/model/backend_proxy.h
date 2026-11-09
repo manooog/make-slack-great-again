@@ -22,6 +22,7 @@ public:
     void sendWithFiles(
         ConvRef c, std::string text, Ts thread, std::vector<std::string> files, Done d
     ) override;
+    bool retryFailedMessage(ConvRef c, Ts local) override;
     void edit(ConvRef c, Ts ts, std::string text) override;
     void remove(ConvRef c, Ts ts) override;
     void react(ConvRef c, Ts ts, std::string_view name, bool add) override;
