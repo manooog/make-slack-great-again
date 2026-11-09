@@ -18,6 +18,8 @@ target_link_libraries(msga_test PUBLIC msga_base msga_flags)
 if(Python3_FOUND)
     add_test(NAME fork_bundle_metadata
         COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/workflows/test_bundle_metadata.py)
+    add_test(NAME dependency_license_inventory
+        COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/workflows/test_dependency_licenses.py)
 endif()
 
 # msga_add_test(<name> COMMAND <exe> [suite] [group] [TZ] [HOME <dir>]

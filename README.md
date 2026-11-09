@@ -106,7 +106,7 @@ The existing `v0.1.0` release predates Windows support and remains Linux-only. S
 - **Linux x86_64:** `msga-linux-x86_64`, dynamically linked against Ubuntu 24.04 libraries (not a static-musl build).
 - **Windows x86_64:** `msga-windows-x86_64.exe`, a portable single-file executable built with MinGW and statically linked to its GCC runtime. No installer is provided.
 
-`SHA256SUMS` covers both binaries; `DEPENDENCIES.txt` lists the Linux shared-library requirements. macOS packages shown by upstream are not fork builds. The upstream in-app updater is disabled so it cannot replace our custom version; install new fork builds from this repository's GitHub Releases.
+`SHA256SUMS` covers both binaries and the license files; `DEPENDENCIES.txt` lists the Linux shared-library requirements. Every release also includes `LICENSE` and `THIRD_PARTY_LICENSES`. macOS packages shown by upstream are not fork builds. The upstream in-app updater is disabled so it cannot replace our custom version; install new fork builds from this repository's GitHub Releases.
 
 ## Connecting to Slack
 
@@ -303,6 +303,7 @@ The fork release workflow publishes:
 
 - **Linux x86_64:** `msga-linux-x86_64`, dynamically linked against Ubuntu 24.04 system libraries rather than built as a static-musl executable. Check the attached `DEPENDENCIES.txt` when evaluating runtime compatibility on another distribution.
 - **Windows x86_64:** `msga-windows-x86_64.exe`, a portable single-file executable built with MSYS2/MinGW and statically linked to its GCC runtime. The release build is checked for MinGW runtime DLL dependencies. No installer or code signing is produced.
+- **License and attribution:** `LICENSE` and `THIRD_PARTY_LICENSES`, covered by `SHA256SUMS` like the binaries.
 - **macOS:** not currently published by this fork's release workflow; upstream macOS packages are not fork releases.
 
 The existing `v0.1.0` release predates Windows support and remains Linux-only. Subsequent releases from the updated pipeline include Windows.
@@ -317,4 +318,4 @@ The upstream in-app updater must remain disabled: it downloads from `msga.app` a
 
 ## License
 
-msga is free software under the [GNU General Public License v3.0 or later](https://github.com/punarinta/make-slack-great-again/blob/dev/LICENSE). The third-party code it uses is listed in [THIRD_PARTY_LICENSES](https://github.com/punarinta/make-slack-great-again/blob/dev/THIRD_PARTY_LICENSES).
+msga is free software under the [GNU General Public License v3.0 or later](LICENSE). The third-party code it uses is listed in [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES), and release archives include both files.
