@@ -725,7 +725,7 @@ void Accounts::connect(uint64_t serial) {
             return;
         }
         // Offline or Slack unreachable: keep the workspace, try again.
-        LOG_INFO("accounts", "%s: connect failed (%s), retrying", r->key.c_str(), error.c_str());
+        LOG_WARN("accounts", "%s: connect failed (%s), retrying", r->key.c_str(), error.c_str());
         r->retryTimer = _ctx.app.platform().addTimer(kRetryMs, false, [this, serial] {
             if (Running *x = bySerial(serial)) {
                 x->retryTimer = 0;
