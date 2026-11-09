@@ -413,8 +413,7 @@ void CanvasPage::setReadOnly(ReadOnly cause) {
                   tr("This canvas was created with Slack's built-in editor and is not "
                      "editable through the Slack API — it is read-only here.")
               )
-        : cause == ReadOnly::NoAccess
-            ? std::string(tr("You don't have access to this canvas."))
+        : cause == ReadOnly::NoAccess ? std::string(tr("You don't have access to this canvas."))
         : cause == ReadOnly::LoadFailed
             ? std::string(tr("Couldn't load this canvas. Close and reopen it to try again."))
             : std::string()

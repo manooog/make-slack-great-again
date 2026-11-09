@@ -105,12 +105,10 @@ struct Fake : fake::FakeBackend {
     void loadCanvasContent(const std::string &fileId, CanvasHtmlDone done) override {
         if (canvasContentError.empty())
             return fake::FakeBackend::loadCanvasContent(fileId, std::move(done));
-        app().platform().post(
-            [error = canvasContentError, done = std::move(done)]() mutable {
-                if (done)
-                    done({}, error);
-            }
-        );
+        app().platform().post([error = canvasContentError, done = std::move(done)]() mutable {
+            if (done)
+                done({}, error);
+        });
     }
     void sendBlocks(
         ConvRef conv, std::string text, std::string blocks, Ts thread, bool bc, Done done
@@ -152,8 +150,8 @@ struct Fake : fake::FakeBackend {
     std::vector<std::string> cancelled;
     std::string              cancelError;
 
-    std::string presenceError;     // setPresence fails with it
-    std::string statusError;       // setStatus too
+    std::string presenceError;      // setPresence fails with it
+    std::string statusError;        // setStatus too
     std::string canvasContentError; // loadCanvasContent fails with it
 
     // The presence link, as a Slack session workspace reports it.
@@ -663,10 +661,7 @@ TEST("canvas: a failed content load is read-only and reports the error") {
     shell::CanvasPage &cp = h.sh->canvasPage();
     REQUIRE(until([&] { return h.sh->errorBanner()->visible(); }));
     CHECK(cp.notice()->visible());
-    CHECK_STR(
-        cp.notice()->text(),
-        "Couldn't load this canvas. Close and reopen it to try again."
-    );
+    CHECK_STR(cp.notice()->text(), "Couldn't load this canvas. Close and reopen it to try again.");
     CHECK_STR(h.sh->errorBanner()->text(), "Couldn't load the canvas: timeout");
     CHECK_FALSE(cp.body().enabled());
     // Even a programmatic edit is not saved while the base is unknown.
