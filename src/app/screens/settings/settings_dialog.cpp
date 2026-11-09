@@ -441,31 +441,34 @@ void SettingsDialog::buildAppearance() {
     }
     buildCustomEditor();
 
-    heading(_content, tr("Font family"));
-    {
+    auto fontFamilyField = [this](const char *title, std::string &value) {
+        heading(_content, title);
         auto *g = group(_content, 4);
         auto *field = g->add<TextField>(tr("Default"));
         field->style().width(340);
-        field->setText(_draft.fontFamily);
+        field->setText(value);
 
         // One editable value, no separate search/select step. The font index
         // uses ASCII-lowercase keys; never rewrite the name the user typed.
         const auto families = text::uiFontFamilies();
         auto *warning = caption(g, {});
         warning->setVisible(false);
-        auto update = [this, field, warning, families] {
-            _draft.fontFamily = field->text();
-            const std::string key = str::asciiLower(str::trim(_draft.fontFamily));
+        auto update = [&value, field, warning, families] {
+            value = field->text();
+            const std::string key = str::asciiLower(str::trim(value));
             const bool available = key.empty() ||
                                    std::binary_search(families.begin(), families.end(), key);
             warning->setText(available ? std::string{}
-                                       : str::concat({tr("Unavailable: "), _draft.fontFamily}));
+                                       : str::concat({tr("Unavailable: "), value}));
             warning->setVisible(!available);
         };
         field->edit().onChange = update;
         update();
         caption(g, tr("Font changes apply after restarting MSGA."));
-    }
+    };
+
+    fontFamilyField(tr("Font family"), _draft.fontFamily);
+    fontFamilyField(tr("Code font family"), _draft.monoFamily);
 
     heading(_content, tr("Font size"));
     {
@@ -823,6 +826,7 @@ void SettingsDialog::saveAppearance() {
     for (int shell::Settings::*f : kAppearanceInts)
         _s.*f = _draft.*f;
     _s.fontFamily         = _draft.fontFamily;
+    _s.monoFamily         = _draft.monoFamily;
     _s.language           = _draft.language;
     _s.spellLanguages     = _draft.spellLanguages;
     _s.quickReactionNames = _draft.quickReactionNames;

@@ -1021,10 +1021,6 @@ msgstr "システム"
 msgid "Color theme"
 msgstr "カラーテーマ"
 
-#: src/app/screens/settings/settings_dialog.cpp
-msgid "Font family"
-msgstr ""
-
 #: src/app/screens/settings/settings_dialog.cpp src/app/screens/shell/context_menus.cpp
 msgid "Default"
 msgstr "デフォルト"
@@ -1035,6 +1031,14 @@ msgstr ""
 
 #: src/app/screens/settings/settings_dialog.cpp
 msgid "Font changes apply after restarting MSGA."
+msgstr ""
+
+#: src/app/screens/settings/settings_dialog.cpp
+msgid "Font family"
+msgstr ""
+
+#: src/app/screens/settings/settings_dialog.cpp
+msgid "Code font family"
 msgstr ""
 
 #: src/app/screens/settings/settings_dialog.cpp

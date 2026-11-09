@@ -1352,6 +1352,10 @@ bool setUiFontFamily(std::string_view family) {
     return fonts::setUiFamily(family);
 }
 
+bool setMonoFontFamily(std::string_view family) {
+    return fonts::setMonoFamily(family);
+}
+
 bool init(std::string *error) {
     return fonts::init(error);
 }

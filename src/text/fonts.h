@@ -47,6 +47,7 @@ std::vector<std::string> uiFamilies();
 // Empty selects the default; an unavailable family falls back and returns false.
 // Call before creating views (existing layouts cannot change fonts in place).
 bool setUiFamily(std::string_view family);
+bool setMonoFamily(std::string_view family);
 
 FontKey primary(const Style &s);
 // The colour emoji face, kNoFont when none is installed.
