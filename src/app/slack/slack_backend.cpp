@@ -679,8 +679,17 @@ void SlackBackend::connect(Done done) {
             // auth.test's url is the authoritative host (stored credentials may
             // predate workspaceUrl or carry a stale one).
             _read->applyApiBase(_store.workspaceUrl);
-            _grid = o.has("enterprise_id");
-            if (_grid)
+            const bool wasGrid = _grid;
+            _grid              = o.has("enterprise_id");
+            if (_grid) {
+                // A refusal latched before this answer proved the workspace
+                // is Grid would have retried with team_id: make the next
+                // Activity load do so instead of answering from the latch.
+                if (!wasGrid && _activityUnavailable) {
+                    _activityUnavailable = false;
+                    _activityError.clear();
+                    _activityTeamId = true;
+                }
                 LOG_INFO(
                     "slack",
                     "%s is part of Enterprise Grid org %.*s",
@@ -688,6 +697,7 @@ void SlackBackend::connect(Done done) {
                     int(o["enterprise_id"].str().size()),
                     o["enterprise_id"].str().data()
                 );
+            }
             _store.me          = _store.internUser(o["user_id"].str());
             _read->connectDone = std::move(done);
             _read->startLoads();
