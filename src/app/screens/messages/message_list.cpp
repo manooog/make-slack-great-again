@@ -2147,7 +2147,7 @@ void MessageList::runMenuAction(Ts ts, int id, const std::string &path, ui::Poin
         copy = firstLink(msg->text);
         break;
     case kCopyText: // shortened link labels copy as their full URLs
-        copy = copyableMessageText(_ctx, *msg);
+        copy = copyableMessageText(_ctx, *msg, *this);
         break;
     case kPin:
     case kUnpin:

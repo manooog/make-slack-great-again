@@ -48,8 +48,10 @@ std::string huddleSummaryText(const Store &st, const model::Huddle &h);
 std::vector<std::string> selectableTexts(
     Context &ctx, const model::Message &m, const MessageList *list = nullptr
 );
-// The message content copied by "Copy message", including attachment-only bodies.
-std::string copyableMessageText(Context &ctx, const model::Message &m);
+// The visible message content copied by "Copy message", including attachment-only bodies.
+std::string copyableMessageText(
+    Context &ctx, const model::Message &m, const MessageList &list
+);
 
 // A canvas card: its title as shown, and the start of the document as text — headings larger, list
 // markers, inline formats, member mentions as chips with names, emoji (custom

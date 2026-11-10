@@ -1114,7 +1114,9 @@ std::vector<std::string> selectableTexts(
     return out;
 }
 
-std::string copyableMessageText(Context &ctx, const model::Message &m) {
+std::string copyableMessageText(
+    Context &ctx, const model::Message &m, const MessageList &list
+) {
     std::vector<std::string> parts;
     auto addPlain = [&](std::string_view text) {
         if (text.empty())
@@ -1148,7 +1150,10 @@ std::string copyableMessageText(Context &ctx, const model::Message &m) {
     else
         addPlain(m.text);
 
-    for (const model::Attachment &a : m.attachments()) {
+    for (size_t i = 0; i < m.attachments().size(); ++i) {
+        if (list.attachmentHidden(m, i))
+            continue;
+        const model::Attachment &a = m.attachments()[i];
         if (a.msgUnfurl) {
             if (!a.blocks.empty())
                 addBlocks(a.blocks);

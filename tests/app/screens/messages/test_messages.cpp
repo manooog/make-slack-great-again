@@ -739,7 +739,7 @@ TEST("actions: Copy message is the text as read, with full URLs, and asks the ba
     );
 }
 
-TEST("actions: Copy message includes attachment-only bodies and full URLs") {
+TEST("actions: Copy message includes visible attachment bodies and full URLs") {
     Env           e(false);
     const int64_t t0 = base::nowSecs() - 3600;
     model::Message m = msg(0, t0, "");
@@ -769,9 +769,16 @@ TEST("actions: Copy message includes attachment-only bodies and full URLs") {
     shared.text      = "Quoted message";
     m.extras().attachments.push_back(shared);
 
+    model::Attachment hidden;
+    hidden.linkPreview = true;
+    hidden.title       = "Hidden preview";
+    hidden.text        = "Hidden preview body";
+    m.extras().attachments.push_back(hidden);
+
     std::vector<model::Message> ms;
     ms.push_back(std::move(m));
     const ConvRef c = addConv(e.store, std::move(ms));
+    e.ctx.linkPreviews = false;
     e.list->showConversation(c);
     pump(8);
     e.backend.resolved.clear();
