@@ -73,6 +73,7 @@ struct Settings {
     // (model::Backend::NamesMode).
     int                      names        = 0;
     bool                     showAgentsApps = true, unreadsOnly = false;
+    bool                     externalSection = true; // off: Connect chats stay in Channels / DMs
     bool                     animateEmoji = true, animateMedia = true;
     // The message toolbar's one-click reactions: 0 off, 1 the most used (the
     // emoji picker's Frequently used), 2 quickReactionNames.

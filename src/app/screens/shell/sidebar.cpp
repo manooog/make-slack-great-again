@@ -1,6 +1,7 @@
 #include "screens/shell/sidebar.h"
 
 #include "screens/common/tag_badge.h"
+#include "screens/messages/image_cache.h"
 
 #include "base/crypto.h"
 #include "base/i18n.h"
@@ -266,6 +267,21 @@ bool looksLikeUserId(std::string_view s) {
     return true;
 }
 
+// The list's content. Rows a rebuild just made have no frames until the
+// layout pass, so revealing one waits for this view's layout: after it, the
+// rows sit where they will be drawn (scrolling from paint instead would move
+// content that is already being drawn).
+class ListItems : public View {
+public:
+    std::function<void()> onLaidOut;
+
+    void layout() override {
+        View::layout();
+        if (onLaidOut)
+            onLaidOut();
+    }
+};
+
 } // namespace
 
 bool deadDm(const model::Store &store, const model::Conversation &c) {
@@ -281,7 +297,7 @@ bool deadDm(const model::Store &store, const model::Conversation &c) {
 class SectionHeader final : public HoverRow {
 public:
     SectionHeader(Sidebar &sb, Sidebar::Kind k, Icon i, std::string text)
-        : sidebar(sb), kind(k), icon(i), title(text) {
+        : sidebar(sb), images(sb._ctx.images), kind(k), icon(i), title(text) {
         setLook({C::None, C::SidebarHover, C::SidebarHover, C::None, 0}); // full width
         setRole(k == Sidebar::Vip ? Role::Text : Role::Button); // VIP unreads takes no click
         // VIP's "VIP" pill is a real row child, not painted in the icon's
@@ -353,11 +369,14 @@ public:
         }
         return HoverRow::onEvent(e);
     }
-    // A custom section's emoji, drawn where the icon goes ("" = the icon).
-    void setEmoji(std::string glyph) {
-        emoji = std::move(glyph);
+    // A custom section's emoji, drawn where the icon goes (empty = the icon).
+    void setEmoji(model::Store::EmojiGlyph g) {
+        emoji = std::move(g.unicode);
+        emojiImage = std::move(g.image);
         emojiLayout.reset();
+        emojiHeld.reset();
     }
+    ~SectionHeader() override { images.forget(this); }
     void refreshLook() override {
         const C bg = dropTarget ? C::SidebarSelected : lit() ? C::SidebarHover : C::None;
         setLook({bg, bg, C::SidebarHover, C::None, 0});
@@ -378,31 +397,46 @@ public:
         // The section's icon; hovered, the chevron previewing the click.
         const Icon  i = !lit() ? icon : collapsed ? Icon::ChevronRight : Icon::ChevronDown;
         const float y = snapPx((height() - 14) / 2);
-        if (!lit() && !emoji.empty()) {
-            const float scale = windowScale();
-            if (!emojiLayout || emojiScale != scale) {
-                text::AttributedText t;
-                t.append(emoji, font(Font::Body, C::SidebarText));
-                emojiLayout = text::Layout::build(std::move(t), {}, scale);
-                emojiScale  = scale;
+        if (!lit()) {
+            if (!emoji.empty()) {
+                const float scale = windowScale();
+                if (!emojiLayout || emojiScale != scale) {
+                    text::AttributedText t;
+                    t.append(emoji, font(Font::Body, C::SidebarText));
+                    emojiLayout = text::Layout::build(std::move(t), {}, scale);
+                    emojiScale  = scale;
+                }
+                emojiLayout->paint(
+                    p,
+                    {kPadH + (14 - emojiLayout->width()) / 2,
+                     (height() - emojiLayout->height()) / 2}
+                );
+                return;
             }
-            emojiLayout->paint(
-                p, {kPadH + (14 - emojiLayout->width()) / 2, (height() - emojiLayout->height()) / 2}
-            );
-            return;
+            if (!emojiImage.empty()) {
+                const int sz = int(std::lround(14 * windowScale()));
+                if (auto bmp = images.get({emojiImage, sz, sz}, this, &emojiHeld)) {
+                    p.drawBitmap(bmp->view(), {kPadH, y, 14, 14});
+                    return;
+                }
+                // Still loading: fall through to the default icon for now.
+            }
         }
         gfx::drawIcon(p, i, {kPadH, y, 14, 14}, color(labelInk()));
     }
     Sidebar                      &sidebar;
+    screens::ImageCache          &images; // outlives the Sidebar: forget() in the destructor
     // 0 starred, 1 channels, 2 direct messages, 3 Slack agents & apps,
     // 5 a custom section (sectionId), 6 external connections
     int                           kind;
     Icon                          icon;
     std::string                   title;
     std::string                   sectionId; // Custom: Store::Section::id
-    std::string                   emoji;     // Custom: its glyph ("" = the icon)
+    std::string                   emoji;     // Custom: its unicode glyph ("" = none/image/icon)
+    std::string                   emojiImage;
     std::unique_ptr<text::Layout> emojiLayout;
     float                         emojiScale = 0;
+    screens::ImageCache::Handle   emojiHeld;
     Label                        *label      = nullptr;
     HeaderButton                 *plus       = nullptr;
     HeaderButton                 *more       = nullptr;
@@ -649,10 +683,8 @@ public:
         const bool  quiet = sidebar.muted(cv);
         const bool  stale =
             cv.latest && tsSecs(cv.latest) < sidebar._ctx.backend.nowSecs() - kMaxNotifyAgeSecs;
-        unread        = sidebar.paintsUnread(cv);
-        // DMs count unread messages; channels count mentions.
-        const int red = cv.isDirect() ? int(cv.unread) : int(cv.mentions);
-        count         = !stale && !quiet && red > 0 ? red : 0;
+        unread = sidebar.paintsUnread(cv);
+        count  = sidebar.redCount(cv);
         dot = !stale && !quiet && sidebar.level(cv) == model::NotifyLevel::All && !cv.isDirect() &&
               cv.mentions == 0 && cv.unread > 0;
         const C text = ink(sel, unread);
@@ -707,7 +739,13 @@ Sidebar::Sidebar(screens::Context &ctx, Avatars &avatars) : _ctx(ctx), _avatars(
     _scroll->setClickFocus(true);
     _scroll->setThinThumb(C::SidebarScrollbar);
     _scroll->style().flex(1);
-    _items = _scroll->content();
+    auto *items      = static_cast<ListItems *>(_scroll->setContent(std::make_unique<ListItems>()));
+    items->onLaidOut = [this] {
+        if (std::exchange(_revealSelectedOnLayout, false))
+            if (ConvRow *r = rowFor(_selected))
+                _scroll->ensureVisible(r, 8);
+    };
+    _items = items;
     // Keep the last row off the viewport edge when scrolled to the bottom.
     _items->style().padding(0, kTopPad, 0, 12).spacing(0);
     _footer = add<SidebarFooter>(*this, ctx, avatars);
@@ -805,6 +843,11 @@ void Sidebar::paint(gfx::Painter &p) {
     paintNavGradient(*this, p, C::Sidebar);
 }
 
+void Sidebar::revealSelectedAfterLayout() {
+    _revealSelectedOnLayout = true;
+    _items->invalidateLayout(); // the pass that runs it comes for sure
+}
+
 void Sidebar::setFilters(const Filters &f) {
     if (f == _filters)
         return;
@@ -829,6 +872,14 @@ bool Sidebar::paintsUnread(const model::Conversation &c) const {
         level(c) == model::NotifyLevel::Mentions && !_filters.highlightMentionsOnly &&
         !c.isDirect() && c.mentions == 0
     );
+}
+
+int Sidebar::redCount(const model::Conversation &c) const {
+    if (muted(c) || (c.latest && tsSecs(c.latest) < _ctx.backend.nowSecs() - kMaxNotifyAgeSecs))
+        return 0;
+    // DMs count unread messages; channels count mentions.
+    // This fork has no agent-session capability (that feature was removed).
+    return c.isDirect() ? int(c.unread) : int(c.mentions);
 }
 
 bool Sidebar::isApp(const model::Conversation &c) const {
@@ -875,7 +926,7 @@ Sidebar::Kind Sidebar::classify(const model::Conversation &c) const {
         return Starred;
     if (isApp(c))
         return Apps;
-    if (isExternal(c))
+    if (_filters.externalSection && isExternal(c))
         return External;
     return c.isDirect() ? Direct : Channels;
 }
@@ -912,6 +963,16 @@ bool Sidebar::relevant(ConvRef ref) const {
 }
 
 void Sidebar::rebuild() {
+    // Keyboard focus on a row survives: it moves to the same conversation's new row.
+    Window *win       = window();
+    ConvRef focusConv = kNoConv;
+    if (View *f = win ? win->focusView() : nullptr)
+        for (ConvRow *r : _rows)
+            if (r == f) {
+                focusConv = r->conv;
+                break;
+            }
+    const bool focusRing = win && win->focusVisible();
     for (auto *h : _sections) { // survives the rebuild
         if (h->kind == Sidebar::Custom)
             _collapsedCustom[h->sectionId] = h->collapsed;
@@ -1130,7 +1191,7 @@ void Sidebar::rebuild() {
         if (e.kind == Custom) {
             const auto &sec = secs[e.customIndex];
             if (!sec.emoji.empty())
-                h->setEmoji(store.emojiFor(sec.emoji).unicode);
+                h->setEmoji(store.emojiFor(sec.emoji));
             const auto was = _collapsedCustom.find(sec.id);
             h->collapsed   = was != _collapsedCustom.end() && was->second;
         }
@@ -1159,6 +1220,9 @@ void Sidebar::rebuild() {
     _sectionsRev = store.sectionsRevision();
     ++_rebuilds;
     invalidateLayout();
+    if (win)
+        if (ConvRow *r = rowFor(focusConv); r && r->visible() && !win->focusView())
+            win->setFocus(r, focusRing);
 }
 
 // Everything rebuild() reads from the users: which DMs are dead or apps (they
@@ -1293,14 +1357,16 @@ std::vector<size_t> Sidebar::sortedOrder(SectionSort sort, const std::vector<Con
         return order;
     const auto &store = _ctx.store();
     struct Key {
-        bool        unread = false;
-        model::Ts   recent = 0;
+        bool        mention = false;
+        bool        unread  = false;
+        model::Ts   recent  = 0;
         std::string name; // case-folded
     };
     std::vector<Key> keys(rows.size());
     for (size_t i = 0; i < rows.size(); ++i) {
-        const auto &cv = store.conversation(rows[i]);
-        keys[i].unread = sort.unreadsFirst && paintsUnread(cv);
+        const auto &cv  = store.conversation(rows[i]);
+        keys[i].mention = sort.mentionsFirst && redCount(cv) > 0;
+        keys[i].unread  = sort.unreadsFirst && paintsUnread(cv);
         if (sort.by == SectionSort::By::Recent)
             keys[i].recent = std::max(cv.latest, cv.lastRead);
         else if (sort.by == SectionSort::By::Alpha)
@@ -1308,6 +1374,8 @@ std::vector<size_t> Sidebar::sortedOrder(SectionSort sort, const std::vector<Con
     }
     std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
         const Key &x = keys[a], &y = keys[b];
+        if (x.mention != y.mention)
+            return x.mention;
         if (x.unread != y.unread)
             return x.unread;
         switch (sort.by) {
@@ -1329,6 +1397,8 @@ std::string SectionSort::encode() const {
     std::string out = by == By::Alpha ? "alpha" : by == By::Recent ? "recent" : "";
     if (unreadsFirst)
         out += out.empty() ? "unreads" : ",unreads";
+    if (mentionsFirst)
+        out += out.empty() ? "mentions" : ",mentions";
     return out;
 }
 
@@ -1341,6 +1411,8 @@ SectionSort SectionSort::decode(std::string_view s) {
             sort.by = By::Recent;
         else if (part == "unreads")
             sort.unreadsFirst = true;
+        else if (part == "mentions")
+            sort.mentionsFirst = true;
     return sort;
 }
 
@@ -1607,9 +1679,8 @@ void Sidebar::rebuildSoon(bool reveal) {
             return;
         _rebuildTimer = 0;
         rebuild();
-        if (ConvRow *r = rowFor(_selected); r && std::exchange(_revealOnRebuild, false))
-            _scroll->ensureVisible(r, 8);
-        _revealOnRebuild = false;
+        if (std::exchange(_revealOnRebuild, false))
+            revealSelectedAfterLayout();
     });
 }
 
@@ -1749,7 +1820,10 @@ void Sidebar::select(ConvRef conv) {
         rebuildSoon(); // the one left may drop out of unreads-only
     if (r) {
         r->refresh();
-        _scroll->ensureVisible(r, 8);
+        if (r->height() > 0)
+            _scroll->ensureVisible(r, 8); // laid out: reveal at once
+        else
+            revealSelectedAfterLayout(); // rebuilt just now: no frame yet
     }
     refreshSections();
 }

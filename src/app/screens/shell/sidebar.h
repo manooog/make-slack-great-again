@@ -64,15 +64,18 @@ bool deadDm(const model::Store &store, const model::Conversation &c);
 
 // How a section orders its rows: as listed (the service's order, a custom
 // section's own), by name, or most recent activity first; unreads on top
-// lifts the bold rows over the rest, each part in that order.
+// lifts the bold rows over the rest, mentions on top the rows with a red
+// count (a mention, an unread direct message) over those, each part in that
+// order.
 struct SectionSort {
     enum class By : uint8_t { Default, Alpha, Recent };
-    By                 by           = By::Default;
-    bool               unreadsFirst = false;
-    bool               plain() const { return by == By::Default && !unreadsFirst; }
-    bool               operator==(const SectionSort &) const = default;
-    // "alpha", "recent,unreads"… ("" = plain); unknown parts are ignored.
-    std::string        encode() const;
+    By          by            = By::Default;
+    bool        unreadsFirst  = false;
+    bool        mentionsFirst = false;
+    bool        plain() const { return by == By::Default && !unreadsFirst && !mentionsFirst; }
+    bool        operator==(const SectionSort &) const = default;
+    // "alpha", "recent,unreads,mentions"… ("" = plain); unknown parts are ignored.
+    std::string encode() const;
     static SectionSort decode(std::string_view s);
 };
 
@@ -95,6 +98,7 @@ public:
     struct Filters {
         int                relevantDays   = 14;
         bool               showAgentsApps = true, unreadsOnly = false;
+        bool               externalSection = true; // off: Connect chats stay in Channels / DMs
         bool               highlightMentionsOnly = true; // "Highlight mentions-only channels…"
         model::NotifyLevel defaultLevel          = model::NotifyLevel::All;
         bool               operator==(const Filters &) const = default;
@@ -212,6 +216,7 @@ private:
     void               showNavSelection(); // the entries' checked look
     // The unread / effective level (Settings' default) / badge rules.
     bool               paintsUnread(const model::Conversation &c) const;
+    int                redCount(const model::Conversation &c) const;
     model::NotifyLevel level(const model::Conversation &c) const;
     bool               muted(const model::Conversation &c) const;
     bool               isApp(const model::Conversation &c) const;
@@ -229,6 +234,7 @@ private:
     void               moveInto(model::ConvRef conv, SectionHeader *to);
     // reveal: scroll the selected row into view afterwards.
     void               rebuildSoon(bool reveal = true);
+    void               revealSelectedAfterLayout(); // once its row has a frame
     void               usersSoon();
     void               sectionsSoon(); // coalesced section refresh
     uint64_t           userShape() const;
@@ -276,8 +282,9 @@ private:
     uint64_t                 _shapeProfileRev = 0, _shapeTextRev = 0;
     model::UserRef           _shapeMe         = model::kNoUser;
     int                      _rebuilds        = 0;
-    bool                     _revealOnRebuild = false;
-    int                      _hiddenChannels  = 0;
+    bool                     _revealOnRebuild        = false;
+    bool                     _revealSelectedOnLayout = false; // see revealSelectedAfterLayout()
+    int                      _hiddenChannels         = 0;
 
     // By Kind; Custom uses _collapsedCustom (keyed by sectionId) instead.
     bool                     _collapsed[KindCount] = {};

@@ -1222,6 +1222,10 @@ msgid "Show the Agents & apps section"
 msgstr "「エージェントとアプリ」セクションを表示"
 
 #: src/app/screens/settings/settings_dialog.cpp
+msgid "Show the External connections section"
+msgstr ""
+
+#: src/app/screens/settings/settings_dialog.cpp
 msgid "Show only unread conversations"
 msgstr "未読の会話のみ表示"
 
@@ -2388,6 +2392,10 @@ msgstr "新しい順"
 #: src/app/screens/shell/context_menus.cpp
 msgid "Unreads on top"
 msgstr "未読を上に表示"
+
+#: src/app/screens/shell/context_menus.cpp
+msgid "Mentions on top"
+msgstr ""
 
 #: src/app/screens/shell/context_menus.cpp
 msgid "Show unread when collapsed"
