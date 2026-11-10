@@ -653,6 +653,12 @@ std::string titles(shell::Sidebar &sb) {
 }
 } // namespace
 
+namespace {
+// Forward declaration: the shared Channels-row helper is defined with the
+// remaining sort tests below.
+std::vector<ConvRef> channelRows(Harness &h);
+} // namespace
+
 TEST("sort: mentions on top lifts mentions and unread DMs, not muted ones") {
     Harness         h;
     shell::Sidebar &sb = h.sh->sidebar();
