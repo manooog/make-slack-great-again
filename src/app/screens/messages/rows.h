@@ -44,8 +44,12 @@ class SelectableText;
 std::string huddleSummaryText(const Store &st, const model::Huddle &h);
 
 // The texts a message's selection runs over (MessageRow::selectionLabels'),
-// for rows not on screen: its body, or its text blocks.
-std::vector<std::string> selectableTexts(Context &ctx, const model::Message &m);
+// for rows not on screen: its body, blocks and visible attachment content.
+std::vector<std::string> selectableTexts(
+    Context &ctx, const model::Message &m, const MessageList *list = nullptr
+);
+// The message content copied by "Copy message", including attachment-only bodies.
+std::string copyableMessageText(Context &ctx, const model::Message &m);
 
 // A canvas card: its title as shown, and the start of the document as text — headings larger, list
 // markers, inline formats, member mentions as chips with names, emoji (custom
@@ -114,10 +118,16 @@ private:
     // Pictures first (gallery or single), then the rest via buildFile.
     // Shared by the message body and a forwarded message's own files.
     void      buildFilesSection(ui::View *col, const std::vector<model::File> &files, Ts ts);
-    void      buildAttachment(ui::View *col, const model::Message &m, size_t index, bool root);
+    void      buildAttachment(
+        ui::View *col, const model::Message &m, size_t index, bool root,
+        std::vector<SelectableText *> *labels
+    );
     // The buttons of attachment `owner` (1-based; 0 = the message's own) as a row.
     void      buildButtons(ui::View *col, const model::Message &m, int32_t owner);
-    void      buildUnfurl(ui::View *col, const model::Message &m, size_t index);
+    void      buildUnfurl(
+        ui::View *col, const model::Message &m, size_t index,
+        std::vector<SelectableText *> *labels
+    );
     ui::RectF dismissRect() const; // local; empty while no card is hovered
     // The gutter strip from the "×" to the card, as tall as the card: the
     // pointer on its way to the "×" (the 4-px gap, a diagonal) keeps it shown.

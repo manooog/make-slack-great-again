@@ -222,7 +222,9 @@ private:
 // The texts of the labels buildBody makes for `mrkdwnText` (o.labels gets
 // the same ones, same order): what a selection spanning them copies, also
 // when their rows are gone.
-std::vector<std::string> bodyTexts(Context &ctx, std::string_view mrkdwnText, const RichOptions &o);
+std::vector<std::string> bodyTexts(
+    Context &ctx, std::string_view mrkdwnText, const RichOptions &o, bool *truncated = nullptr
+);
 
 // A link from a message: mailto: opens the mail app — none registered, the
 // address is copied and a toast says so at `at` — else Context::openUrl.
