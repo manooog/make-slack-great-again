@@ -3132,10 +3132,10 @@ TEST("selection: drag positions, across messages, Ctrl+C copies, Escape clears")
     pump(8);
     const Ts   a = t0 * 1000000, b = (t0 + 600) * 1000000, d = (t0 + 1200) * 1000000;
     // What a selection runs over, also for rows not on screen.
-    const auto texts = selectableTexts(e.ctx, *e.store.findMessage(c, b));
+    const auto texts = selectableTexts(e.ctx, *e.store.findMessage(c, b), *e.list);
     REQUIRE(texts.size() == 2);
     CHECK_STR(texts[1], "with code");
-    CHECK_STR(selectableTexts(e.ctx, *e.store.findMessage(c, d)).back(), "edited text (edited)");
+    CHECK_STR(selectableTexts(e.ctx, *e.store.findMessage(c, d), *e.list).back(), "edited text (edited)");
     // A point on the first message's text maps to it.
     ui::View *l = findLeaf(e.row(a), "first message here");
     REQUIRE(l != nullptr);
@@ -3682,7 +3682,7 @@ TEST("selection: runs over a table's cells, tab apart, a row per line") {
     e.list->showConversation(c);
     pump(8);
     const Ts   a     = t0 * 1000000;
-    const auto texts = selectableTexts(e.ctx, *e.store.findMessage(c, a));
+    const auto texts = selectableTexts(e.ctx, *e.store.findMessage(c, a), *e.list);
     REQUIRE(texts.size() == 2);
     CHECK_STR(texts[1], "Name\tScore\nAnn\t12\nBob\t7");
     auto *tv = static_cast<TableView *>(findLeaf(e.row(a), "*Name* | Score"));
