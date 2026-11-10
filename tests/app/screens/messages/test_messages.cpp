@@ -3225,6 +3225,8 @@ TEST("selection: attachment cards join the message text selection") {
     auto *row = static_cast<MessageRow *>(e.row(ts));
     REQUIRE(row != nullptr);
     CHECK(row->selectionLabels().size() == texts.size());
+    for (size_t i = 0; i < texts.size(); ++i)
+        CHECK(row->selectionLabels()[i]->textSize() == texts[i].size());
 
     ui::View *body = findLeaf(row, "Attachment body");
     REQUIRE(body != nullptr);
@@ -3275,6 +3277,7 @@ TEST("selection: attachment preview offsets follow collapsed and expanded text")
     auto *row = static_cast<MessageRow *>(e.row(ts));
     REQUIRE(row != nullptr);
     CHECK(row->selectionLabels().size() == texts.size());
+    CHECK(row->selectionLabels()[0]->textSize() == texts[0].size());
 
     e.list->toggleUnfurl(ts, 0);
     pump(8);
@@ -3286,6 +3289,7 @@ TEST("selection: attachment preview offsets follow collapsed and expanded text")
     row = static_cast<MessageRow *>(e.row(ts));
     REQUIRE(row != nullptr);
     CHECK(row->selectionLabels().size() == texts.size());
+    CHECK(row->selectionLabels()[0]->textSize() == texts[0].size());
 }
 
 TEST("selection: a pointer drag runs from one message's text into the next ones") {
