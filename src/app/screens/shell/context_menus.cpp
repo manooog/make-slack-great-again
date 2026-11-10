@@ -51,6 +51,7 @@ constexpr ui::MenuDef kDefs[] = {
     {Menus::kSortAlpha, kNone, N_("Alphabetically"), nullptr, nullptr},
     {Menus::kSortRecent, kNone, N_("By most recent"), nullptr, nullptr},
     {Menus::kUnreadsFirst, kNone, N_("Unreads on top"), nullptr, nullptr},
+    {Menus::kMentionsFirst, kNone, N_("Mentions on top"), nullptr, nullptr},
     {Menus::kShowUnreadWhenCollapsed, kNone, N_("Show unread when collapsed"), nullptr, nullptr},
 };
 
@@ -181,13 +182,14 @@ std::vector<ui::MenuItem> Menus::sectionItems(
         add(items, kSectionDown, false, localMoves->second);
         ui::addMenuSeparator(items);
     }
-    // The sort: one of the orders ticked, and unreads on top on or off.
+    // The sort: one of the orders ticked, and unreads / mentions on top on or off.
     items.push_back(ui::MenuItem::headerItem(tr("Sort")));
     add(items, kSortDefault).checked = sort.by == SectionSort::By::Default;
     add(items, kSortAlpha).checked   = sort.by == SectionSort::By::Alpha;
     add(items, kSortRecent).checked  = sort.by == SectionSort::By::Recent;
     ui::addMenuSeparator(items);
-    add(items, kUnreadsFirst).checked = sort.unreadsFirst;
+    add(items, kUnreadsFirst).checked  = sort.unreadsFirst;
+    add(items, kMentionsFirst).checked = sort.mentionsFirst;
     if (showUnreadWhenCollapsed) {
         ui::addMenuSeparator(items);
         add(items, kShowUnreadWhenCollapsed).checked = *showUnreadWhenCollapsed;
@@ -208,6 +210,9 @@ SectionSort Menus::sortAfter(int id, SectionSort sort) {
         break;
     case kUnreadsFirst:
         sort.unreadsFirst = !sort.unreadsFirst;
+        break;
+    case kMentionsFirst:
+        sort.mentionsFirst = !sort.mentionsFirst;
         break;
     }
     return sort;
@@ -247,7 +252,7 @@ void Menus::showSection(
         sectionItems(section, sort, canMove, showUnreadWhenCollapsed),
         [this, section, sort, onSort = std::move(onSort), onMove = std::move(onMove),
          onToggle = std::move(onToggleCollapsedUnreads)](int id) {
-            if (id >= kSortDefault && id <= kUnreadsFirst) {
+            if (id >= kSortDefault && id <= kMentionsFirst) {
                 if (onSort)
                     onSort(sortAfter(id, sort));
             } else if (id == kShowUnreadWhenCollapsed && onToggle) {

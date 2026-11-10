@@ -653,6 +653,74 @@ std::string titles(shell::Sidebar &sb) {
 }
 } // namespace
 
+TEST("sort: mentions on top lifts mentions and unread DMs, not muted ones") {
+    Harness         h;
+    shell::Sidebar &sb = h.sh->sidebar();
+    sb.showAllChannels();
+    pump();
+    const std::vector<ConvRef> listed = channelRows(h);
+    REQUIRE(listed.size() >= 4);
+    // A muted channel with a mention, a plain unread one, the last one with a
+    // mention; the rest read.
+    const ConvRef muted = listed[0], unread = listed[1], mention = listed.back();
+    for (ConvRef c : listed)
+        h.store.updateConversation(c, [&](Conversation &cv) {
+            cv.unread   = c == muted || c == unread || c == mention ? 2 : 0;
+            cv.mentions = c == muted || c == mention ? 1 : 0;
+            cv.muted    = c == muted;
+        });
+    pump();
+    REQUIRE(sb.rowState(mention).badge > 0);
+    CHECK(sb.rowState(muted).badge == 0);
+
+    // Alone: the mention first, the rest as listed.
+    sb.setSort("#channels", {shell::SectionSort::By::Default, false, true});
+    pump();
+    std::vector<ConvRef> want = {mention};
+    for (ConvRef c : listed)
+        if (c != mention)
+            want.push_back(c);
+    CHECK(channelRows(h) == want);
+    CHECK_STR(h.settings.sidebarSorts.at(0).sort, "mentions");
+
+    // With unreads on top: mentions, then the other bold rows, then the rest.
+    sb.setSort("#channels", {shell::SectionSort::By::Default, true, true});
+    pump();
+    want = {mention, unread};
+    for (ConvRef c : listed)
+        if (c != mention && c != unread)
+            want.push_back(c);
+    CHECK(channelRows(h) == want);
+
+    // Read, it drops back to its place.
+    h.store.updateConversation(mention, [](Conversation &cv) { cv.unread = cv.mentions = 0; });
+    pump();
+    CHECK(channelRows(h).front() == unread);
+    CHECK(channelRows(h).back() == mention);
+
+    // A direct message counts any unread message, no mention needed.
+    std::vector<ConvRef> dms;
+    for (ConvRef c : sb.order()) {
+        const auto &cv = h.store.conversation(c);
+        if (cv.isDirect() && !cv.starred && sb.rowSection(c).empty())
+            dms.push_back(c);
+    }
+    REQUIRE(dms.size() >= 2);
+    for (ConvRef c : dms)
+        h.store.updateConversation(c, [&](Conversation &cv) {
+            cv.unread   = c == dms.back() ? 1 : 0;
+            cv.mentions = 0;
+        });
+    sb.setSort("#direct", {shell::SectionSort::By::Default, false, true});
+    pump();
+    std::vector<ConvRef> after;
+    for (ConvRef c : sb.order())
+        if (std::find(dms.begin(), dms.end(), c) != dms.end())
+            after.push_back(c);
+    REQUIRE(after.size() == dms.size());
+    CHECK(after.front() == dms.back());
+}
+
 TEST("sections: External connections group Slack Connect channels and DMs, with manual overrides") {
     Harness         h;
     shell::Sidebar &sb   = h.sh->sidebar();
@@ -698,6 +766,39 @@ TEST("sections: External connections group Slack Connect channels and DMs, with 
     pump();
     CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages");
     CHECK(sb.rowState(eng).exists);
+}
+
+TEST("sections: with External connections off, Connect chats stay in Channels and DMs") {
+    Harness                    h;
+    shell::Sidebar            &sb     = h.sh->sidebar();
+    const ConvRef              random = h.conv("C0RANDOM");
+    const ConvRef              mira   = h.conv("D0MIRA");
+    const ConvRef              trio   = h.conv("G0TRIO"); // Mira and Jonas
+    const std::vector<ConvRef> before = sb.order();
+    h.settings.externalSection        = false;
+    h.sh->applySettings();
+    h.store.updateConversation(random, [](Conversation &c) { c.extShared = true; });
+    const UserRef u          = h.store.findUser("U0MIRA");
+    h.store.user(u).stranger = true;
+    h.store.usersChanged(u);
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages");
+    CHECK(sb.order() == before); // nothing moved
+    // Back on: both move to the section at once, no restart.
+    h.settings.externalSection = true;
+    h.sh->applySettings();
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages|External connections");
+    std::vector<ConvRef> want = before;
+    want.erase(std::find(want.begin(), want.end(), random));
+    for (ConvRef c : {mira, trio})
+        want.erase(std::find(want.begin(), want.end(), c));
+    CHECK(std::equal(want.begin(), want.end(), sb.order().begin()));
+    h.settings.externalSection = false;
+    h.sh->applySettings();
+    pump();
+    CHECK_STR(titles(sb), "Activity|Threads|Starred|Channels|Direct messages");
+    CHECK(sb.order() == before);
 }
 
 TEST("sections: collapsed groups may reveal only unread conversations") {
@@ -957,7 +1058,8 @@ TEST("sections: the conversation and section header menus") {
     const ConvRef eng = h.conv("C0ENG");
     CHECK(labels(m.chatItems(eng)).rfind("Star channel|Move to section|-|", 0) == 0);
     CHECK_STR(labels(m.chatItems(eng)[1].sub), "New section…");
-    const std::string sort = "|-|Sort|Default(on)|Alphabetically|By most recent|-|Unreads on top";
+    const std::string sort =
+        "|-|Sort|Default(on)|Alphabetically|By most recent|-|Unreads on top|Mentions on top";
     CHECK_STR(labels(m.sectionItems("", {})), "Create a section…" + sort);
     CHECK(
         labels(m.sectionItems("", {}, std::pair{true, false}, false))
@@ -1002,8 +1104,15 @@ TEST("sort: the section menu ticks the sort; its items pick the next one") {
     shell::Menus &m            = h.sh->menus();
     using By                   = shell::SectionSort::By;
     const shell::SectionSort s = {By::Recent, true};
-    CHECK(labels(m.sectionItems("", s))
-              .ends_with("Sort|Default|Alphabetically|By most recent(on)|-|Unreads on top(on)"));
+    const std::string ticked = "Sort|Default|Alphabetically|By most recent(on)|-|";
+    CHECK(labels(m.sectionItems("", s)).ends_with(ticked + "Unreads on top(on)|Mentions on top"));
+    CHECK(labels(m.sectionItems("", {By::Default, false, true}))
+              .ends_with("Unreads on top|Mentions on top(on)"));
+    CHECK((
+        shell::Menus::sortAfter(shell::Menus::kMentionsFirst, s) ==
+        shell::SectionSort{By::Recent, true, true}
+    ));
+    CHECK_FALSE((shell::SectionSort{By::Default, false, true}.plain()));
     CHECK((
         shell::Menus::sortAfter(shell::Menus::kSortAlpha, s) == shell::SectionSort{By::Alpha, true}
     ));
@@ -1015,6 +1124,9 @@ TEST("sort: the section menu ticks the sort; its items pick the next one") {
     CHECK_STR(s.encode(), "recent,unreads");
     CHECK(shell::SectionSort::decode("recent,unreads") == s);
     CHECK((shell::SectionSort::decode("unreads,bogus") == shell::SectionSort{By::Default, true}));
+    CHECK_STR((shell::SectionSort{By::Alpha, true, true}.encode()), "alpha,unreads,mentions");
+    CHECK_STR((shell::SectionSort{By::Default, false, true}.encode()), "mentions");
+    CHECK((shell::SectionSort::decode("mentions") == shell::SectionSort{By::Default, false, true}));
     CHECK_STR(shell::SectionSort{}.encode(), "");
 }
 

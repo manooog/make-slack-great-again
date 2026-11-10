@@ -65,6 +65,7 @@ public:
         kSortAlpha,
         kSortRecent,
         kUnreadsFirst,
+        kMentionsFirst,
         kShowUnreadWhenCollapsed,
         // "Move to section" → the n-th section (target: ConvRef)
         kMoveToSection = 200,
