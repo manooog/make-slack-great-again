@@ -46,7 +46,7 @@ std::string huddleSummaryText(const Store &st, const model::Huddle &h);
 // The texts a message's selection runs over (MessageRow::selectionLabels'),
 // for rows not on screen: its body, blocks and visible attachment content.
 std::vector<std::string> selectableTexts(
-    Context &ctx, const model::Message &m, const MessageList *list = nullptr
+    Context &ctx, const model::Message &m, const MessageList &list
 );
 // The visible message content copied by "Copy message", including attachment-only bodies.
 std::string copyableMessageText(

@@ -2601,7 +2601,7 @@ std::string MessageList::selectedText() const {
             continue;
         // Joined by '\n', as the offsets count.
         const std::vector<std::string> parts =
-            selectableTexts(const_cast<Context &>(_ctx), *m, this);
+            selectableTexts(const_cast<Context &>(_ctx), *m, *this);
         std::string                    text;
         for (size_t k = 0; k < parts.size(); ++k) {
             if (k)

@@ -3210,7 +3210,7 @@ TEST("selection: attachment cards join the message text selection") {
     const model::Message *stored = e.store.findMessage(c, ts);
     REQUIRE(stored != nullptr);
 
-    const std::vector<std::string> texts = selectableTexts(e.ctx, *stored, e.list);
+    const std::vector<std::string> texts = selectableTexts(e.ctx, *stored, *e.list);
     REQUIRE(texts.size() == 9);
     CHECK_STR(texts[0], "main body");
     CHECK_STR(texts[1], "Pretext");
@@ -3269,7 +3269,7 @@ TEST("selection: attachment preview offsets follow collapsed and expanded text")
     const model::Message *stored = e.store.findMessage(c, ts);
     REQUIRE(stored != nullptr);
 
-    auto texts = selectableTexts(e.ctx, *stored, e.list);
+    auto texts = selectableTexts(e.ctx, *stored, *e.list);
     REQUIRE(texts.size() == 1);
     CHECK(texts.front().size() < body.size());
     auto *row = static_cast<MessageRow *>(e.row(ts));
@@ -3280,7 +3280,7 @@ TEST("selection: attachment preview offsets follow collapsed and expanded text")
     pump(8);
     stored = e.store.findMessage(c, ts);
     REQUIRE(stored != nullptr);
-    texts = selectableTexts(e.ctx, *stored, e.list);
+    texts = selectableTexts(e.ctx, *stored, *e.list);
     REQUIRE(texts.size() == 1);
     CHECK_STR(texts.front(), body);
     row = static_cast<MessageRow *>(e.row(ts));

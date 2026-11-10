@@ -1008,7 +1008,7 @@ void paintCardFrame(gfx::Painter &p, ui::RectF r, float radius, ui::C border) {
 }
 
 std::vector<std::string> selectableTexts(
-    Context &ctx, const model::Message &m, const MessageList *list
+    Context &ctx, const model::Message &m, const MessageList &list
 ) {
     // What MessageRow registers, in the same order (buildBlocks / buildBody).
     std::vector<std::string> out;
@@ -1056,12 +1056,12 @@ std::vector<std::string> selectableTexts(
     // Attachments follow the message body in buildContent. The list is needed
     // for the same hidden/expanded state and preview cut as the visible row.
     for (size_t i = 0; i < m.attachments().size(); ++i) {
-        if (list && list->attachmentHidden(m, i))
+        if (list.attachmentHidden(m, i))
             continue;
         const model::Attachment &a = m.attachments()[i];
         if (a.msgUnfurl) {
             int chars = 400, lines = 6;
-            if (list && list->unfurlExpanded(m.ts, int(i)))
+            if (list.unfurlExpanded(m.ts, int(i)))
                 chars = lines = INT32_MAX;
             if (!a.blocks.empty()) {
                 addBlocks(a.blocks, &chars, &lines);
@@ -1092,7 +1092,7 @@ std::vector<std::string> selectableTexts(
             RichOptions o;
             o.maxLines = a.linkPreview ? 3 : 0;
             int chars = 700, lines = 5;
-            const bool expanded = list && list->unfurlExpanded(m.ts, int(i));
+            const bool expanded = list.unfurlExpanded(m.ts, int(i));
             if (!a.linkPreview && !expanded) {
                 o.cutChars = &chars;
                 o.cutLines = &lines;
