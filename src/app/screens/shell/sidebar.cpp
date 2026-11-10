@@ -877,10 +877,9 @@ bool Sidebar::paintsUnread(const model::Conversation &c) const {
 int Sidebar::redCount(const model::Conversation &c) const {
     if (muted(c) || (c.latest && tsSecs(c.latest) < _ctx.backend.nowSecs() - kMaxNotifyAgeSecs))
         return 0;
-    // DMs count every unread message (an agent session only what needs me:
-    // Session counts those as mentions); channels their mentions.
-    return c.isDirect() && !_ctx.backend.capabilities().agentSessions ? int(c.unread)
-                                                                      : int(c.mentions);
+    // DMs count unread messages; channels count mentions.
+    // This fork has no agent-session capability (that feature was removed).
+    return c.isDirect() ? int(c.unread) : int(c.mentions);
 }
 
 bool Sidebar::isApp(const model::Conversation &c) const {
