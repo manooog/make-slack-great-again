@@ -761,11 +761,15 @@ text::AttributedText richText(
     return t;
 }
 
-std::vector<std::string> bodyTexts(Context &ctx, std::string_view text, const RichOptions &o) {
+std::vector<std::string> bodyTexts(
+    Context &ctx, std::string_view text, const RichOptions &o, bool *truncated
+) {
     std::vector<std::string> out;
     RichOptions              x = o;
     x.labels                   = nullptr;
-    walkBody(ctx, nullptr, text, x, nullptr, &out);
+    const uint32_t cut = walkBody(ctx, nullptr, text, x, nullptr, &out);
+    if (truncated)
+        *truncated = cut != UINT32_MAX;
     return out;
 }
 

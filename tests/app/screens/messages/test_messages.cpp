@@ -739,6 +739,69 @@ TEST("actions: Copy message is the text as read, with full URLs, and asks the ba
     );
 }
 
+TEST("actions: Copy message includes visible attachment bodies and full URLs") {
+    Env           e(false);
+    const int64_t t0 = base::nowSecs() - 3600;
+    model::Message m = msg(0, t0, "");
+
+    model::Attachment legacy;
+    legacy.pretext = "*Lead in*";
+    legacy.title   = "Deployment";
+    legacy.link    = "https://example.com/deploy";
+    legacy.text    = "Details: <https://example.com/a/b/c/d|example.com/a/…/d>";
+    legacy.fields.push_back({"Owner", "<@U2>"});
+    m.extras().attachments.push_back(legacy);
+
+    using K = model::Block::Kind;
+    model::Attachment structured;
+    model::Block      text;
+    text.kind = K::Text;
+    text.text = "Block text";
+    structured.blocks.push_back(text);
+    model::Block table;
+    table.kind = K::Table;
+    table.rows = {{"*Metric*", "Value"}, {"Requests", "42"}};
+    structured.blocks.push_back(table);
+    m.extras().attachments.push_back(structured);
+
+    model::Attachment shared;
+    shared.msgUnfurl = true;
+    shared.text      = "Quoted message";
+    m.extras().attachments.push_back(shared);
+
+    model::Attachment hidden;
+    hidden.linkPreview = true;
+    hidden.title       = "Hidden preview";
+    hidden.text        = "Hidden preview body";
+    m.extras().attachments.push_back(hidden);
+
+    std::vector<model::Message> ms;
+    ms.push_back(std::move(m));
+    const ConvRef c = addConv(e.store, std::move(ms));
+    e.ctx.linkPreviews = false;
+    e.list->showConversation(c);
+    pump(8);
+    e.backend.resolved.clear();
+    const Ts ts = e.list->items().back().ts;
+    e.list->runMenuAction(ts, MessageList::kCopyText);
+
+    std::string got;
+    bool        done = false;
+    app().platform().requestClipboard(
+        "text/plain;charset=utf-8", [&](std::optional<std::string> s) {
+            got  = s.value_or("");
+            done = true;
+        }
+    );
+    REQUIRE(until([&] { return done; }));
+    CHECK_STR(
+        got,
+        "Lead in\nDeployment\nDetails: https://example.com/a/b/c/d\n"
+        "Owner\n@Mira\nBlock text\nMetric\tValue\nRequests\t42\nQuoted message"
+    );
+    CHECK(e.backend.resolved.empty());
+}
+
 TEST("rows: a mention shows the display name in either Names mode") {
     model::Store s;
     model::User  meg, tom;
@@ -3069,10 +3132,10 @@ TEST("selection: drag positions, across messages, Ctrl+C copies, Escape clears")
     pump(8);
     const Ts   a = t0 * 1000000, b = (t0 + 600) * 1000000, d = (t0 + 1200) * 1000000;
     // What a selection runs over, also for rows not on screen.
-    const auto texts = selectableTexts(e.ctx, *e.store.findMessage(c, b));
+    const auto texts = selectableTexts(e.ctx, *e.store.findMessage(c, b), *e.list);
     REQUIRE(texts.size() == 2);
     CHECK_STR(texts[1], "with code");
-    CHECK_STR(selectableTexts(e.ctx, *e.store.findMessage(c, d)).back(), "edited text (edited)");
+    CHECK_STR(selectableTexts(e.ctx, *e.store.findMessage(c, d), *e.list).back(), "edited text (edited)");
     // A point on the first message's text maps to it.
     ui::View *l = findLeaf(e.row(a), "first message here");
     REQUIRE(l != nullptr);
@@ -3103,6 +3166,130 @@ TEST("selection: drag positions, across messages, Ctrl+C copies, Escape clears")
     CHECK(lab->selectionTo() == 0);
     ui::Event copy2 = key(plat::Key::C, plat::primaryMod());
     CHECK_FALSE(e.list->onEvent(copy2)); // nothing selected: not ours
+}
+
+TEST("selection: attachment cards join the message text selection") {
+    Env           e(false);
+    const int64_t t0 = base::nowSecs() - 3600;
+    model::Message m = msg(0, t0, "main body");
+
+    model::Attachment legacy;
+    legacy.pretext = "Pretext";
+    legacy.title   = "Linked title";
+    legacy.link    = "https://example.com/title";
+    legacy.text    = "Attachment body";
+    legacy.fields.push_back({"Field title", "Field value"});
+    m.extras().attachments.push_back(legacy);
+
+    model::Attachment shared;
+    shared.msgUnfurl = true;
+    model::Block quoted;
+    quoted.kind = model::Block::Kind::Text;
+    quoted.text = "Quoted body";
+    shared.blocks.push_back(quoted);
+    m.extras().attachments.push_back(shared);
+
+    using K = model::Block::Kind;
+    model::Attachment structured;
+    model::Block      text;
+    text.kind = K::Text;
+    text.text = "Block text";
+    structured.blocks.push_back(text);
+    model::Block table;
+    table.kind = K::Table;
+    table.rows = {{"*Metric*", "Value"}, {"Requests", "42"}};
+    structured.blocks.push_back(table);
+    m.extras().attachments.push_back(structured);
+
+    std::vector<model::Message> ms;
+    ms.push_back(std::move(m));
+    const ConvRef c = addConv(e.store, std::move(ms));
+    e.list->showConversation(c);
+    pump(8);
+    const Ts ts = t0 * 1000000;
+    const model::Message *stored = e.store.findMessage(c, ts);
+    REQUIRE(stored != nullptr);
+
+    const std::vector<std::string> texts = selectableTexts(e.ctx, *stored, *e.list);
+    REQUIRE(texts.size() == 9);
+    CHECK_STR(texts[0], "main body");
+    CHECK_STR(texts[1], "Pretext");
+    CHECK_STR(texts[2], "Linked title");
+    CHECK_STR(texts[3], "Attachment body");
+    CHECK_STR(texts[4], "Field title");
+    CHECK_STR(texts[5], "Field value");
+    CHECK_STR(texts[6], "Quoted body");
+    CHECK_STR(texts[7], "Block text");
+    CHECK_STR(texts[8], "Metric\tValue\nRequests\t42");
+
+    auto *row = static_cast<MessageRow *>(e.row(ts));
+    REQUIRE(row != nullptr);
+    CHECK(row->selectionLabels().size() == texts.size());
+    for (size_t i = 0; i < texts.size(); ++i)
+        CHECK(row->selectionLabels()[i]->textSize() == texts[i].size());
+
+    ui::View *body = findLeaf(row, "Attachment body");
+    REQUIRE(body != nullptr);
+    const ui::RectF r = body->windowRect();
+    const auto      p = e.list->textPosAt({r.x + 1, r.y + r.h / 2});
+    uint32_t        bodyOffset = 0;
+    for (size_t i = 0; i < 3; ++i)
+        bodyOffset += uint32_t(texts[i].size()) + 1;
+    CHECK(p.ts == ts && p.offset == bodyOffset);
+
+    uint32_t end = 0;
+    std::string expected;
+    for (size_t i = 0; i < texts.size(); ++i) {
+        if (i) {
+            ++end;
+            expected += '\n';
+        }
+        end += uint32_t(texts[i].size());
+        expected += texts[i];
+    }
+    e.list->select({ts, 0}, {ts, end});
+    CHECK_STR(e.list->selectedText(), expected);
+    ui::Event copy = key(plat::Key::C, plat::primaryMod());
+    CHECK(e.list->onEvent(copy));
+    CHECK_STR(clipboard(), expected);
+}
+
+TEST("selection: attachment preview offsets follow collapsed and expanded text") {
+    Env           e(false);
+    const int64_t t0 = base::nowSecs() - 3600;
+    const std::string body(900, 'x');
+    model::Message m = msg(0, t0, "");
+    model::Attachment a;
+    a.text = body;
+    m.extras().attachments.push_back(a);
+    std::vector<model::Message> ms;
+    ms.push_back(std::move(m));
+    const ConvRef c = addConv(e.store, std::move(ms));
+    e.list->showConversation(c);
+    pump(8);
+    const Ts ts = t0 * 1000000;
+    const model::Message *stored = e.store.findMessage(c, ts);
+    REQUIRE(stored != nullptr);
+
+    auto texts = selectableTexts(e.ctx, *stored, *e.list);
+    REQUIRE(texts.size() == 1);
+    CHECK(texts.front().size() < body.size());
+    auto *row = static_cast<MessageRow *>(e.row(ts));
+    REQUIRE(row != nullptr);
+    CHECK(row->selectionLabels().size() == texts.size());
+    CHECK(row->selectionLabels()[0]->textSize() == texts[0].size());
+
+    e.list->toggleUnfurl(ts, 0);
+    pump(8);
+    stored = e.store.findMessage(c, ts);
+    REQUIRE(stored != nullptr);
+    texts = selectableTexts(e.ctx, *stored, *e.list);
+    REQUIRE(texts.size() == 1);
+    CHECK_STR(texts.front(), body);
+    row = static_cast<MessageRow *>(e.row(ts));
+    REQUIRE(row != nullptr);
+    CHECK(row->selectionLabels().size() == texts.size());
+    CHECK(row->selectionLabels()[0]->textSize() == texts[0].size());
 }
 
 TEST("selection: a pointer drag runs from one message's text into the next ones") {
@@ -3495,7 +3682,7 @@ TEST("selection: runs over a table's cells, tab apart, a row per line") {
     e.list->showConversation(c);
     pump(8);
     const Ts   a     = t0 * 1000000;
-    const auto texts = selectableTexts(e.ctx, *e.store.findMessage(c, a));
+    const auto texts = selectableTexts(e.ctx, *e.store.findMessage(c, a), *e.list);
     REQUIRE(texts.size() == 2);
     CHECK_STR(texts[1], "Name\tScore\nAnn\t12\nBob\t7");
     auto *tv = static_cast<TableView *>(findLeaf(e.row(a), "*Name* | Score"));

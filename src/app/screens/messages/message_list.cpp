@@ -2147,7 +2147,7 @@ void MessageList::runMenuAction(Ts ts, int id, const std::string &path, ui::Poin
         copy = firstLink(msg->text);
         break;
     case kCopyText: // shortened link labels copy as their full URLs
-        copy = plainText(_ctx.store(), msg->text, true);
+        copy = copyableMessageText(_ctx, *msg, *this);
         break;
     case kPin:
     case kUnpin:
@@ -2600,7 +2600,8 @@ std::string MessageList::selectedText() const {
         if (!m)
             continue;
         // Joined by '\n', as the offsets count.
-        const std::vector<std::string> parts = selectableTexts(const_cast<Context &>(_ctx), *m);
+        const std::vector<std::string> parts =
+            selectableTexts(const_cast<Context &>(_ctx), *m, *this);
         std::string                    text;
         for (size_t k = 0; k < parts.size(); ++k) {
             if (k)
