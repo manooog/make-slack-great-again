@@ -447,9 +447,9 @@ Use exactly one status from the active mode:
 
 **INTEGRATE mode**
 - `DRAFT PR CREATED — CI GREEN`: the Draft PR exists and every applicable check for its latest revision has passed, or has an explicitly verified expected skip/neutral result.
-- `DRAFT PR CREATED — CI BLOCKED`: the Draft PR exists, but CI cannot be confirmed green because of an evidence-backed external, demonstrably pre-existing or permission/access blocker after safe investigation and the bounded retry policy. Leave the PR Draft and state the evidence. Do not use this status to conceal an unresolved integration-caused regression.
+- `DRAFT PR CREATED — CI BLOCKED`: the Draft PR exists, no integration-caused regression remains unresolved, but CI cannot be confirmed green because of an evidence-backed external, demonstrably pre-existing or check-access/permission blocker after safe investigation and the bounded retry policy. Leave the PR Draft and state the evidence.
 - `NO UPSTREAM CHANGES`: the verified upstream range contains no pending commits.
-- `BLOCKED — TECHNICAL PRECONDITION`: integration cannot safely reach a Draft PR because a genuine technical or authorization precondition remains unresolved.
+- `BLOCKED — TECHNICAL PRECONDITION`: a genuine technical or authorization precondition prevents safe completion in either mode. In INTEGRATE mode, if a Draft PR already exists, leave it Draft and include its URL; do not imply it was never created.
 
 ### Completion criteria
 
