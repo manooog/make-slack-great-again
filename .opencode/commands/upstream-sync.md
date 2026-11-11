@@ -1,5 +1,5 @@
 ---
-description: Inspect pending upstream changes and produce a concrete MSGA integration plan without modifying source files.
+description: Read-only review of pending upstream changes and a concrete MSGA integration plan.
 subagent: false
 ---
 
@@ -22,7 +22,7 @@ Verify the repository is zce/make-slack-great-again and origin points to the exp
 
 Inspect the working tree and current Git operations. Fetch origin/dev, origin/master and upstream/master. If the upstream remote is absent, fetch the canonical upstream URL directly without changing remote configuration.
 
-Verify the tracking relationship and select the correct upstream source according to the Skill. Do not modify source files, local branches, commits, pushes or GitHub PRs.
+Verify the tracking relationship and select the correct upstream source according to the Skill.
 
 ## 2. Baseline and coverage
 
@@ -61,7 +61,7 @@ For each group: ADOPT, ADAPT, PRESERVE-STRONGER or OMIT-REMOVED-SCOPE, with conc
 Likely files, the upstream improvement to retain, the MSGA behavior to preserve and the expected resolution.
 
 ### Risk and verification plan
-For each logical change, identify applicable risk dimensions from the Skill (state/persistence, async lifecycle, UI/interaction, notifications, localization/generated assets, protocol/security, build/platform/release). Map each applicable risk to the concrete implementation owner, failure mode and regression test. List relevant build targets, CI jobs and platform checks. Mark a dimension not applicable only when the changed behavior provides evidence for that conclusion.
+For each logical change, identify applicable risk dimensions from the Skill (state/persistence, async lifecycle, UI/interaction/accessibility, performance/resource lifecycle, notifications, localization/generated assets, protocol/security, build/platform/release). Map each applicable risk to the concrete implementation owner, failure mode and a regression test or specific manual verification. List relevant build targets, CI jobs and platform checks. Mark a dimension not applicable only when the changed behavior provides evidence for that conclusion.
 
 ### Existing sync PRs
 Identify duplicate or obsolete sync PRs and whether they preserve upstream ancestry. Do not modify or close them.

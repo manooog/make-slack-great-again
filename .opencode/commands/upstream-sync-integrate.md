@@ -115,24 +115,5 @@ Keep the PR Draft. Do not mark it ready, merge it or publish a release.
 
 ## 9. Final report
 
-Report:
+Follow **Skill section 13** for the required report fields and final status. Report only verified facts for the exact PR head SHA; do not claim CI green while any applicable check is pending, missing without explanation or failing.
 
-- source and target refs and exact SHAs
-- merge base and upstream commit coverage
-- merge commit SHA and both parents
-- adaptation commits and preserved product contracts
-- Git ancestry verification
-- build/test/CI results
-- Draft PR URL
-- remaining technical limitations
-
-End with exactly one applicable status:
-
-- DRAFT PR CREATED — CI GREEN
-- DRAFT PR CREATED — CI BLOCKED
-- NO UPSTREAM CHANGES
-- BLOCKED — TECHNICAL PRECONDITION
-
-Use CI GREEN only when all applicable checks have completed successfully for the latest PR head SHA. Use CI BLOCKED only after safe investigation and the bounded targeted retry policy, when a demonstrably external, pre-existing or permission-related failure cannot be resolved within the authorized scope; explain the evidence and leave the PR Draft. Do not use a generic "PR created" status to imply completion.
-
-Do not report completion until the remote branch, ancestry, Draft PR and latest-head CI state have been verified.
