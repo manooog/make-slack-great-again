@@ -666,7 +666,7 @@ void SettingsDialog::buildAppearance() {
         caption(
             g,
             tr("External connections moves up only while its section is shown.\n"
-               "In a Claude Code workspace, Sessions moves up.")
+               "A workspace with its own section order keeps that order.")
         );
         auto *unread = check(g, tr("Show only unread conversations"), &d.unreadsOnly, true);
         caption(

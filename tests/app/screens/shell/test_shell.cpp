@@ -1100,6 +1100,10 @@ TEST("sections: the conversation and section header menus") {
         labels(m.sectionItems("", {}, std::pair{true, false})),
         "Create a section…|-|Move section up|Move section down(off)" + sort
     );
+    CHECK(labels(m.sectionItems("", {}, std::pair{true, false}, false, false))
+              .find("Reset section order") == std::string::npos);
+    CHECK(labels(m.sectionItems("", {}, std::pair{true, false}, false, true))
+              .find("Reset section order") != std::string::npos);
     h.backend.createSection("Projects", "", eng);
     h.backend.createSection("Later", "", kNoConv);
     pump();
@@ -1124,6 +1128,17 @@ TEST("sections: the conversation and section header menus") {
     m.runSection(shell::Menus::kSectionDown, later);
     pump();
     CHECK_STR(h.store.sections()[0].id, projects);
+}
+
+TEST("sections: Reset section order clears the workspace's own order") {
+    Harness         h;
+    shell::Sidebar &sb = h.sh->sidebar();
+    REQUIRE(sb.moveSection("#channels", -1));
+    pump();
+    CHECK_FALSE(sb.sectionOrder().empty());
+    CHECK(sb.resetSectionOrder());
+    pump();
+    CHECK(sb.sectionOrder().empty());
 }
 
 TEST("sort: the section menu ticks the sort; its items pick the next one") {
@@ -1293,6 +1308,23 @@ TEST("sections: the DMs-first option lifts Direct messages and External connecti
     pump();
     CHECK_STR(titles(sb), usual);
     CHECK(sb.order() == before);
+}
+
+TEST("sections: a manual order wins over DMs-first until it is reset") {
+    Harness         h;
+    shell::Sidebar &sb = h.sh->sidebar();
+    REQUIRE(sb.moveSection("#channels", -1));
+    pump();
+    const std::vector<std::string> manual = sb.sectionOrder();
+    REQUIRE(!manual.empty());
+    h.settings.directAndExternalFirst = true;
+    h.sh->applySettings();
+    pump();
+    CHECK(sb.sectionOrder() == manual);
+    CHECK(sb.resetSectionOrder());
+    pump();
+    CHECK(sb.sectionOrder().empty());
+    CHECK(titles(sb).rfind("Activity|Threads|Direct messages|", 0) == 0);
 }
 
 TEST("sections: DMs with a stranger are external too; a starred one stays starred") {
@@ -4107,6 +4139,37 @@ TEST("collapse: a detached workspace's Store prunes nothing until it is opened a
     CHECK(collapsedPrefs(w.settings).empty());
 }
 
+TEST("collapse: a redacted section keeps its state until it is really gone") {
+    TwoWorkspaces        w;
+    const Store::Section work = {"S0WORK", "Work", "", {"C0ENG"}};
+    const Store::Section red  = {"S0RED", "Redacted", "", {"C0RANDOM"}};
+    w.a.setSectionsSnapshot({work}, {"S0RED"});
+    w.settings.sidebarCollapsed        = {{kKeyA, "S0RED"}};
+    w.settings.sidebarSorts            = {{kKeyA, "S0RED", "alpha"}};
+    w.settings.sidebarCollapsedUnreads = {{kKeyA, "S0RED"}};
+    w.settings.sidebarSectionOrders    = {{kKeyA, {"S0RED", "#channels"}}};
+    w.restart({});
+    shell::Sidebar &sb = w.sh->sidebar();
+    CHECK(w.a.sectionRedacted("S0RED"));
+    CHECK(collapsedPrefs(w.settings) == std::vector<std::string>{kKeyA + " S0RED"});
+    CHECK(sortPrefs(w.settings) == std::vector<std::string>{kKeyA + " S0RED alpha"});
+    CHECK(w.settings.sidebarCollapsedUnreads.size() == 1);
+    CHECK(w.settings.sidebarSectionOrders.size() == 1);
+    CHECK(sb.collapsed().count("S0RED") == 1);
+    // Slack confirms the same redacted id again: nothing is pruned.
+    w.a.setSectionsSnapshot({work}, {"S0RED"});
+    pump();
+    CHECK(collapsedPrefs(w.settings) == std::vector<std::string>{kKeyA + " S0RED"});
+    CHECK(sortPrefs(w.settings) == std::vector<std::string>{kKeyA + " S0RED alpha"});
+    // Unredacted again: the section and its old state come back.
+    w.a.setSectionsSnapshot({work, red}, {});
+    pump();
+    const auto titles = sb.sectionTitles();
+    CHECK(std::find(titles.begin(), titles.end(), "Redacted") != titles.end());
+    CHECK(sb.collapsed().count("S0RED") == 1);
+    CHECK(w.settings.sidebarCollapsedUnreads.size() == 1);
+}
+
 TEST("collapse: a signed-out workspace's go; signed in again it starts afresh") {
     TwoWorkspaces   w;
     shell::Sidebar &sb = w.sh->sidebar();
@@ -4963,6 +5026,45 @@ TEST("notifications: read conversations and threads take theirs back, others sta
     CHECK(!shown(direct));
 }
 
+TEST("notifications: reading a message leaves huddles and reminders alone") {
+    TwoWorkspaces                      w;
+    Store                             &b       = w.b;
+    const ConvRef                      general = b.findConversation("C0GENERAL");
+    plat::TestHooks::NotificationProbe n;
+    auto                               shown = [&](uint64_t id) {
+        return app().platform().testHooks()->notificationProbe(id, &n);
+    };
+    auto next = [&](uint64_t after) {
+        uint64_t id = 0;
+        until([&] { return (id = lastNotification(nullptr)) > after; });
+        return id > after ? id : 0;
+    };
+    const uint64_t before = lastNotification(nullptr);
+    w.post(b, "C0GENERAL", "read me");
+    const uint64_t message = next(before);
+    REQUIRE(message);
+    // A huddle start and a reminder due in the same background workspace.
+    w.fb.huddles = true;
+    const UserRef mira = b.findUser("U0MIRA");
+    b.updateConversation(general, [&](Conversation &c) {
+        c.huddleActive       = true;
+        c.huddleParticipants = {mira};
+    });
+    const uint64_t huddle = next(message);
+    REQUIRE(huddle);
+    const Ts reminderTs = b.conversation(general).latest;
+    b.setSavedItem(general, reminderTs, true, base::nowSecs() + 60, base::nowSecs());
+    w.sh->notifyReminderDue(kKeyB, b, general, reminderTs);
+    const uint64_t reminder = next(huddle);
+    REQUIRE(reminder);
+    // Reading the conversation takes the message back, not the other two.
+    b.markRead(general, reminderTs);
+    pump();
+    CHECK(!shown(message));
+    CHECK(shown(huddle));
+    CHECK(shown(reminder));
+}
+
 TEST("notifications: a sender's picture not decoded yet is waited for, not skipped") {
     TwoWorkspaces w;
     Store        &a = w.a;
@@ -5089,6 +5191,11 @@ TEST("notifications: a click survives a restart (persisted, resolved by stable c
         std::string text;
         return file::readAll(path, &text) && !text.empty();
     }));
+    {
+        std::string text;
+        REQUIRE(file::readAll(path, &text));
+        CHECK(text.find("\"onRead\":true") != std::string::npos);
+    }
 
     w.restart(path); // a fresh Shell (and window), same Stores -- loads path
 

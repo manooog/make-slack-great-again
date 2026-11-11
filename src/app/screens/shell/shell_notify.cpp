@@ -136,6 +136,7 @@ void Shell::loadNotified() {
         n.ts                                   = Ts(e["ts"].integer());
         n.join                                 = json::owned(e["join"]);
         n.postedAt                             = e["postedAt"].integer();
+        n.onRead                               = e["onRead"].boolean();
         _notified[uint64_t(e["id"].integer())] = std::move(n);
     }
     pruneNotified();
@@ -200,6 +201,8 @@ std::string Shell::notifiedFileText() {
         if (!n.join.empty())
             w.key("join").value(n.join);
         w.key("postedAt").value(n.postedAt);
+        if (n.onRead)
+            w.key("onRead").value(true);
         w.endObject();
     }
     w.endArray();

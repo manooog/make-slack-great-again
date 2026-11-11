@@ -1667,7 +1667,7 @@ void Sidebar::sectionMenu(SectionHeader *h, PointF at) {
     const std::string key = sectionKey(h->kind, h->sectionId);
     std::vector<SectionHeader *> reorderable;
     for (SectionHeader *section : _sections)
-        if (section->kind != Vip)
+        if (section->kind != Vip && section->kind != Drafts)
             reorderable.push_back(section);
     const auto it = std::find(reorderable.begin(), reorderable.end(), h);
     const size_t position = size_t(it - reorderable.begin());
@@ -1678,7 +1678,9 @@ void Sidebar::sectionMenu(SectionHeader *h, PointF at) {
          it != reorderable.end() && position + 1 < reorderable.size()},
         [this, key](int step) { moveSection(key, step); },
         showUnreadWhenCollapsed(key),
-        [this, key] { toggleCollapsedUnreads(key); }
+        [this, key] { toggleCollapsedUnreads(key); },
+        !_sectionOrder.empty(),
+        [this] { resetSectionOrder(); }
     );
 }
 

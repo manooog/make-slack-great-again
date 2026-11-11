@@ -1627,7 +1627,8 @@ TEST("actions: Mark unread moves the cursor back and holds it while the chat is 
         }
     REQUIRE(target != 0);
     CHECK(
-        menuLabels(e.list->menuItems(target)).find("Copy message|-|Mark unread|Pin to channel") !=
+        menuLabels(e.list->menuItems(target))
+            .find("Copy message|Mark unread|-|Save for later|Remind me|Pin to channel") !=
         std::string::npos
     );
     e.list->runMenuAction(target, MessageList::kMarkUnread);
