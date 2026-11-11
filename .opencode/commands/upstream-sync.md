@@ -14,7 +14,7 @@ Run the workflow in REVIEW mode.
 Scope:
 $ARGUMENTS
 
-Review is analysis, not approval. Its output does not authorize or block a later integration, and no user approval is required for decisions already covered by the Skill.
+Review is read-only analysis, not approval. Resolve uncertainty through evidence and produce a concrete implementation/verification plan, but do not modify repository files or refs (fetching remote-tracking refs is allowed), create or modify PRs, or wait for CI. Its output neither authorizes nor blocks a later integration, and no user approval is required for decisions already covered by the Skill.
 
 ## 1. Repository and references
 

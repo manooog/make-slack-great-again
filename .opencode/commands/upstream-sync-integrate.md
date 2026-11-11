@@ -107,20 +107,11 @@ Do not merge the PR, mark it ready, publish a release, modify dev/master directl
 
 ## 8. Pull-request CI follow-through
 
-Creating the Draft PR does not complete the task. Keep ownership until all applicable pull-request workflows/checks for the latest PR head SHA have completed and their results have been assessed.
+After creating the Draft PR, follow **Skill section 12 (INTEGRATE mode only)** as the single source of truth. This is mandatory: do not finish while an applicable check for the latest PR head SHA is pending, running, missing without explanation or failing due to an integration-caused regression.
 
-1. Obtain the PR number and latest head SHA. Discover the current workflows triggered by `pull_request`; do not assume only today's workflow names. At present, both `.github/workflows/ci.yml` (CI) and `.github/workflows/memory.yml` (Memory validation) run on PRs.
-2. Wait for every applicable check on the latest head SHA to finish. If authenticated GitHub CLI is available, use `gh pr checks <PR_NUMBER> --watch` and then inspect the complete check summary. Otherwise use the available authenticated GitHub API/connector. Do not treat a successful old SHA as validation for a newer push.
-   If no checks or workflow runs appear, verify that the PR event was registered and inspect each workflow's trigger/condition. Wait for expected runs to appear; an empty check list is not a successful CI result.
-3. For each failure, inspect the workflow run, job, failed step and logs (for example, `gh run view <RUN_ID> --log-failed`). Classify it as an integration/code regression, test regression, workflow/configuration issue, or external infrastructure/permission failure.
-4. Fix integration-caused failures rather than merely reporting them. Reproduce with the closest available CI configuration, make the smallest correct fix, add/adapt regression coverage, commit and push to the same branch, then wait for checks on the new head SHA.
-5. Do not weaken assertions, remove valid tests, skip jobs, change expected behavior or make unrelated workflow edits to get a green result.
-6. Retry only evidence-backed transient infrastructure failures or flaky tests. Prefer one targeted rerun of the failed job over rerunning the whole workflow. If the targeted retry fails again, investigate further or report the external blocker; do not retry indefinitely.
-7. A suspected pre-existing failure must be compared against the unmodified dev baseline with equivalent inputs/environment. A skipped check is acceptable only when its workflow condition makes the skip expected; verify and record why.
-8. If GitHub check results cannot be inspected because of missing permissions or unavailable access, leave the PR Draft and report the exact limitation. Never claim CI is green.
-9. After every push, reassess the latest PR head SHA. Ignore superseded runs cancelled by a newer push, but do not ignore failures on the current head.
+Inspect all applicable check runs and status contexts, not only Actions workflow summaries. Fix integration-caused code, test and workflow/configuration failures on the same branch, push the correction and repeat verification against the new head SHA. Keep retries evidence-based and bounded as specified in the Skill.
 
-Do not mark the PR ready, merge it or publish a release. The PR remains Draft for the user's review.
+Keep the PR Draft. Do not mark it ready, merge it or publish a release.
 
 ## 9. Final report
 

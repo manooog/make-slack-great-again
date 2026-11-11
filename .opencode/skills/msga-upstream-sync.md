@@ -22,6 +22,15 @@ For every synchronization:
 
 Never turn ordinary implementation conflicts, work size, unfamiliar code, or test updates into a decision about whether to integrate upstream.
 
+### Execution modes and authority
+
+This Skill defines shared policy; the active Command defines the execution mode and the permitted side effects. The Skill does not grant authority beyond the active Command.
+
+- **REVIEW** (`/upstream-sync`): read-only investigation and planning. Fetching remote refs and inspecting files, history, tests and CI configuration are allowed. Do not edit repository files, create or alter local branches/commits, push, create or modify PRs, or rerun CI. Resolve uncertainty through evidence and produce concrete decisions, implementation notes and verification plans. A finding is complete in this mode when its evidence, impact, recommended treatment and verification plan are clear; it is not an instruction to modify code.
+- **INTEGRATE** (`/upstream-sync-integrate`): execute only the operations explicitly authorized by that Command: create a fresh integration branch, merge upstream history, make focused adaptations and regression tests, commit, push that branch, create a Draft PR, and complete the CI follow-through below. Do not merge the PR, mark it ready, publish a release, modify `dev`/`master` directly, force-push, or close historical PRs.
+- If instructions appear to conflict, obey the narrower active Command scope. Never infer additional permission from this shared Skill.
+
+
 ## 2. Repositories and branches
 
 - Fork: zce/make-slack-great-again
@@ -248,13 +257,14 @@ Use this risk map as an engineering aid, not as a new approval gate:
 
 - **State, snapshots and persistence:** distinguish complete snapshots from partial updates; ensure partial data cannot trigger cleanup of valid state; verify workspace/account isolation, deletion and reset behavior, serialization/deserialization, defaults for old records, migration compatibility, write ordering and recovery after restart. Only a confirmed complete snapshot may authorize pruning data that is absent from it.
 - **Asynchronous work and lifecycle:** inspect callback ownership, thread affinity, cancellation, object destruction, stale results, event ordering, races, duplicate delivery and shutdown behavior. When relevant, read `docs/ARCHITECTURE.md#asynchronous-lifetime-contracts` and follow the ownership contracts documented there.
-- **UI and interaction:** preserve established MSGA layout and visual decisions. Derive the minimum geometry required by new controls instead of copying upstream dimensions blindly. Check relevant hover/focus/selected/disabled states, keyboard and pointer behavior, scrolling, focus retention, narrow-window behavior and content alignment. Add or adapt UI regression coverage where the repository supports it.
+- **UI and interaction:** preserve established MSGA layout and visual decisions. Derive the minimum geometry required by new controls instead of copying upstream dimensions blindly. Check relevant hover/focus/selected/disabled states, keyboard and pointer behavior, scrolling, focus retention, narrow-window behavior, content alignment and accessibility semantics where supported. Add or adapt UI regression coverage where the repository supports it.
+- **Performance and resource lifecycle:** when behavior can persist or repeat, inspect unbounded caches/queues, observer and subscription cleanup, background work, redundant network activity, CPU/memory growth, startup/shutdown cost and long-session behavior. Use focused profiling, soak or memory checks when the changed path justifies them.
 - **Notifications and event categories:** verify deduplication, persistence, retention, click routing, read/withdraw behavior and independent lifecycles. A state transition for one notification category must not implicitly clear another category unless the product contract explicitly says so.
 - **Localization and generated assets:** identify every new or changed user-visible string; reuse an existing translation key only when its meaning matches. Check all maintained locales, placeholders/plurals, fallback behavior and the repository's generation process. Regenerate generated files with the documented toolchain; do not hand-edit generated output unless the project explicitly requires it.
 - **Protocol, networking and security:** when affected, verify authentication/scope boundaries, request/response compatibility, validation, retry/idempotency behavior, secret handling and error redaction. Do not weaken permission checks or expose credentials in logs.
 - **Build, platform and release contracts:** inspect the actual CI workflows and supported compiler/platform matrix. Preserve fork-specific release provenance, artifact validation and self-update safeguards; do not assume a local build proves cross-platform compatibility.
 
-For each applicable dimension, connect the upstream behavior to the actual MSGA implementation and its owner (code, architecture documentation, tests or workflow). Identify the failure mode, then add or adapt a regression test that would catch it. Prefer behavior-level tests over tests that merely mirror implementation details.
+For each applicable dimension, connect the upstream behavior to the actual MSGA implementation and its owner (code, architecture documentation, tests or workflow). Identify the failure mode and add or adapt a behavior-level regression test where it can be captured reliably. For visual, platform-specific or otherwise non-automatable behavior, record the exact manual verification and target platform instead. One test may cover multiple risks; do not add tests merely to mirror implementation details.
 
 Examples of expected reasoning:
 - A section update API that accepts partial data must not mark the whole collection complete or delete unseen sections.
@@ -307,14 +317,15 @@ A platform unavailable locally is not by itself a reason to abandon integration;
 
 ### Autonomous engineering ownership
 
-The Agent owns implementation and verification, not just discovery and reporting.
+The Agent owns the complete work within the active mode, not just discovery and reporting.
 
-- Treat review findings, conflict hotspots and failed checks as work to resolve. Do not stop after describing a problem that can be investigated or fixed within the authorized scope.
+- In **REVIEW** mode, independently investigate findings and resolve uncertainty through repository evidence; turn each actionable issue into a concrete implementation and verification plan. Do not modify code or repository state to close a finding.
+- In **INTEGRATE** mode, treat review findings, conflict hotspots and integration-caused failures as work to resolve. Do not stop after describing a problem that can be investigated or fixed within the authorized scope.
 - Before asking the user, inspect the relevant implementation, call sites, data model, architecture documentation, tests, upstream history and CI logs. Run focused experiments where they can resolve uncertainty cheaply.
 - Make routine engineering decisions using the Skill's hierarchy: preserve explicit MSGA behavior, otherwise adopt upstream behavior and implementation by default. Do not ask the user to approve ordinary adaptations, test additions, refactors needed for convergence or compatible upstream features.
 - When evidence is incomplete, state what is unknown, gather the missing evidence and continue. Do not turn uncertainty into a speculative product decision.
 - Ask for user input only when an actual product decision is absent from the established contracts, an action falls outside the authorization in the command, or safe progress requires unavailable permission or information. For unresolved product ambiguity, preserve current MSGA behavior while continuing all independent work.
-- A finding is not complete merely because it appears in the report. Resolve it in code/tests or identify a concrete external/technical blocker with evidence and the smallest required intervention.
+- In INTEGRATE mode, a finding is not complete merely because it appears in the report: resolve it in code/tests or identify a concrete external/technical blocker with evidence and the smallest required intervention. In REVIEW mode, complete the finding with evidence and a concrete resolution plan without making changes.
 - Do not create extra abstractions, broad refactors or blanket test suites merely to appear thorough. Keep adaptations focused on the upstream behavior and demonstrated risks.
 
 ### Revalidate immediately before publishing
@@ -380,24 +391,25 @@ Stop only for a genuine technical or safety precondition, such as:
 
 When blocked, finish all safe inspection and work possible, report the exact technical blocker and the smallest required intervention. Do not reframe a product choice as a blocker.
 
-## 12. Pull-request CI completion
+## 12. Pull-request CI completion (INTEGRATE mode only)
 
-Creating the Draft PR is not the end of the task. The task must remain active until all applicable pull-request workflows/checks for the latest PR head SHA have completed and their results have been assessed.
+This section applies only after `/upstream-sync-integrate` creates a Draft PR. The read-only `/upstream-sync` command must identify relevant checks in its plan but must not wait for, rerun or modify CI.
 
-- Re-read the repository's current workflow definitions rather than assuming a fixed check list. At the time this Skill was written, `.github/workflows/ci.yml` and `.github/workflows/memory.yml` both run for pull requests; the README's "Maintaining this fork" section describes their intent. Workflow names and triggers can change.
-- Wait for all applicable checks on the latest pushed commit. A successful result for an older head SHA does not validate a newer push. Do not report success while checks are queued or in progress.
-- If no checks or workflow runs appear, verify that the PR event was registered and inspect each workflow's trigger/condition. Wait for expected runs to appear; an empty check list is not a successful CI result.
-- When a check fails, inspect the exact workflow run, job, failed step and logs. Classify the cause as an integration/code regression, test regression, workflow/configuration issue, or external infrastructure/permission failure.
-- For code or test failures introduced by the integration, reproduce with the closest available CI configuration, fix the cause, add or correct regression coverage, commit and push to the same integration branch, then wait for checks on the new head SHA.
-- Do not weaken assertions, delete valid tests, skip jobs, alter expected behavior or make unrelated workflow changes just to obtain a green result.
-- Retry only when evidence indicates a transient infrastructure failure or a flaky test. Prefer rerunning the failed job rather than the entire workflow, and limit an unchanged retry to one targeted attempt. If it fails again, investigate further or report the external blocker; never retry indefinitely.
-- If a failure is demonstrably pre-existing, compare it against the unmodified dev baseline using equivalent inputs/environment and include evidence. Do not label it pre-existing based only on suspicion.
-- A skipped check is acceptable only when its workflow condition makes the skip expected for this PR; verify and record the reason.
-- If checks cannot be inspected because of missing permissions or unavailable GitHub access, do not claim CI is green. Leave the PR Draft and report the precise limitation.
-- Respect each workflow's configured timeout. Do not abandon a long-running check merely because it exceeds an arbitrary short polling window; if it exceeds its configured timeout plus a reasonable reporting grace period, capture the run/job state and treat it as an external blocker.
-- After every push, reassess the latest PR head SHA. Ignore superseded runs cancelled by a newer push, but do not ignore failures on the current head.
+Creating the Draft PR is not the end of integration. Keep ownership until every applicable check associated with the latest PR head SHA has completed and its result has been assessed.
 
-The current CI workflow includes Ubuntu GCC test/build validation, Ubuntu Clang compile validation and Windows MinGW build validation. The memory workflow runs an ASan/LSan test and soak on pull requests. Follow the current workflow files as the source of truth, not this summary.
+- **Discover the complete check set.** Prefer `gh pr checks <PR_NUMBER> --watch` when authenticated GitHub CLI is available. Otherwise inspect the latest head commit's check runs, combined commit status contexts and associated workflow runs through the authenticated GitHub API/connector. Include checks reported by GitHub Actions and other GitHub Apps/status providers; workflow runs alone are not necessarily the complete check set.
+- **Verify applicability.** Re-read current workflow triggers, path/branch filters, job conditions and required-check rules where accessible. Include all checks expected for this PR, including relevant `pull_request`, `pull_request_target`, `workflow_run` or merge-queue checks. Do not wait for unrelated scheduled/manual workflows. A skipped job is acceptable only when its condition makes the skip expected and that reason is verified.
+- **Handle pagination and the exact SHA.** Check results must belong to the current PR head SHA. Paginate API collections until all applicable results are retrieved; some convenience endpoints expose only the first page. A successful result for an older SHA does not validate a newer push.
+- **Do not mistake missing checks for success.** If expected checks do not appear, allow a short bounded registration window, then inspect the PR event, workflow filters, check-run/status APIs and repository rules. Report a missing or inaccessible check as unresolved; an empty check list is never CI green.
+- **Wait for completion.** Do not report success while an applicable check is queued or in progress. Treat `success` as passing; accept `skipped` or `neutral` only after verifying the workflow condition and semantics. Ignore a cancelled run only when a newer push superseded its SHA.
+- **Investigate failures.** Inspect the exact workflow run, job, failed step and logs. Classify the cause as an integration-caused code/test regression, workflow/configuration regression, demonstrably pre-existing failure, transient infrastructure/flaky failure, or permission/access limitation.
+- **Fix integration-caused failures.** Reproduce with the closest available CI configuration and fix code, tests or workflow configuration when the regression was introduced by the integration. Add/adapt regression coverage where appropriate, commit and push to the same integration branch, then restart this process against the new PR head SHA. Do not weaken assertions, delete valid tests, skip jobs or make unrelated workflow changes to get a green result.
+- **Compare suspected pre-existing failures.** Re-run the relevant check against the unmodified dev baseline using equivalent inputs and environment. Do not label a failure pre-existing based on suspicion alone.
+- **Retry narrowly and finitely.** Retry only when evidence supports a transient infrastructure failure or flaky test, not to avoid fixing a regression. Prefer one rerun of the specific failed job; allow at most one unchanged retry per failed job. If it fails again, investigate the underlying cause rather than retrying indefinitely.
+- **Respect permissions and timeouts.** If logs, checks or reruns are unavailable due to permissions, report the exact limitation and leave the PR Draft. Respect each workflow's configured timeout; if a run exceeds it plus a reasonable reporting grace period, capture its state and treat it as blocked rather than silently abandoning it.
+- **Revalidate after every push.** Re-read the PR and its latest head SHA, then repeat the full check-set discovery. Do not carry forward results from superseded commits.
+
+The current CI workflow includes Ubuntu GCC test/build validation, Ubuntu Clang compile validation and Windows MinGW build validation. The memory workflow runs an ASan/LSan test and soak on pull requests. This is a current snapshot, not a permanent check list; workflow files and actual PR checks are the source of truth.
 
 ## 13. Final report
 
@@ -414,4 +426,7 @@ Report facts, not confidence claims:
 - Draft PR URL
 - remaining technical limitations
 
-The task is complete when the full upstream history is merged, the final code preserves MSGA contracts, ancestry is verified, the integration branch is pushed, the Draft PR is created, and all applicable PR checks pass for the latest head SHA. If an external or demonstrably pre-existing failure cannot be resolved within the authorized scope, leave the PR Draft and report the exact evidence and limitation instead of claiming completion.
+### Completion criteria
+
+- **REVIEW mode:** complete when the full pending upstream range is accounted for, repository references and merge base are verified, decisions are evidence-based, and conflict/risk/verification plans are actionable. Do not create a branch or PR, modify files, or wait for CI.
+- **INTEGRATE mode:** complete when the full upstream history is merged, MSGA contracts are preserved, ancestry is verified, the integration branch is pushed, the Draft PR is created, and all applicable checks pass for the latest head SHA. If an external, demonstrably pre-existing or permission-related failure cannot be resolved within the authorized scope, leave the PR Draft and report the exact evidence and limitation instead of claiming CI success.
