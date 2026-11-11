@@ -1,7 +1,5 @@
 ---
 description: Inspect pending upstream changes and produce a concrete MSGA integration plan without modifying source files.
-agent: plan
-model: "ollama-cloud/deepseek-v4.1-flash:1017#max"
 subagent: false
 ---
 
