@@ -281,6 +281,18 @@ Do not skip tests silently, weaken assertions, disable CI jobs or change test ex
 
 A platform unavailable locally is not by itself a reason to abandon integration; report the limitation and rely on the corresponding CI job where available.
 
+### Revalidate immediately before publishing
+
+Fetch origin/dev, origin/master and upstream/master again before pushing.
+
+- If origin/dev advanced, merge the latest origin/dev into the integration branch. Do not rebase. Resolve any resulting conflicts while preserving the same product contracts, then rerun affected checks.
+- If the selected upstream source advanced, review the new commit range since the previously recorded source SHA, apply the same decision policy, and merge the new source into the integration branch. Do not omit the new commits or reset the branch.
+- Recheck the tracking relationship between origin/master and upstream/master.
+- Verify that the latest origin/dev and latest upstream source are both ancestors of the final HEAD.
+- Record every upstream merge commit and its parents. The initial merge commit must still retain the original dev and upstream parents.
+
+If new changes arrive during this revalidation, integrate them before publishing rather than creating a PR against a stale snapshot.
+
 ## 10. Draft PR
 
 Push only the new integration branch.
