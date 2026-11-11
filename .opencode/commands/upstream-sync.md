@@ -1,183 +1,84 @@
 ---
-description: Review and plan a complete upstream merge into MSGA dev. Read-only except fetching remote-tracking references.
+description: Inspect pending upstream changes and produce a concrete MSGA integration plan without modifying source files.
+agent: plan
+model: "ollama-cloud/deepseek-v4.1-flash:1017#max"
 subagent: false
 ---
 
-Read and follow `.opencode/skills/msga-upstream-sync/SKILL.md` completely.
+Read and follow the exact Skill file:
 
-Your task is to review the latest upstream changes and produce an evidence-based integration plan.
+.opencode/skills/msga-upstream-sync.md
 
-This command is READ-ONLY with respect to source code, local branches and GitHub. Fetching remote-tracking references is permitted.
+Do not look for a directory-based SKILL.md path.
 
-Do not create branches, edit files, commit, push, create PRs or change GitHub state.
+Run the workflow in REVIEW mode.
 
-## 1. Discover
+Scope:
+$ARGUMENTS
 
-Verify the repository root is:
+Review is analysis, not approval. Its output does not authorize or block a later integration, and no user approval is required for decisions already covered by the Skill.
 
-`zce/make-slack-great-again`
+## 1. Repository and references
 
-Inspect:
+Verify the repository is zce/make-slack-great-again and origin points to the expected fork.
 
-- Current branch and working tree.
-- Existing Git operations.
-- Remote names and actual URLs.
-- Local and remote branch availability.
-- Existing upstream-sync branches and PRs.
+Inspect the working tree and current Git operations. Fetch origin/dev, origin/master and upstream/master. If the upstream remote is absent, fetch the canonical upstream URL directly without changing remote configuration.
 
-Stop if the repository or fork identity is incorrect.
+Verify the tracking relationship and select the correct upstream source according to the Skill. Do not modify source files, local branches, commits, pushes or GitHub PRs.
 
-## 2. Refresh and verify references
+## 2. Baseline and coverage
 
-Fetch the required branches:
+Use the latest origin/dev and the actual merge-base with the selected upstream source. Record exact SHAs and the complete pending upstream commit range.
 
-- `origin/dev`
-- `origin/master`
-- `upstream/master`
+Account for every commit SHA. Group the review by logical upstream change/PR, avoiding duplicate analysis of merge commits and their constituent commits.
 
-If the upstream remote is not configured, fetch the canonical upstream URL directly without modifying Git remote configuration.
+## 3. Apply the decision policy
 
-Verify:
+For every logical change group, apply the Skill's decision hierarchy:
 
-`origin/master == upstream/master`
+- Preserve established MSGA product/UI behavior.
+- Adopt compatible upstream behavior and implementation.
+- Adapt upstream code where it conflicts with MSGA contracts.
+- Prefer upstream implementations over duplicate fork implementations.
+- Preserve fork behavior only when it is an explicit contract or demonstrably stronger.
+- Do not reintroduce deliberately removed product scope.
+- Adopt compatible new upstream capabilities by default.
 
-If they differ, STOP. Explain the difference and do not choose a source branch automatically.
+Do not use REVIEW_REQUIRED, DEFER or user approval as a way to avoid making an ordinary engineering decision. Do not recommend omitting commits from the Git merge.
 
-Verify that `origin/dev` and `origin/master` share a common ancestor.
+## 4. Produce an actionable plan
 
-## 3. Establish the actual baseline
-
-Calculate:
-
-`git merge-base origin/dev origin/master`
-
-Use this SHA as the only authoritative baseline.
-
-Determine:
-
-- Current fork dev SHA.
-- Current fork master SHA.
-- Current upstream SHA.
-- Merge-base SHA.
-- Number of upstream commits not yet reachable from dev.
-- Number of fork-specific commits after the baseline.
-
-Check whether previous synchronization attempts were merged by squash or rebase and whether patch-equivalent upstream changes already exist in dev.
-
-If duplicate integration is possible, stop and explain the situation before proposing an implementation.
-
-Do not use historical PR descriptions as authoritative baseline information.
-
-## 4. Inventory every upstream commit
-
-Inspect the complete range:
-
-`BASE..origin/master`
-
-Account for every commit, including merge commits.
-
-For regular commits, inspect actual patches.
-
-For merge commits, identify the associated PR and review its constituent changes.
-
-Do not rely on commit subjects alone.
-
-Build a table:
-
-| SHA | Subject | PR | Area | Classification | Evidence / Action |
-|---|---|---|---|---|---|
-
-Use these classifications:
-
-- KEEP
-- ADAPT
-- ALREADY_PRESENT
-- REVERT
-- REVIEW_REQUIRED
-
-Every commit must be accounted for.
-
-These classifications describe the resulting code behavior. All upstream commits will still enter the Git history through the complete merge.
-
-Do not recommend cherry-picking or manually recreating commits.
-
-## 5. Review MSGA compatibility
-
-Inspect the existing fork implementation and compare it with the upstream changes.
-
-Pay particular attention to:
-
-- Removed Claude Code and agent functionality.
-- Existing Summary down functionality.
-- VIP unreads and pinned section.
-- Collapsed-unreads reveal behavior.
-- Custom sections and workspace-specific preferences.
-- Notification deduplication and persistence.
-- Huddle notifications.
-- Independent versioning.
-- Disabled self-update behavior.
-- CI and release safeguards.
-
-Identify actual conflicts, not hypothetical ones.
-
-For every ADAPT or REVERT decision, explain:
-
-1. What upstream changes.
-2. What MSGA currently does.
-3. Why the upstream behavior is incompatible or needs adaptation.
-4. The smallest correct modification.
-5. How the result will be verified.
-
-## 6. Produce the integration plan
-
-The implementation plan MUST use:
-
-1. Latest `origin/dev` as the starting point.
-2. A new unique integration branch.
-3. A complete `--no-ff` merge of `origin/master`.
-4. Conflict resolution based on actual code context.
-5. Separate, focused post-merge adaptations.
-6. Verification of upstream ancestry.
-7. A Draft PR targeting `dev`.
-
-Identify likely conflict hotspots before implementation.
-
-Specify which tests and build configurations must be run.
-
-Explicitly identify unresolved questions.
-
-If any critical product decision remains unresolved, do not pretend the plan is ready.
-
-## 7. Final report
-
-Output:
+Report:
 
 ### Repository state
-All relevant branch names, URLs and SHAs.
+Remote URLs, branch SHAs, selected upstream source and merge base.
 
-### Upstream inventory
-Complete commit inventory with classifications.
+### Change coverage
+A compact ledger mapping every upstream SHA to a logical change group.
 
-### Compatibility analysis
-Important changes and fork-specific conflicts.
-
-### Integration plan
-Exact Git operations and expected merge topology.
+### Integration decisions
+For each group: ADOPT, ADAPT, PRESERVE-STRONGER or OMIT-REMOVED-SCOPE, with concise evidence and concrete implementation notes.
 
 ### Conflict hotspots
-Files, behavior and resolution strategy.
+Likely files, the upstream improvement to retain, the MSGA behavior to preserve and the expected resolution.
 
 ### Verification plan
-Builds, tests, CI and platform-specific checks.
+Relevant build targets, regression tests, CI jobs, localization and platform-specific checks.
 
-### Outstanding issues
-Anything requiring user input.
+### Existing sync PRs
+Identify duplicate or obsolete sync PRs and whether they preserve upstream ancestry. Do not modify or close them.
 
-End with a clear status:
+### Execution sequence
+Exact source ref, latest dev starting point, new branch naming and merge operation.
 
-- READY TO INTEGRATE
-- BLOCKED — USER DECISION REQUIRED
-- BLOCKED — REPOSITORY STATE INVALID
+Do not ask the user to approve routine product adaptations. If no upstream changes exist, report NO UPSTREAM CHANGES.
+
+End with one of:
+
+- REVIEW COMPLETE — INTEGRATION PLAN READY
 - NO UPSTREAM CHANGES
+- BLOCKED — TECHNICAL PRECONDITION
 
-Do not execute the integration in this command.
+A plan marked ready is informational; the integration command must independently refresh and verify all references before acting.
+
+Do not execute integration in this command.
