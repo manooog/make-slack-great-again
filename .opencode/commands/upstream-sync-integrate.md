@@ -14,7 +14,7 @@ Run the workflow in INTEGRATE mode.
 Scope:
 $ARGUMENTS
 
-The user's invocation authorizes the Git and GitHub operations defined here: create a new integration branch, merge upstream, resolve conflicts, make focused adaptations and commits, push the branch and create a Draft PR.
+The user's invocation authorizes the Git and GitHub operations defined here: create a new integration branch, merge upstream, resolve conflicts, make focused source/test/documentation/workflow adaptations and commits, push the branch, create a Draft PR and perform the bounded CI follow-through defined by the Skill.
 
 Do not require a previous /upstream-sync result or a READY status. The review command is optional. Independently perform the required discovery, inventory and compatibility analysis using the Skill.
 
