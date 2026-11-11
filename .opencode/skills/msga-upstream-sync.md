@@ -240,6 +240,30 @@ Do not broaden the task into unrelated refactoring.
 
 Review the complete final tree, not just the merge diff.
 
+### Risk-driven regression analysis
+
+For every logical upstream change, identify which quality dimensions it actually touches. Do not mechanically run every check for every change; apply the relevant dimensions and record why a dimension is not applicable when the risk is non-obvious.
+
+Use this risk map as an engineering aid, not as a new approval gate:
+
+- **State, snapshots and persistence:** distinguish complete snapshots from partial updates; ensure partial data cannot trigger cleanup of valid state; verify workspace/account isolation, deletion and reset behavior, serialization/deserialization, defaults for old records, migration compatibility, write ordering and recovery after restart. Only a confirmed complete snapshot may authorize pruning data that is absent from it.
+- **Asynchronous work and lifecycle:** inspect callback ownership, thread affinity, cancellation, object destruction, stale results, event ordering, races, duplicate delivery and shutdown behavior. When relevant, read `docs/ARCHITECTURE.md#asynchronous-lifetime-contracts` and follow the ownership contracts documented there.
+- **UI and interaction:** preserve established MSGA layout and visual decisions. Derive the minimum geometry required by new controls instead of copying upstream dimensions blindly. Check relevant hover/focus/selected/disabled states, keyboard and pointer behavior, scrolling, focus retention, narrow-window behavior and content alignment. Add or adapt UI regression coverage where the repository supports it.
+- **Notifications and event categories:** verify deduplication, persistence, retention, click routing, read/withdraw behavior and independent lifecycles. A state transition for one notification category must not implicitly clear another category unless the product contract explicitly says so.
+- **Localization and generated assets:** identify every new or changed user-visible string; reuse an existing translation key only when its meaning matches. Check all maintained locales, placeholders/plurals, fallback behavior and the repository's generation process. Regenerate generated files with the documented toolchain; do not hand-edit generated output unless the project explicitly requires it.
+- **Protocol, networking and security:** when affected, verify authentication/scope boundaries, request/response compatibility, validation, retry/idempotency behavior, secret handling and error redaction. Do not weaken permission checks or expose credentials in logs.
+- **Build, platform and release contracts:** inspect the actual CI workflows and supported compiler/platform matrix. Preserve fork-specific release provenance, artifact validation and self-update safeguards; do not assume a local build proves cross-platform compatibility.
+
+For each applicable dimension, connect the upstream behavior to the actual MSGA implementation and its owner (code, architecture documentation, tests or workflow). Identify the failure mode, then add or adapt a regression test that would catch it. Prefer behavior-level tests over tests that merely mirror implementation details.
+
+Examples of expected reasoning:
+- A section update API that accepts partial data must not mark the whole collection complete or delete unseen sections.
+- A notification read event may withdraw a normal message notification without ending a huddle or reminder lifecycle.
+- A new hover action must fit the existing MSGA surface with the smallest necessary geometry change.
+- A new visible action must have complete localization coverage and generated outputs.
+
+Do not invent risk where the changed behavior has no such surface. Conversely, do not mark a dimension "not applicable" merely because the upstream commit did not modify a test file; inspect the resulting behavior.
+
 ### Git ancestry
 
 Verify:
@@ -280,6 +304,18 @@ Fix failures introduced by the merge or adaptations. For suspected pre-existing 
 Do not skip tests silently, weaken assertions, disable CI jobs or change test expectations merely to obtain a green build. When upstream tests encode behavior that conflicts with an MSGA contract, adapt the test to assert the preserved MSGA behavior.
 
 A platform unavailable locally is not by itself a reason to abandon integration; report the limitation and rely on the corresponding CI job where available.
+
+### Autonomous engineering ownership
+
+The Agent owns implementation and verification, not just discovery and reporting.
+
+- Treat review findings, conflict hotspots and failed checks as work to resolve. Do not stop after describing a problem that can be investigated or fixed within the authorized scope.
+- Before asking the user, inspect the relevant implementation, call sites, data model, architecture documentation, tests, upstream history and CI logs. Run focused experiments where they can resolve uncertainty cheaply.
+- Make routine engineering decisions using the Skill's hierarchy: preserve explicit MSGA behavior, otherwise adopt upstream behavior and implementation by default. Do not ask the user to approve ordinary adaptations, test additions, refactors needed for convergence or compatible upstream features.
+- When evidence is incomplete, state what is unknown, gather the missing evidence and continue. Do not turn uncertainty into a speculative product decision.
+- Ask for user input only when an actual product decision is absent from the established contracts, an action falls outside the authorization in the command, or safe progress requires unavailable permission or information. For unresolved product ambiguity, preserve current MSGA behavior while continuing all independent work.
+- A finding is not complete merely because it appears in the report. Resolve it in code/tests or identify a concrete external/technical blocker with evidence and the smallest required intervention.
+- Do not create extra abstractions, broad refactors or blanket test suites merely to appear thorough. Keep adaptations focused on the upstream behavior and demonstrated risks.
 
 ### Revalidate immediately before publishing
 
@@ -343,6 +379,23 @@ Stop only for a genuine technical or safety precondition, such as:
 - A merge or build state that cannot be made coherent without destructive or speculative changes.
 
 When blocked, finish all safe inspection and work possible, report the exact technical blocker and the smallest required intervention. Do not reframe a product choice as a blocker.
+
+### Pull-request CI completion
+
+Creating the Draft PR is not the end of the task. The task must remain active until all applicable pull-request workflows/checks for the latest PR head SHA have completed and their results have been assessed.
+
+- Re-read the repository's current workflow definitions rather than assuming a fixed check list. At the time this Skill was written, `.github/workflows/ci.yml` and `.github/workflows/memory.yml` both run for pull requests; the README's "Maintaining this fork" section describes their intent. Workflow names and triggers can change.
+- Wait for all applicable checks on the latest pushed commit. A successful result for an older head SHA does not validate a newer push. Do not report success while checks are queued or in progress.
+- When a check fails, inspect the exact workflow run, job, failed step and logs. Classify the cause as an integration/code regression, test regression, workflow/configuration issue, or external infrastructure/permission failure.
+- For code or test failures introduced by the integration, reproduce with the closest available CI configuration, fix the cause, add or correct regression coverage, commit and push to the same integration branch, then wait for checks on the new head SHA.
+- Do not weaken assertions, delete valid tests, skip jobs, alter expected behavior or make unrelated workflow changes just to obtain a green result.
+- Retry only when evidence indicates a transient infrastructure failure or a flaky test. Prefer rerunning the failed job rather than the entire workflow, and limit an unchanged retry to one targeted attempt. If it fails again, investigate further or report the external blocker; never retry indefinitely.
+- If a failure is demonstrably pre-existing, compare it against the unmodified dev baseline using equivalent inputs/environment and include evidence. Do not label it pre-existing based only on suspicion.
+- A skipped check is acceptable only when its workflow condition makes the skip expected for this PR; verify and record the reason.
+- If checks cannot be inspected because of missing permissions or unavailable GitHub access, do not claim CI is green. Leave the PR Draft and report the precise limitation.
+- After every push, reassess the latest PR head SHA. Ignore superseded runs cancelled by a newer push, but do not ignore failures on the current head.
+
+The current CI workflow includes Ubuntu GCC test/build validation, Ubuntu Clang compile validation and Windows MinGW build validation. The memory workflow runs an ASan/LSan test and soak on pull requests. Follow the current workflow files as the source of truth, not this summary.
 
 ## 12. Final report
 
