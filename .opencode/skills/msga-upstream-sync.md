@@ -380,7 +380,7 @@ Stop only for a genuine technical or safety precondition, such as:
 
 When blocked, finish all safe inspection and work possible, report the exact technical blocker and the smallest required intervention. Do not reframe a product choice as a blocker.
 
-### Pull-request CI completion
+## 12. Pull-request CI completion
 
 Creating the Draft PR is not the end of the task. The task must remain active until all applicable pull-request workflows/checks for the latest PR head SHA have completed and their results have been assessed.
 
@@ -393,11 +393,12 @@ Creating the Draft PR is not the end of the task. The task must remain active un
 - If a failure is demonstrably pre-existing, compare it against the unmodified dev baseline using equivalent inputs/environment and include evidence. Do not label it pre-existing based only on suspicion.
 - A skipped check is acceptable only when its workflow condition makes the skip expected for this PR; verify and record the reason.
 - If checks cannot be inspected because of missing permissions or unavailable GitHub access, do not claim CI is green. Leave the PR Draft and report the precise limitation.
+- Respect each workflow's configured timeout. Do not abandon a long-running check merely because it exceeds an arbitrary short polling window; if it exceeds its configured timeout plus a reasonable reporting grace period, capture the run/job state and treat it as an external blocker.
 - After every push, reassess the latest PR head SHA. Ignore superseded runs cancelled by a newer push, but do not ignore failures on the current head.
 
 The current CI workflow includes Ubuntu GCC test/build validation, Ubuntu Clang compile validation and Windows MinGW build validation. The memory workflow runs an ASan/LSan test and soak on pull requests. Follow the current workflow files as the source of truth, not this summary.
 
-## 12. Final report
+## 13. Final report
 
 Report facts, not confidence claims:
 
@@ -412,4 +413,4 @@ Report facts, not confidence claims:
 - Draft PR URL
 - remaining technical limitations
 
-The task is complete when the full upstream history is merged, the final code preserves MSGA contracts, ancestry is verified, the integration branch is pushed and the Draft PR is created.
+The task is complete when the full upstream history is merged, the final code preserves MSGA contracts, ancestry is verified, the integration branch is pushed, the Draft PR is created, and all applicable PR checks pass for the latest head SHA. If an external or demonstrably pre-existing failure cannot be resolved within the authorized scope, leave the PR Draft and report the exact evidence and limitation instead of claiming completion.
