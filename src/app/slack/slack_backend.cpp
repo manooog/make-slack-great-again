@@ -278,11 +278,20 @@ struct SlackBackend::Read {
     int64_t                                      lastSections        = 0;
     int                                          sectionWrites       = 0; // edits in flight
     bool                                         sectionsStale = false;   // a list waits on them
+    uint64_t                                     sectionMutationGen  = 0; // edits started
+    uint64_t                                     sectionListRequest  = 0; // newest list request
+    int                                          sectionListsInFlight = 0;
     // Slack's own sections by type ("channels", "direct_messages",
     // "recent_apps"): where a conversation taken out of its section goes.
     std::unordered_map<std::string, std::string> systemSections;
-    void                                         refreshSections();
-    void                                         sectionWriteDone(const std::string &err);
+    struct SectionsRequest {
+        uint64_t                             request = 0, gen = 0;
+        std::string                          cursor;
+        std::vector<mapjson::SectionRecord> records;
+    };
+    void refreshSections();
+    void refreshSectionsPage(std::shared_ptr<SectionsRequest> req);
+    void sectionWriteDone(const std::string &err);
 
     // ── Scheduled messages (the sidebar's "Scheduled messages") ─────────────
     bool     scheduledUnavailable = false;
@@ -1726,7 +1735,9 @@ void SlackBackend::Read::refreshStarred() {
 
 // users.channelSections.list (session tokens only): the custom sidebar
 // sections. Never while an edit of ours is in flight: the list could predate
-// it (sectionWriteDone lists again once they are all in).
+// it (sectionWriteDone lists again once they are all in). The endpoint pages
+// with a top-level `cursor`; every page is accumulated before a confirmed
+// snapshot replaces the Store.
 void SlackBackend::Read::refreshSections() {
     lastSections = now();
     if (!session || sectionsUnavailable)
@@ -1735,24 +1746,72 @@ void SlackBackend::Read::refreshSections() {
         sectionsStale = true;
         return;
     }
+    if (sectionListsInFlight > 0 && !sectionsStale)
+        return;
+    sectionsStale = false; // this request is the pending refresh
+    auto req      = std::make_shared<SectionsRequest>();
+    req->request  = ++sectionListRequest;
+    req->gen      = sectionMutationGen;
+    ++sectionListsInFlight;
+    refreshSectionsPage(std::move(req));
+}
+
+void SlackBackend::Read::refreshSectionsPage(std::shared_ptr<SectionsRequest> req) {
+    std::string form;
+    if (!req->cursor.empty())
+        form = "cursor=" + net::percentEncode(req->cursor);
     call(
         "users.channelSections.list",
-        {},
-        [this](const json::Document &doc, const std::string &err) {
+        std::move(form),
+        [this, req = std::move(req)](const json::Document &doc, const std::string &err) mutable {
+            const auto finish = [this] {
+                if (sectionListsInFlight > 0)
+                    --sectionListsInFlight;
+            };
+            // A newer request (or an already discarded one) owns the answer.
+            if (req->request != sectionListRequest) {
+                finish();
+                return; // discard only: the newer request will handle it
+            }
             if (!err.empty()) {
+                finish();
                 if (isMethodUnavailable(err))
                     sectionsUnavailable = true;
+                sectionsStale = true; // the tick retries; no tight loop
                 return;
             }
-            if (sectionWrites > 0) {
+            if (req->gen != sectionMutationGen || sectionWrites > 0) {
+                finish();
+                sectionsStale = true;
+                if (sectionWrites == 0)
+                    refreshSections();
+                return;
+            }
+            if (!doc.root().has("channel_sections") || !doc.root()["channel_sections"].isArray()) {
+                finish();
                 sectionsStale = true;
                 return;
             }
+            mapjson::appendSections(doc.root(), req->records);
+            const std::string next(doc.root()["cursor"].str());
+            if (!next.empty()) {
+                if (next == req->cursor) { // a server repeating a cursor
+                    finish();
+                    sectionsStale = true;
+                    return;
+                }
+                req->cursor = next;
+                refreshSectionsPage(std::move(req));
+                return;
+            }
+            // The last page: the whole section list is now known.
+            finish();
             std::vector<model::Store::Section> list;
             std::unordered_set<std::string>    redacted;
             systemSections.clear();
-            mapjson::toSections(doc.root(), list, systemSections, redacted);
+            mapjson::toSections(req->records, list, systemSections, redacted);
             s.setSectionsSnapshot(std::move(list), std::move(redacted));
+            sectionsStale = false;
         }
     );
 }
@@ -1765,7 +1824,7 @@ void SlackBackend::Read::sectionWriteDone(const std::string &err) {
     // A refused edit is undone by Slack's own list.
     if (!err.empty())
         sectionsStale = true;
-    if (sectionWrites == 0 && std::exchange(sectionsStale, false))
+    if (sectionWrites == 0 && sectionsStale)
         refreshSections();
 }
 
@@ -1795,6 +1854,9 @@ void SlackBackend::sectionCall(
     std::string_view method, std::string form, std::function<void(const json::Document &)> onOk
 ) {
     ++_read->sectionWrites;
+    ++_read->sectionMutationGen;
+    if (_read->sectionListsInFlight > 0)
+        _read->sectionsStale = true; // that list predates this edit
     api(method,
         std::move(form),
         [this, onOk = std::move(onOk)](const json::Document &doc, const std::string &err) {

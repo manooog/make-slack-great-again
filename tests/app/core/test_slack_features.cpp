@@ -937,6 +937,92 @@ TEST("slack features: custom sidebar sections — the list, moves, create, a ref
     CHECK(e.errors.back().find("section_not_found") != std::string::npos);
 }
 
+TEST("slack features: sidebar sections follow the top-level cursor, and redacted ones stay known") {
+    if (!haveServer())
+        return;
+    Env e(R"({
+      "users.channelSections.list": [
+        {"ok": true, "cursor": "P2", "channel_sections": [
+          {"channel_section_id": "L1", "type": "standard", "name": "One", "emoji": "",
+           "next_channel_section_id": "L2",
+           "channel_ids_page": {"channel_ids": ["C1"], "count": 1, "cursor": ""}},
+          {"channel_section_id": "L_R", "type": "standard", "name": "Hidden", "emoji": "",
+           "next_channel_section_id": null, "is_redacted": true,
+           "channel_ids_page": {"channel_ids": [], "count": 0, "cursor": ""}}]},
+        {"ok": true, "cursor": "", "channel_sections": [
+          {"channel_section_id": "L2", "type": "standard", "name": "Two", "emoji": "",
+           "next_channel_section_id": null,
+           "channel_ids_page": {"channel_ids": [], "count": 0, "cursor": "C1"}}]}
+      ]})");
+    REQUIRE(e.connect());
+    REQUIRE(pumpUntil([&] { return e.store.sectionsComplete() && e.store.sections().size() == 2; }));
+    CHECK_STR(e.store.sections()[0].name, "One");
+    CHECK_STR(e.store.sections()[1].name, "Two");
+    CHECK(e.store.sectionRedacted("L_R"));
+    CHECK(e.store.findSection("L_R") == nullptr);
+    const Log log;
+    REQUIRE(log.count("users.channelSections.list") >= 2);
+    CHECK_STR(log.get("users.channelSections.list", 1)["form"]["cursor"].str(), "P2");
+}
+
+TEST("slack features: an answer without channel_sections is not a complete list") {
+    if (!haveServer())
+        return;
+    Env e;
+    e.store.setSections({{"L1", "Keep", "", {}}});
+    ctl("POST",
+        "/_ctl/script",
+        R"({"method": "users.channelSections.list",
+            "responses": [{"ok": true, "cursor": ""}]})");
+    REQUIRE(e.connect());
+    REQUIRE(pumpUntil([&] { return count("users.channelSections.list") >= 1; }));
+    pumpFor(100);
+    CHECK_FALSE(e.store.sectionsComplete());
+    REQUIRE(e.store.findSection("L1") != nullptr);
+    CHECK_STR(e.store.findSection("L1")->name, "Keep");
+}
+
+// A list that started before an edit must never replace the list requested
+// after it, even when the old answer arrives last.
+TEST("slack features: a stale section list cannot undo a newer one") {
+    if (!haveServer())
+        return;
+    Env e;
+    e.store.setSections({{"L1", "Old", "", {}}});
+    ctl("POST",
+        "/_ctl/script",
+        R"({"method": "users.channelSections.list", "responses": [
+          {"ok": true, "cursor": "", "__delay": 1.0, "channel_sections": [
+            {"channel_section_id": "L1", "type": "standard", "name": "Old", "emoji": "",
+             "next_channel_section_id": null,
+             "channel_ids_page": {"channel_ids": [], "count": 0}}]},
+          {"ok": true, "cursor": "", "channel_sections": [
+            {"channel_section_id": "L1", "type": "standard", "name": "New", "emoji": "",
+             "next_channel_section_id": "L2",
+             "channel_ids_page": {"channel_ids": [], "count": 0}},
+            {"channel_section_id": "L2", "type": "standard", "name": "Kept", "emoji": "",
+             "next_channel_section_id": null,
+             "channel_ids_page": {"channel_ids": [], "count": 0}}]}]})");
+    ctl("POST",
+        "/_ctl/script",
+        R"({"method": "users.channelSections.set",
+            "responses": [{"ok": true}]})");
+    REQUIRE(e.connect());
+    REQUIRE(pumpUntil([&] { return count("users.channelSections.list") >= 1; }));
+    e.be->updateSection("L1", "New", "");
+    REQUIRE(pumpUntil([&] { return count("users.channelSections.set") == 1; }));
+    // B is requested immediately, before A's delayed answer: its L2 exists.
+    REQUIRE(pumpUntil([&] { return e.store.findSection("L2") != nullptr; }, 500));
+    const uint64_t rev = e.store.sectionsRevision();
+    CHECK(count("users.channelSections.list") == 2);
+    pumpFor(1200); // the old answer has returned by now
+    REQUIRE(e.store.findSection("L1") != nullptr);
+    CHECK_STR(e.store.findSection("L1")->name, "New");
+    CHECK(e.store.findSection("L2") != nullptr);
+    CHECK(e.store.sectionsRevision() == rev);
+    CHECK(count("users.channelSections.list") == 2); // no third refresh from the stale answer
+}
+
 TEST("slack features: leaving a custom section restores Slack Connect grouping") {
     if (!haveServer())
         return;

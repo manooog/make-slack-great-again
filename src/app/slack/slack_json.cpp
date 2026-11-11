@@ -844,65 +844,75 @@ void starredConversationIds(const json::Value &items, std::vector<std::string> &
     }
 }
 
+void appendSections(const Value &resp, std::vector<SectionRecord> &out) {
+    for (const Value &s : resp["channel_sections"]) {
+        const std::string id(s["channel_section_id"].str());
+        if (id.empty())
+            continue;
+        SectionRecord rec;
+        rec.id       = id;
+        rec.name     = std::string(s["name"].str());
+        rec.emoji    = std::string(s["emoji"].str());
+        rec.next     = std::string(s["next_channel_section_id"].str());
+        rec.type     = std::string(s["type"].str());
+        rec.redacted = s["is_redacted"].boolean();
+        // client.channels says channel_ids; users.channelSections.list pages them.
+        const Value page =
+            s.has("channel_ids_page") ? s["channel_ids_page"]["channel_ids"] : s["channel_ids"];
+        for (const Value c : page)
+            if (!c.str().empty())
+                rec.convs.emplace_back(c.str());
+        out.push_back(std::move(rec));
+    }
+}
+
 void toSections(
-    const Value                                  &resp,
+    const std::vector<SectionRecord>            &records,
     std::vector<model::Store::Section>           &out,
     std::unordered_map<std::string, std::string> &system,
     std::unordered_set<std::string>              &redacted
 ) {
     // Follow the chain from the one no other section points at; any left
     // off it (a broken chain) follow in the order listed.
-    const Value                     all = resp["channel_sections"];
-    std::vector<Value>              list;
     std::unordered_set<std::string> pointed;
-    for (const Value s : all) {
-        list.push_back(s);
-        if (const std::string_view n = s["next_channel_section_id"].str(); !n.empty())
-            pointed.emplace(n);
-    }
-    std::vector<Value>              ordered;
+    for (const SectionRecord &s : records)
+        if (!s.next.empty())
+            pointed.emplace(s.next);
+    std::vector<size_t>              ordered;
     std::unordered_set<std::string> placed;
     const auto                      byId = [&](std::string_view id) -> int {
-        for (size_t i = 0; i < list.size(); ++i)
-            if (!id.empty() && list[i]["channel_section_id"].str() == id)
+        for (size_t i = 0; i < records.size(); ++i)
+            if (!id.empty() && records[i].id == id)
                 return int(i);
         return -1;
     };
-    for (size_t h = 0; h < list.size(); ++h) {
-        if (pointed.count(std::string(list[h]["channel_section_id"].str())))
+    for (size_t h = 0; h < records.size(); ++h) {
+        if (pointed.count(records[h].id))
             continue;
         for (int i = int(h);
-             i >= 0 && placed.emplace(list[size_t(i)]["channel_section_id"].str()).second;
-             i = byId(list[size_t(i)]["next_channel_section_id"].str()))
-            ordered.push_back(list[size_t(i)]);
+             i >= 0 && placed.emplace(records[size_t(i)].id).second;
+             i = byId(records[size_t(i)].next))
+            ordered.push_back(size_t(i));
     }
-    for (const Value &s : list)
-        if (placed.emplace(s["channel_section_id"].str()).second)
-            ordered.push_back(s);
-    for (const Value &s : ordered) {
-        const std::string_view type = s["type"].str();
-        const std::string      id(s["channel_section_id"].str());
-        if (type != "standard") {
-            if (!type.empty() && !id.empty())
-                system[std::string(type)] = id;
+    for (size_t i = 0; i < records.size(); ++i)
+        if (placed.emplace(records[i].id).second)
+            ordered.push_back(i);
+    for (const size_t i : ordered) {
+        const SectionRecord &s = records[i];
+        if (s.redacted)
+            redacted.insert(s.id);
+        if (s.type != "standard") {
+            if (!s.type.empty())
+                system[s.type] = s.id;
             continue;
         }
-        if (id.empty())
+        if (s.redacted)
             continue;
-        if (s["is_redacted"].boolean()) {
-            redacted.insert(id);
-            continue;
-        }
         model::Store::Section sec;
-        sec.id    = id;
-        sec.name  = s["name"].str();
-        sec.emoji = s["emoji"].str();
-        // client.channels says channel_ids; users.channelSections.list pages them.
-        const Value page =
-            s.has("channel_ids_page") ? s["channel_ids_page"]["channel_ids"] : s["channel_ids"];
-        for (const Value c : page)
-            if (!c.str().empty())
-                sec.convs.emplace_back(c.str());
+        sec.id    = s.id;
+        sec.name  = s.name;
+        sec.emoji = s.emoji;
+        sec.convs = s.convs;
         out.push_back(std::move(sec));
     }
 }

@@ -271,6 +271,19 @@ TEST("store: a whole sections list stays whole; telling it alone is a change") {
     CHECK_FALSE(s.sectionsComplete());
 }
 
+TEST("store: a local section edit keeps the redacted ids") {
+    Store s;
+    const Store::Section work = {"S1", "Work", "", {}};
+    s.setSectionsSnapshot({work}, {"S_HIDDEN"});
+    CHECK(s.sectionRedacted("S_HIDDEN"));
+    CHECK(s.sectionsComplete());
+    s.setSections({work, {"S2", "Later", "", {}}});
+    CHECK(s.sectionRedacted("S_HIDDEN"));
+    CHECK(s.sectionsComplete());
+    s.setSectionsSnapshot({work}, {});
+    CHECK_FALSE(s.sectionRedacted("S_HIDDEN"));
+}
+
 TEST("store: ts strings round-trip as micros") {
     CHECK(parseTs("1758445200.123456") == 1758445200123456);
     CHECK(parseTs("1758445200.1") == 1758445200100000);
