@@ -11,7 +11,7 @@ This workflow exists to keep MSGA close to upstream while preserving the product
 
 **Integration is the objective, not a decision to be reconsidered on every run.**
 
-For every synchronization:
+In **INTEGRATE** mode, execute the following workflow:
 
 1. Bring the complete upstream commit history into the integration branch through a real Git merge.
 2. Adopt upstream fixes, improvements, tests, refactors and compatible new capabilities.
@@ -147,7 +147,7 @@ If the intent of a new upstream feature is not documented in MSGA, follow upstre
 
 ## 6. Discovery and baseline
 
-Before integration:
+Before either mode:
 
 1. Verify the repository root and origin URL.
 2. Check the working tree and ensure no merge, rebase or cherry-pick is in progress.
@@ -170,7 +170,7 @@ Record:
 
 If there are no upstream commits to integrate, report NO UPSTREAM CHANGES and do not create a branch or PR.
 
-If a previous synchronization PR exists, inspect its ancestry and scope. Never copy or cherry-pick its reconstructed commits. If it lacks the required upstream ancestry, create a fresh integration branch from the latest dev and perform the complete merge. Do not close historical PRs automatically.
+If a previous synchronization PR exists, inspect its ancestry and scope. Never copy or cherry-pick its reconstructed commits. If it lacks the required upstream ancestry, REVIEW mode must recommend a fresh integration branch from the latest dev; INTEGRATE mode must create that fresh branch and perform the complete merge. Do not close historical PRs automatically.
 
 ## 7. Review the upstream change set
 
@@ -200,7 +200,7 @@ For each logical change group, state:
 
 Never use commit classification to select commits for cherry-picking. The complete upstream history is merged regardless of the action labels.
 
-## 8. Integration procedure
+## 8. Integration procedure (INTEGRATE mode only)
 
 Create a new unique integration branch from the latest origin/dev.
 
@@ -245,9 +245,9 @@ Prefer upstream APIs, data structures, lifecycle and tests. Remove superseded fo
 
 Do not broaden the task into unrelated refactoring.
 
-## 9. Verification
+## 9. Verification (INTEGRATE mode execution; REVIEW plans only)
 
-Review the complete final tree, not just the merge diff.
+In INTEGRATE mode, review the complete final tree, not just the merge diff. In REVIEW mode, identify the corresponding checks and verification methods in the plan without running mutating build steps or changing repository state.
 
 ### Risk-driven regression analysis
 
@@ -328,7 +328,7 @@ The Agent owns the complete work within the active mode, not just discovery and 
 - In INTEGRATE mode, a finding is not complete merely because it appears in the report: resolve it in code/tests or identify a concrete external/technical blocker with evidence and the smallest required intervention. In REVIEW mode, complete the finding with evidence and a concrete resolution plan without making changes.
 - Do not create extra abstractions, broad refactors or blanket test suites merely to appear thorough. Keep adaptations focused on the upstream behavior and demonstrated risks.
 
-### Revalidate immediately before publishing
+### Revalidate immediately before publishing (INTEGRATE mode only)
 
 Fetch origin/dev, origin/master and upstream/master again before pushing.
 
@@ -340,7 +340,7 @@ Fetch origin/dev, origin/master and upstream/master again before pushing.
 
 If new changes arrive during this revalidation, integrate them before publishing rather than creating a PR against a stale snapshot.
 
-## 10. Draft PR
+## 10. Draft PR (INTEGRATE mode only)
 
 Push only the new integration branch.
 
