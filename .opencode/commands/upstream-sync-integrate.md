@@ -1,5 +1,5 @@
 ---
-description: Merge all pending upstream changes into MSGA dev, preserve product decisions, verify and create a Draft PR.
+description: Merge upstream into MSGA dev, preserve product decisions, verify changes, create a Draft PR and close the CI feedback loop.
 subagent: false
 ---
 
@@ -14,7 +14,7 @@ Run the workflow in INTEGRATE mode.
 Scope:
 $ARGUMENTS
 
-The user's invocation authorizes the Git and GitHub operations defined here: create a new integration branch, merge upstream, resolve conflicts, make focused adaptations and commits, push the branch and create a Draft PR.
+The user's invocation authorizes the Git and GitHub operations defined here: create a new integration branch, merge upstream, resolve conflicts, make focused source/test/documentation/workflow adaptations and commits, push the branch, create a Draft PR and perform the bounded CI follow-through defined by the Skill.
 
 Do not require a previous /upstream-sync result or a READY status. The review command is optional. Independently perform the required discovery, inventory and compatibility analysis using the Skill.
 
@@ -105,23 +105,15 @@ State explicitly that the PR must be merged using Create a merge commit, never s
 
 Do not merge the PR, mark it ready, publish a release, modify dev/master directly, force-push or close historical PRs.
 
-## 8. Final report
+## 8. Pull-request CI follow-through
 
-Report:
+After creating the Draft PR, follow **Skill section 12 (INTEGRATE mode only)** as the single source of truth. This is mandatory: do not finish while an applicable check for the latest PR head SHA is pending, running, missing without explanation or failing due to an integration-caused regression.
 
-- source and target refs and exact SHAs
-- merge base and upstream commit coverage
-- merge commit SHA and both parents
-- adaptation commits and preserved product contracts
-- Git ancestry verification
-- build/test/CI results
-- Draft PR URL
-- remaining technical limitations
+Inspect all applicable check runs and status contexts, not only Actions workflow summaries. Fix integration-caused code, test and workflow/configuration failures on the same branch, push the correction and repeat verification against the new head SHA. Keep retries evidence-based and bounded as specified in the Skill.
 
-End with:
+Keep the PR Draft. Do not mark it ready, merge it or publish a release.
 
-- DRAFT PR CREATED
-- NO UPSTREAM CHANGES
-- BLOCKED — TECHNICAL PRECONDITION
+## 9. Final report
 
-Do not report completion until the remote branch, ancestry and Draft PR have been verified.
+Follow **Skill section 13** for the required report fields and final status. Report only verified facts for the exact PR head SHA; do not claim CI green while any applicable check is pending, missing without explanation or failing.
+
