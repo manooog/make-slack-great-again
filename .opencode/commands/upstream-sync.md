@@ -60,8 +60,8 @@ For each group: ADOPT, ADAPT, PRESERVE-STRONGER or OMIT-REMOVED-SCOPE, with conc
 ### Conflict hotspots
 Likely files, the upstream improvement to retain, the MSGA behavior to preserve and the expected resolution.
 
-### Verification plan
-Relevant build targets, regression tests, CI jobs, localization and platform-specific checks.
+### Risk and verification plan
+For each logical change, identify applicable risk dimensions from the Skill (state/persistence, async lifecycle, UI/interaction, notifications, localization/generated assets, protocol/security, build/platform/release). Map each applicable risk to the concrete implementation owner, failure mode and regression test. List relevant build targets, CI jobs and platform checks. Mark a dimension not applicable only when the changed behavior provides evidence for that conclusion.
 
 ### Existing sync PRs
 Identify duplicate or obsolete sync PRs and whether they preserve upstream ancestry. Do not modify or close them.
