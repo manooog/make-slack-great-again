@@ -1,276 +1,127 @@
 ---
-description: Merge the complete upstream history into MSGA dev, adapt fork-specific behavior, verify and create a Draft PR.
+description: Merge all pending upstream changes into MSGA dev, preserve product decisions, verify and create a Draft PR.
 subagent: false
 ---
 
-Read and follow `.opencode/skills/msga-upstream-sync/SKILL.md` completely.
+Read and follow the exact Skill file:
 
-Execute the integration plan produced by `/upstream-sync`.
+.opencode/skills/msga-upstream-sync.md
 
-This command performs actual Git operations. Follow the approved plan and all Skill constraints.
+Do not look for a directory-based SKILL.md path.
 
-Do not reinterpret the integration architecture.
+Run the workflow in INTEGRATE mode.
 
-## 1. Validate the plan
+Scope:
+$ARGUMENTS
 
-Confirm that the current conversation contains a completed upstream-sync plan with status:
+The user's invocation authorizes the Git and GitHub operations defined here: create a new integration branch, merge upstream, resolve conflicts, make focused adaptations and commits, push the branch and create a Draft PR.
 
-`READY TO INTEGRATE`
+Do not require a previous /upstream-sync result or a READY status. The review command is optional. Independently perform the required discovery, inventory and compatibility analysis using the Skill.
 
-If no such plan exists, ask the user to run `/upstream-sync` first.
+## 1. Preflight
 
-Re-fetch and verify the relevant remote references.
+Verify repository identity, origin URL, clean working tree and absence of active merge/rebase/cherry-pick operations.
 
-Compare current SHAs with the plan:
+Fetch origin/dev, origin/master and upstream/master. If upstream is not configured, fetch the canonical upstream URL directly without modifying remote configuration.
 
-- `origin/dev`
-- `origin/master`
-- `upstream/master`
+Verify the tracking relationship and select the upstream source according to the Skill. Record exact SHAs and calculate the merge base from the latest origin/dev.
 
-If any relevant SHA has changed, stop and require a fresh review.
+If a prior review exists, use it as a guide only after verifying its source SHA and baseline. If no review exists or it is stale, perform the analysis now. Never stop merely because a review artifact is absent.
 
-Verify that `origin/master` and `upstream/master` still point to the same commit.
+If there are no upstream commits to integrate, report NO UPSTREAM CHANGES and do not create a branch or PR.
 
-## 2. Validate local state
+## 2. Inventory and compatibility
 
-Before modifying anything:
+Account for every pending upstream commit, grouped by logical change/PR.
 
-- Confirm the repository root.
-- Confirm the `origin` URL.
-- Confirm the working tree is clean.
-- Confirm there is no active merge, rebase or cherry-pick.
-- Confirm the target `origin/dev` exists.
-- Confirm the upstream source is available.
-- Confirm the integration branch name is unused locally and remotely.
+Apply the Skill's decision hierarchy and product contracts. Produce a concise internal implementation map:
 
-Never stash, discard, reset or overwrite existing user changes.
+- ADOPT
+- ADAPT
+- PRESERVE-STRONGER
+- OMIT-REMOVED-SCOPE
 
-Never reuse PR #60's branch:
+Do not ask the user to decide whether normal upstream changes should be integrated. Do not defer a change because it needs conflict resolution, adaptation, tests or refactoring.
 
-`sync/upstream-2026-11-11`
+## 3. Create a fresh integration branch
 
-Do not cherry-pick or copy commits from PR #60.
+Create a unique branch from the exact latest origin/dev SHA:
 
-The new integration must start independently from the latest `origin/dev`.
+sync/upstream-YYYY-MM-DD-merge
 
-## 3. Create the integration branch
+If the name exists, append a numeric suffix. Never reset, overwrite or force-push an existing branch. Do not base the branch on an old sync branch or a previous reconstructed PR.
 
-Use a unique name:
+## 4. Merge the complete upstream history
 
-`sync/upstream-YYYY-MM-DD-merge`
+Perform a real non-fast-forward merge of the selected upstream source:
 
-If the name already exists, append a numeric suffix.
+git merge --no-ff --no-commit <upstream-source-ref>
 
-Create the branch from:
+Resolve every ordinary conflict by retaining upstream improvements while preserving MSGA product/UI contracts. Do not use cherry-pick, rebase, patch application, manual commit recreation or squash as an alternative.
 
-`origin/dev`
+Do not blindly choose ours or theirs. Do not discard an entire upstream change because one part reintroduces removed functionality. Keep deliberately removed files deleted, remove only the prohibited paths from mixed files and retain all compatible improvements.
 
-Do not create it from the current local branch or an outdated local `dev`.
+Review the complete merge result, stage the resolved tree and create the merge commit. Record its SHA and both parents.
 
-Record the exact starting SHA.
+## 5. Apply focused MSGA adaptations
 
-## 4. Perform the actual Git merge
+After the merge commit, make focused adaptation commits where needed.
 
-The required operation is:
+Prefer upstream's implementation, APIs, data structures, lifecycle and tests. Preserve MSGA's established visible behavior and stronger regression coverage. Remove duplicate fork implementations when the upstream equivalent has been adopted.
 
-```bash
-git merge --no-ff --no-commit origin/master
-```
+Do not redesign existing UI. Do not restore Claude/agent/voice functionality. Follow the Skill's sidebar, messages, notifications, versioning and release contracts.
 
-This is the central operation of this workflow.
+Do not broaden the task into unrelated refactoring.
 
-Do not replace it with cherry-pick, rebase, patch application or manually recreated commits.
+## 6. Verify
 
-### Conflict handling
+Verify the merge commit's first parent is the exact origin/dev starting SHA and its second parent is the selected upstream source SHA.
 
-If conflicts occur:
+Verify both origin/dev and the selected upstream source are ancestors of final HEAD. Confirm all pending upstream commits are reachable from final HEAD.
 
-1. List every conflicted file.
-2. Understand the upstream and fork-side changes.
-3. Consult the previously generated inventory and compatibility analysis.
-4. Resolve each file according to actual behavior and established MSGA invariants.
-5. Preserve compatible upstream functionality.
-6. Avoid broad rewrites and unrelated cleanup.
+Review the complete final tree and run the broadest practical relevant build/tests. Inspect repository CI and let CI cover platforms unavailable locally.
 
-Never use `git checkout --ours`, `--theirs`, or a global conflict strategy as a substitute for reviewing the affected code.
+Fix integration-caused failures. Do not weaken tests or CI. Report unsupported or unrun checks honestly.
 
-Do not discard upstream changes merely because they conflict with existing fork code.
+## 7. Revalidate and publish
 
-If a conflict has no defensible resolution, stop and report it.
+Before pushing, fetch origin/dev, origin/master and upstream/master again.
 
-Once all conflicts are resolved, review the complete staged merge result and create the merge commit:
+If origin/dev advanced, merge its latest tip into the integration branch without rebasing. If upstream/master advanced, review and merge the new upstream commits using the Skill's policy. Resolve conflicts, rerun affected checks and verify that the latest dev and upstream tips are ancestors of the final HEAD.
 
-```bash
-git add <resolved-files>
-git commit -m "Merge upstream master into dev"
-```
+Record any additional merge commits and their parents. Do not force-push or rewrite history.
 
-Record:
+Push only the new integration branch.
 
-`MERGE_SHA=$(git rev-parse HEAD)`
+Create a Draft PR in zce/make-slack-great-again:
 
-Do not combine all subsequent fork-specific adaptations into this merge commit.
+- Base: dev
+- Head: the new integration branch
+- Title: Sync upstream updates through YYYY-MM-DD into dev
 
-## 5. Perform fork-specific adaptations
+Include the upstream source SHA, dev starting SHA, merge base, commit coverage, adaptation summary, merge SHA and parents, test results, CI status and platform limitations.
 
-Now review the complete merged implementation against the Skill's product invariants and the approved inventory.
+State explicitly that the PR must be merged using Create a merge commit, never squash or rebase.
 
-Implement the planned ADAPT and REVERT decisions.
+Do not merge the PR, mark it ready, publish a release, modify dev/master directly, force-push or close historical PRs.
 
-Important requirements:
+## 8. Final report
 
-- Preserve the original upstream merge commit.
-- Make adaptations in separate focused commits.
-- Do not duplicate functionality already present in MSGA.
-- Do not restore removed Claude/agent/voice functionality.
-- Preserve existing fork-specific sidebar and notification behavior.
-- Preserve independent versioning and release safeguards.
-- Do not introduce unrelated refactoring.
+Report:
 
-For each adaptation, explain the upstream behavior, the fork requirement and the resulting implementation.
+- source and target refs and exact SHAs
+- merge base and upstream commit coverage
+- merge commit SHA and both parents
+- adaptation commits and preserved product contracts
+- Git ancestry verification
+- build/test/CI results
+- Draft PR URL
+- remaining technical limitations
 
-If the actual merge reveals an unanticipated architectural or product conflict, stop rather than making an arbitrary decision.
+End with:
 
-## 6. Verify Git ancestry
+- DRAFT PR CREATED
+- NO UPSTREAM CHANGES
+- BLOCKED — TECHNICAL PRECONDITION
 
-This is a mandatory gate.
-
-Verify the recorded merge commit:
-
-```bash
-git show -s --format='%H%n%P%n%s' "$MERGE_SHA"
-```
-
-Its parents must be:
-
-1. First parent: the exact `origin/dev` SHA used to create the integration branch.
-2. Second parent: the exact `origin/master` SHA merged in this run.
-
-Verify:
-
-```bash
-git merge-base --is-ancestor "$MERGE_SHA" HEAD
-
-git merge-base --is-ancestor origin/master HEAD
-
-git merge-base --is-ancestor origin/dev HEAD
-```
-
-All checks must succeed.
-
-Inspect:
-
-```bash
-git log --graph --oneline --decorate -50
-
-git status --short
-```
-
-If ancestry is incorrect, do not push or create a PR.
-
-Never repair an incorrect history by rewriting or force-pushing.
-
-## 7. Verify the implementation
-
-Review the final source tree, not merely the diff from conflict resolution.
-
-Run the planned:
-
-- CMake builds.
-- CTest suites.
-- Relevant Linux and Windows builds.
-- ASan/LSan tests.
-- Localization checks.
-- Generated-file validation.
-- Platform-specific notification tests where available.
-
-Review the existing CI configuration and ensure all required checks are appropriate.
-
-Do not claim that a platform was tested if it was only compiled or not available.
-
-For failures, distinguish environmental issues from actual regressions using reproducible evidence.
-
-Fix failures caused by this integration before proceeding.
-
-Do not silently suppress failing tests or weaken CI.
-
-## 8. Push and create a Draft PR
-
-Push only the newly created integration branch:
-
-```bash
-git push -u origin <integration-branch>
-```
-
-Verify that the remote branch points to the expected HEAD.
-
-Create a Draft PR:
-
-- Repository: `zce/make-slack-great-again`
-- Base: `dev`
-- Head: the new integration branch.
-- Title: `Sync upstream updates through YYYY-MM-DD into dev`
-
-Use the available GitHub integration or GitHub CLI.
-
-The PR description must include:
-
-- Upstream HEAD and repository.
-- Actual merge-base SHA.
-- Number of upstream commits reviewed.
-- Commit inventory and classifications.
-- Important adaptations and reversions.
-- Preserved fork-specific behavior.
-- Merge commit SHA and both parent SHAs.
-- Verification results.
-- CI results.
-- Outstanding limitations.
-
-Include this explicit instruction:
-
-**Merge strategy: Create a merge commit. Do not squash or rebase this PR. Preserving upstream commit ancestry is a requirement.**
-
-If GitHub does not support the required merge strategy, report the limitation. Do not substitute another strategy.
-
-Do not:
-
-- Mark the PR ready for review.
-- Merge the PR.
-- Publish a release.
-- Modify `master` or `dev`.
-- Close PR #60.
-- Delete existing branches.
-
-## 9. Final report
-
-Report the actual results:
-
-### Integration
-- Integration branch.
-- Starting dev SHA.
-- Upstream master SHA.
-- Merge-base SHA.
-- Merge commit SHA.
-- Merge commit parents.
-
-### Adaptations
-- Adaptation commits.
-- Important conflict resolutions.
-- Fork-specific behavior preserved.
-- Any upstream functionality intentionally reverted.
-
-### Verification
-- Build results.
-- Test results.
-- CI results.
-- Git ancestry verification.
-- Outstanding issues.
-
-### Pull request
-- Draft PR URL.
-- Base and head.
-- Current PR state.
-
-Clearly distinguish completed work from pending CI or review.
-
-The task is complete only when the integration branch has been pushed, its ancestry has been verified and the Draft PR has been created successfully.
+Do not report completion until the remote branch, ancestry and Draft PR have been verified.
