@@ -847,7 +847,8 @@ void starredConversationIds(const json::Value &items, std::vector<std::string> &
 void toSections(
     const Value                                  &resp,
     std::vector<model::Store::Section>           &out,
-    std::unordered_map<std::string, std::string> &system
+    std::unordered_map<std::string, std::string> &system,
+    std::unordered_set<std::string>              &redacted
 ) {
     // Follow the chain from the one no other section points at; any left
     // off it (a broken chain) follow in the order listed.
@@ -886,8 +887,12 @@ void toSections(
                 system[std::string(type)] = id;
             continue;
         }
-        if (id.empty() || s["is_redacted"].boolean())
+        if (id.empty())
             continue;
+        if (s["is_redacted"].boolean()) {
+            redacted.insert(id);
+            continue;
+        }
         model::Store::Section sec;
         sec.id    = id;
         sec.name  = s["name"].str();

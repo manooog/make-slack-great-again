@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace slack::mapjson {
@@ -89,7 +90,8 @@ void starredConversationIds(const json::Value &items, std::vector<std::string> &
 void toSections(
     const json::Value                            &resp,
     std::vector<model::Store::Section>           &out,
-    std::unordered_map<std::string, std::string> &system
+    std::unordered_map<std::string, std::string> &system,
+    std::unordered_set<std::string>              &redacted
 );
 
 // An app's or bot's picture from an "icons" object: image_72, else 48, else

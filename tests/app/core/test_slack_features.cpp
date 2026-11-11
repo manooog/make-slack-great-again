@@ -852,6 +852,7 @@ TEST("slack features: custom sidebar sections — the list, moves, create, a ref
     );
     REQUIRE(e.connect());
     REQUIRE(pumpUntil([&] { return e.store.sections().size() == 2; }));
+    CHECK(e.store.sectionsComplete()); // the whole list: a section not in it is gone
     CHECK(e.be->capabilities().customSections);
     CHECK_STR(e.store.sections()[0].name, "Projects");
     CHECK_STR(e.store.sections()[0].emoji, "rocket");
@@ -868,6 +869,7 @@ TEST("slack features: custom sidebar sections — the list, moves, create, a ref
     e.be->moveSection("L2", -1);
     REQUIRE(pumpUntil([] { return count("users.channelSections.set") == 2; }));
     {
+        // Both are in flight at once: the log order is the arrival order.
         const Log   sets;
         json::Value r = sets.get("users.channelSections.set", 0)["form"];
         json::Value m = sets.get("users.channelSections.set", 1)["form"];

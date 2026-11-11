@@ -603,7 +603,7 @@ MessageList::MessageList(Context &ctx)
         }
     };
     _toolbar->setVisible(false);
-    // The file action bar: Download, Share, More actions.
+    // The file action bar: Download, Share, Add reaction, More actions.
     _fileBar          = add<ToolbarCard>();
     auto *download    = _fileBar->add<ActionButton>(gfx::Icon::Download, tr("Download"));
     download->onClick = [this] { downloadFile(_fileTs, _filePath); };
@@ -611,6 +611,11 @@ MessageList::MessageList(Context &ctx)
     share->onClick    = [this] {
         if (_ctx.forwardMessage && _fileTs)
             _ctx.forwardMessage(_conv, _fileTs, _filePath);
+    };
+    _fbReact          = _fileBar->add<ActionButton>(gfx::Icon::Smile, tr("Add reaction"));
+    _fbReact->onClick = [this] {
+        const ui::RectF r = _fbReact->windowRect();
+        openReactionPicker(_fileTs, {r.x, r.y + r.h, 0, 0});
     };
     auto *fileMore    = _fileBar->add<ActionButton>(gfx::Icon::MoreHorizontal, tr("More actions"));
     fileMore->onClick = [this, fileMore] {
@@ -692,17 +697,32 @@ void MessageList::fileHovered(ui::View *v, Ts ts, const std::string &path, bool 
     });
 }
 
+void MessageList::fileGone(ui::View *v) {
+    if (!v || v != _fileView)
+        return;
+    _fileView = nullptr;
+    _fileTs   = 0;
+    _filePath.clear();
+    _fileBar->setVisible(false);
+}
+
 void MessageList::placeFileBar() {
-    if (!_fileView || !_fileView->window()) {
+    const model::Message *m = message(_fileTs);
+    if (!_fileView || !_fileView->window() || !m || m->pending) {
         _fileBar->setVisible(false);
         return;
     }
+    // MSGA has no agent sessions: every file's message takes a reaction.
+    _fbReact->setVisible(true);
     // cardTop = file top − 20 (straddling it); right edge on the file's
-    // last pixel column.
+    // last pixel column, but never out of the list on the left (a file
+    // narrower than the bar, a small image): 12 px in, as the message
+    // toolbar is on the right.
     const ui::SizeF  sz = _fileBar->measure(ui::kInf, ui::kInf);
     const ui::RectF  r  = _fileView->windowRect();
     const ui::PointF o  = mapFromWindow({r.x, r.y});
-    _fileBar->setFrame({std::floor(o.x + r.w - 1 - sz.w), std::floor(o.y - 20), sz.w, sz.h});
+    const float      x  = std::max(12.f, o.x + r.w - 1 - sz.w);
+    _fileBar->setFrame({std::floor(x), std::floor(o.y - 20), sz.w, sz.h});
     _fileBar->setVisible(true);
 }
 
@@ -714,7 +734,8 @@ MessageList::~MessageList() {
     _ctx.app.cancelTimer(_usersTimer);
     stopDragScroll();
     _toolbarRow = nullptr;
-    clearChildren(); // rows reach back into this object while being destroyed
+    _fileView   = nullptr; // the file views going below find nothing to hide
+    clearChildren();       // rows reach back into this object while being destroyed
 }
 
 const model::Message *MessageList::message(Ts ts) const {
@@ -823,6 +844,7 @@ void MessageList::showThread(ConvRef conv, Ts root, Ts jumpTarget) {
     _openPending   = false;
     _conv = conv;
     _root = root;
+    _markedTs = 0; // shown again: it reads itself again (unless held)
     _ctx.store().setVisibleRange(conv, 0, root);
     _jumpTs = jumpTarget;
     _unreadJump = false;
@@ -868,6 +890,8 @@ void MessageList::showThread(ConvRef conv, Ts root, Ts jumpTarget) {
         );
     }
     updateState();
+    if (conv != model::kNoConv)
+        scheduleEdgeCheck(); // a loaded thread reads itself at once
 }
 
 namespace {
@@ -1059,6 +1083,7 @@ void MessageList::onChange(const model::Change &ch) {
         return;
     case CK::Meta:
     case CK::Roster:
+    case CK::ThreadRead:
         return;
     case CK::Users:
         // A burst (a presence round, a users.list page) → one pass.
@@ -1373,10 +1398,11 @@ void MessageList::checkEdges() {
     updateVisibleRange();
     if (_root != 0) {
         // An open thread reads itself — on load and on each new reply
-        // (markThreadRead: its cursor, the Threads entry).
+        // (markThreadRead: its cursor, the Threads entry) — unless it was
+        // marked unread here.
         const auto *replies = _ctx.store().replies(_conv, _root);
         if (!_loadingThread && replies && !replies->empty() && !replies->back().pending &&
-            replies->back().ts != _markedTs) {
+            replies->back().ts != _markedTs && !_ctx.unreadHeld(_conv, _root)) {
             _markedTs = replies->back().ts;
             _ctx.backend.markThreadRead(_conv, _root, _markedTs);
         }
@@ -1388,7 +1414,9 @@ void MessageList::checkEdges() {
         return;
     }
     const model::Conversation &c = _ctx.store().conversation(_conv);
-    if (_reading && !_openPending && !c.messages.empty() &&
+    // Marked unread here: it stays so, new messages and all, until opened
+    // again.
+    if (_reading && !_openPending && !c.messages.empty() && !_ctx.unreadHeld(_conv, 0) &&
         _list->lastVisible() >= int(_items.size()) - 1) {
         const Ts newest = c.messages.back().ts;
         if (newest > c.lastRead && newest != _markedTs && !c.messages.back().pending) {
@@ -1691,6 +1719,41 @@ void MessageList::reply(Ts ts) {
         _ctx.openThread(_conv, root);
 }
 
+Ts MessageList::unreadThreadOf(const model::Message &m) const {
+    if (_conv == model::kNoConv)
+        return 0;
+    if (_root != 0) // the thread panel: its root is a channel message
+        return m.ts == _root ? 0 : _root;
+    if (!m.isReply())
+        return 0;
+    // A reply in the channel's own list was also sent to the channel; one
+    // expanded inline under its root is the thread's.
+    const auto &msgs = _ctx.store().conversation(_conv).messages;
+    const auto  it =
+        std::lower_bound(msgs.begin(), msgs.end(), m.ts, [](const model::Message &x, Ts t) {
+            return x.ts < t;
+        });
+    return it != msgs.end() && it->ts == m.ts ? 0 : m.threadTs;
+}
+
+// Moves the cursor back to just before the message and holds it there while
+// it is on screen (Context::unreadHolds): no reading it again until it is
+// opened again.
+void MessageList::markUnread(Ts ts) {
+    const model::Message *m = message(ts);
+    if (!m || m->pending || _conv == model::kNoConv)
+        return;
+    if (const Ts thread = unreadThreadOf(*m)) {
+        if (!_ctx.backend.canMarkThreadUnread(_conv, thread))
+            return;
+        _ctx.holdUnread(_conv, thread);
+        _ctx.backend.markThreadUnread(_conv, thread, ts);
+    } else {
+        _ctx.holdUnread(_conv, 0);
+        _ctx.backend.markUnread(_conv, ts);
+    }
+}
+
 void MessageList::openReactionPicker(Ts ts, ui::RectF anchor) {
     if (!window())
         return;
@@ -1845,11 +1908,7 @@ constexpr ui::MenuDef kItemDefs[] = {
      nullptr,
      nullptr},
     {MessageList::kCopyText, uint16_t(gfx::Icon::Copy), N_("Copy message"), nullptr, "Ctrl+C"},
-    {MessageList::kMarkUnread,
-     uint16_t(gfx::Icon::Mail),
-     N_("Mark unread from here"),
-     nullptr,
-     "U"},
+    {MessageList::kMarkUnread, uint16_t(gfx::Icon::Eye), N_("Mark unread"), nullptr, "U"},
     {MessageList::kPin, uint16_t(gfx::Icon::Pin), N_("Pin to channel"), nullptr, "P"},
     {MessageList::kUnpin, uint16_t(gfx::Icon::PinOff), N_("Unpin from channel"), nullptr, "P"},
     {MessageList::kSave, uint16_t(gfx::Icon::Bookmark), N_("Save for later"), nullptr, nullptr},
@@ -1967,9 +2026,10 @@ std::vector<ui::MenuItem> MessageList::menuItems(Ts ts) const {
     addItem(items, kCopyText);
     if (!firstLink(m->text).empty())
         addItem(items, kCopyLinkInText);
-    // A reply has its own read cursor; do not move the channel's cursor
-    // backwards from a reply timestamp.
-    if (_root == 0 && !m->isReply())
+    // A reply only where the thread has a cursor of its own to move back
+    // (a followed thread); otherwise the conversation's, where I'm in it.
+    if (const Ts thread = unreadThreadOf(*m);
+        thread ? _ctx.backend.canMarkThreadUnread(_conv, thread) : st.conversation(_conv).member)
         addItem(items, kMarkUnread);
     ui::addMenuSeparator(items);
 
@@ -2120,10 +2180,6 @@ void MessageList::runMenuAction(Ts ts, int id, const std::string &path, ui::Poin
     case kReact:
         openReactionPicker(ts, {at.x, at.y, 0, 0});
         break;
-    case kMarkUnread:
-        if (_root == 0 && !msg->isReply())
-            _ctx.backend.markUnread(conv, ts);
-        break;
     case kMuteThread:
     case kUnmuteThread:
         _ctx.store().setThreadMuted(conv, msg->isReply() ? msg->threadTs : ts, id == kMuteThread);
@@ -2148,6 +2204,9 @@ void MessageList::runMenuAction(Ts ts, int id, const std::string &path, ui::Poin
         break;
     case kCopyText: // shortened link labels copy as their full URLs
         copy = copyableMessageText(_ctx, *msg, *this);
+        break;
+    case kMarkUnread:
+        markUnread(ts);
         break;
     case kPin:
     case kUnpin:

@@ -1468,7 +1468,7 @@ TEST("actions: the message menu, item for item, acts through the backend") {
     CHECK_STR(
         menuLabels(e.list->menuItems(linked)),
         "Reply in thread|Add reaction|Forward message|-|Copy link|Copy message|"
-        "Copy link from message|Mark unread from here|-|Save for later|Remind me|"
+        "Copy link from message|Mark unread|-|Save for later|Remind me|"
         "Pin to channel|-|Summarize down"
     );
     const auto items = e.list->menuItems(linked);
@@ -1480,6 +1480,7 @@ TEST("actions: the message menu, item for item, acts through the backend") {
     CHECK_STR(items[11].hint, "P");
     CHECK(items[0].icon == uint16_t(gfx::Icon::MessageSquareReply));
     CHECK(items[1].icon == uint16_t(gfx::Icon::Smile));
+    CHECK(items[7].icon == uint16_t(gfx::Icon::Eye));
     CHECK(items[10].icon == uint16_t(gfx::Icon::AlarmClock));
     CHECK(!items[2].enabled && !items[13].enabled); // no forwarding hook / AI provider here
 
@@ -1532,7 +1533,7 @@ TEST("actions: the message menu, item for item, acts through the backend") {
     CHECK_STR(
         menuLabels(e.list->menuItems(mine)),
         "Reply in thread|Add reaction|Forward message|-|Copy link|Copy message|"
-        "Mark unread from here|-|Save for later|Remind me|Pin to channel|-|"
+        "Mark unread|-|Save for later|Remind me|Pin to channel|-|"
         "Edit message|Move to thread…|Summarize down|-|Delete message…"
     );
     e.list->runMenuAction(mine, M::kEdit);
@@ -1606,6 +1607,115 @@ TEST("actions: Save for later and Remind me need messageReminders (session token
     CHECK(labels.find("Save for later") == std::string::npos);
     CHECK(labels.find("Remind me") == std::string::npos);
     CHECK(labels.find("Pin to channel") != std::string::npos);
+}
+
+TEST("actions: Mark unread moves the cursor back and holds it while the chat is on screen") {
+    Env           e(true);
+    const ConvRef design = e.conv("C0DESIGN");
+    e.store.updateConversation(design, [](model::Conversation &c) { c.lastRead = 0; });
+    e.list->showConversation(design);
+    pump(10);
+    const auto &msgs = e.store.conversation(design).messages;
+    REQUIRE(until([&] { return e.store.conversation(design).lastRead == msgs.back().ts; }));
+    // Someone else's message a few from the end.
+    Ts             target = 0;
+    model::UserRef other  = model::kNoUser;
+    for (size_t i = msgs.size(); i-- > 0 && !target;)
+        if (msgs[i].user != e.store.me && !msgs[i].isReply() && i + 3 <= msgs.size()) {
+            target = msgs[i].ts;
+            other  = msgs[i].user;
+        }
+    REQUIRE(target != 0);
+    CHECK(
+        menuLabels(e.list->menuItems(target)).find("Copy message|-|Mark unread|Pin to channel") !=
+        std::string::npos
+    );
+    e.list->runMenuAction(target, MessageList::kMarkUnread);
+    CHECK(e.store.conversation(design).lastRead == target - 1);
+    CHECK(e.store.conversation(design).unread > 0);
+    CHECK(e.ctx.unreadHeld(design, 0));
+    // The newest message is on screen, yet it stays unread...
+    pump(10);
+    CHECK(e.store.conversation(design).lastRead == target - 1);
+    // ...also when a new message comes in, or the list is shown again in
+    // place (a settings change rebuilds it).
+    model::Message m;
+    m.user = other;
+    m.ts   = msgs.back().ts + 1000000;
+    m.text = "one more";
+    e.store.addMessage(design, std::move(m));
+    pump(10);
+    e.list->showConversation(design);
+    pump(10);
+    CHECK(e.store.conversation(design).lastRead == target - 1);
+    // Opened again (the shell drops the hold): read as usual.
+    e.ctx.releaseUnread(design, 0);
+    e.list->showConversation(design);
+    e.list->list().scrollToBottom();
+    REQUIRE(until([&] { return e.store.conversation(design).lastRead == msgs.back().ts; }));
+}
+
+TEST("actions: Mark unread on a reply — the followed thread from there, the channel stays read") {
+    Env     e(true);
+    // A thread I follow (the demo's: started or replied in) and one I don't.
+    ConvRef conv = model::kNoConv, otherConv = model::kNoConv;
+    Ts      root = 0, otherRoot = 0;
+    for (ConvRef c = 0; c < e.store.conversationCount(); ++c)
+        for (const model::Thread &t : e.store.conversation(c).threads) {
+            if (t.replies.size() < 2)
+                continue;
+            if (e.backend.canMarkThreadUnread(c, t.root) && !root) {
+                conv = c;
+                root = t.root;
+            } else if (!e.backend.canMarkThreadUnread(c, t.root) && !otherRoot) {
+                otherConv = c;
+                otherRoot = t.root;
+            }
+        }
+    REQUIRE(root != 0);
+    e.list->showThread(conv, root);
+    REQUIRE(until([&] { return e.list->items().size() > 3; }));
+    pump(10);
+    CHECK(e.store.unreadThreads() == 0);
+    const auto &replies = *e.store.replies(conv, root);
+    const Ts    reply   = replies[replies.size() - 2].ts;
+    const Ts    chRead  = e.store.conversation(conv).lastRead;
+    CHECK(menuLabels(e.list->menuItems(reply)).find("Mark unread") != std::string::npos);
+    // The root in the panel is the channel's message: the channel's cursor.
+    CHECK(menuLabels(e.list->menuItems(root)).find("Mark unread") != std::string::npos);
+    e.list->runMenuAction(reply, MessageList::kMarkUnread);
+    CHECK(e.store.unreadThreads() == 1); // the Threads entry
+    CHECK(e.store.conversation(conv).lastRead == chRead);
+    CHECK(e.ctx.unreadHeld(conv, root));
+    CHECK_FALSE(e.ctx.unreadHeld(conv, 0));
+    pump(10);
+    CHECK(e.store.unreadThreads() == 1); // open, but held
+    // The Threads page sees the cursor just before the reply.
+    bool                        loaded = false;
+    model::Backend::ThreadsView page;
+    e.backend.loadThreadsView({}, [&](bool ok, model::Backend::ThreadsView p) {
+        loaded = ok;
+        page   = std::move(p);
+    });
+    REQUIRE(until([&] { return loaded; }));
+    bool seen = false;
+    for (const auto &t : page.threads)
+        if (t.conv == conv && t.root.ts == root) {
+            seen = true;
+            CHECK(t.lastRead == reply - 1);
+        }
+    CHECK(seen);
+    // Opened again: it reads itself.
+    e.ctx.releaseUnread(conv, root);
+    e.list->showThread(conv, root);
+    REQUIRE(until([&] { return e.store.unreadThreads() == 0; }));
+    // A reply in a thread I don't follow: no item (no cursor of mine there).
+    if (otherRoot) {
+        e.list->showThread(otherConv, otherRoot);
+        REQUIRE(until([&] { return e.list->items().size() > 3; }));
+        const auto &rs = *e.store.replies(otherConv, otherRoot);
+        CHECK(menuLabels(e.list->menuItems(rs.back().ts)).find("Mark unread") == std::string::npos);
+    }
 }
 
 TEST("actions: a message link is a chip; a click jumps there or opens the browser") {
@@ -2049,16 +2159,201 @@ TEST("actions: the file bar on hovered files; right click opens the file menu") 
     REQUIRE(dl != nullptr);
     ui::View *bar = dl->parent();
     CHECK(bar->visible());
-    CHECK(near(bar->frame().w, 108) && near(bar->frame().h, 40));
+    CHECK(near(bar->frame().w, 140) && near(bar->frame().h, 40));
     CHECK(near(bar->windowRect().y, c.y - 20, 1));
-    CHECK(near(bar->windowRect().x + 108, c.x + c.w - 1, 1));
+    CHECK(near(bar->windowRect().x + 140, c.x + c.w - 1, 1));
     CHECK_STR(bar->child(1)->tooltip(), "Share");
     static_cast<ui::Clickable *>(bar->child(1))->activate();
     CHECK_STR(shared, csv); // "Forward this file"
+    // Download, Share, Add reaction, More actions: the reaction comes from
+    // the hovered file's message, like the message toolbar's.
+    ui::View *react = findByTooltip(bar, "Add reaction");
+    REQUIRE(react != nullptr);
+    CHECK(react == bar->child(2));
+    CHECK(react->visible());
+    static_cast<ui::Clickable *>(react)->activate();
+    pump(2);
+    auto *ep = static_cast<screens::EmojiPicker *>(e.win->topPopup());
+    REQUIRE(ep != nullptr);
+    ep->pick("tada");
+    pump(4);
+    const model::Message *fileMsg = e.store.findMessage(general, csvTs);
+    REQUIRE(fileMsg != nullptr);
+    bool reacted = false;
+    for (const model::Reaction &r : fileMsg->reactions)
+        if (r.name == "tada")
+            reacted = e.store.reactedByMe(r);
+    CHECK(reacted);
+    if (e.win->topPopup() == ep)
+        ep->close();
+    pump(2);
     h->injectButton(e.win->native(), plat::Button::Right, true);
     h->injectButton(e.win->native(), plat::Button::Right, false);
     pump(2);
     CHECK(e.win->topPopup() != nullptr);
+}
+
+TEST("actions: the file bar reacts to an image thumbnail too") {
+    Env           e(false);
+    const int64_t t0 = base::nowSecs() - 600;
+    model::File   img;
+    img.id           = "FIMG";
+    img.name         = "mira.png";
+    img.mime         = "image/png";
+    img.path         = asset("avatars/mira.png");
+    img.width        = 256;
+    img.height       = 256;
+    model::Message m = msg(0, t0, "look");
+    m.extras().files.push_back(img);
+    std::vector<model::Message> ms;
+    ms.push_back(std::move(m));
+    const ConvRef conv = addConv(e.store, std::move(ms));
+    e.list->showConversation(conv);
+    pump(10);
+    const Ts  ts  = t0 * 1000000;
+    ui::View *row = e.row(ts);
+    REQUIRE(row != nullptr);
+    // The thumbnail: the image leaf (256 px), not the 36-px avatar.
+    ui::View                       *thumb = nullptr;
+    std::function<void(ui::View *)> find  = [&](ui::View *v) {
+        for (size_t i = 0; i < v->childCount(); ++i) {
+            ui::View *c = v->child(i);
+            if (c->childCount() == 0 && c->frame().h > 100)
+                thumb = c;
+            find(c);
+        }
+    };
+    find(row);
+    REQUIRE(thumb != nullptr);
+    auto           *h = app().platform().testHooks();
+    const ui::RectF t = thumb->windowRect();
+    h->injectPointerMove(e.win->native(), {t.x + t.w / 2, t.y + t.h / 2});
+    pump(4);
+    ui::View *dl = findByTooltip(e.win->root().child(0), "Download");
+    REQUIRE(dl != nullptr);
+    ui::View *bar = dl->parent();
+    REQUIRE(bar->visible());
+    ui::View *react = findByTooltip(bar, "Add reaction");
+    REQUIRE(react != nullptr);
+    CHECK(react->visible());
+    static_cast<ui::Clickable *>(react)->activate();
+    pump(2);
+    auto *ep = static_cast<screens::EmojiPicker *>(e.win->topPopup());
+    REQUIRE(ep != nullptr);
+    ep->pick("tada");
+    pump(4);
+    const model::Message *imgMsg = e.store.findMessage(conv, ts);
+    REQUIRE(imgMsg != nullptr);
+    bool reacted = false;
+    for (const model::Reaction &r : imgMsg->reactions)
+        if (r.name == "tada")
+            reacted = e.store.reactedByMe(r);
+    CHECK(reacted);
+    if (e.win->topPopup() == ep)
+        ep->close();
+    pump(2);
+}
+
+TEST("actions: the file bar on a file narrower than it stays inside the list") {
+    Env           e(false);
+    const int64_t t0 = base::nowSecs() - 600;
+    model::File   img;
+    img.id           = "FTINY";
+    img.name         = "dot.png";
+    img.mime         = "image/png";
+    img.path         = asset("avatars/mira.png");
+    img.width        = 16;
+    img.height       = 16;
+    model::Message m = msg(0, t0, "");
+    m.extras().files.push_back(img);
+    std::vector<model::Message> ms;
+    ms.push_back(std::move(m));
+    const ConvRef conv = addConv(e.store, std::move(ms));
+    e.list->showConversation(conv);
+    pump(10);
+    ui::View *row = e.row(t0 * 1000000);
+    REQUIRE(row != nullptr);
+    // The 16-px image, far narrower than the bar.
+    ui::View                       *thumb = nullptr;
+    std::function<void(ui::View *)> find  = [&](ui::View *v) {
+        for (size_t i = 0; i < v->childCount(); ++i) {
+            ui::View *c = v->child(i);
+            if (c->childCount() == 0 && near(c->frame().w, 16) && near(c->frame().h, 16))
+                thumb = c;
+            find(c);
+        }
+    };
+    find(row);
+    REQUIRE(thumb != nullptr);
+    auto           *h = app().platform().testHooks();
+    const ui::RectF t = thumb->windowRect();
+    h->injectPointerMove(e.win->native(), {t.x + t.w / 2, t.y + t.h / 2});
+    pump(4);
+    ui::View *dl = findByTooltip(e.win->root().child(0), "Download");
+    REQUIRE(dl != nullptr);
+    ui::View *bar = dl->parent();
+    REQUIRE(bar->visible());
+    // 12 px in from the list's left edge: every button on screen.
+    const ui::RectF list = e.list->windowRect();
+    CHECK(near(bar->windowRect().x, list.x + 12, 1));
+    CHECK(dl->windowRect().x >= list.x);
+    CHECK(bar->windowRect().x + bar->frame().w <= list.x + list.w);
+}
+
+TEST("actions: the file bar goes with its file: a message deleted under the pointer") {
+    Env           e(false);
+    const int64_t t0 = base::nowSecs() - 600;
+    model::File   img;
+    img.id           = "FGONE";
+    img.name         = "mira.png";
+    img.mime         = "image/png";
+    img.path         = asset("avatars/mira.png");
+    img.width        = 256;
+    img.height       = 256;
+    model::Message m = msg(0, t0, "look");
+    m.extras().files.push_back(img);
+    std::vector<model::Message> ms;
+    ms.push_back(std::move(m));
+    ms.push_back(msg(0, t0 + 60, "and this"));
+    const ConvRef conv = addConv(e.store, std::move(ms));
+    e.list->showConversation(conv);
+    pump(10);
+    const Ts  ts  = t0 * 1000000;
+    ui::View *row = e.row(ts);
+    REQUIRE(row != nullptr);
+    ui::View                       *thumb = nullptr;
+    std::function<void(ui::View *)> find  = [&](ui::View *v) {
+        for (size_t i = 0; i < v->childCount(); ++i) {
+            ui::View *c = v->child(i);
+            if (c->childCount() == 0 && c->frame().h > 100)
+                thumb = c;
+            find(c);
+        }
+    };
+    find(row);
+    REQUIRE(thumb != nullptr);
+    auto           *h = app().platform().testHooks();
+    const ui::RectF t = thumb->windowRect();
+    h->injectPointerMove(e.win->native(), {t.x + t.w / 2, t.y + t.h / 2});
+    pump(4);
+    ui::View *dl = findByTooltip(e.win->root().child(0), "Download");
+    REQUIRE(dl != nullptr);
+    ui::View *bar = dl->parent();
+    REQUIRE(bar->visible());
+    // Deleted (here or elsewhere) while the pointer rests on it: its row and
+    // the picture go, and the bar with them; its buttons would act on a
+    // message that is no longer there.
+    REQUIRE(e.store.removeMessage(conv, ts));
+    pump(4);
+    CHECK_FALSE(bar->visible());
+    // The pointer moving on finds nothing of it (no stale view to ask).
+    h->injectPointerMove(e.win->native(), {t.x + t.w / 2, t.y + t.h / 2 + 40});
+    pump(4);
+    CHECK_FALSE(bar->visible());
+    // Another conversation under a resting pointer: the same.
+    e.list->showConversation(e.conv("C0GENERAL"));
+    pump(4);
+    CHECK_FALSE(bar->visible());
 }
 
 TEST("actions: the delete, move to thread and reminder dialogs and the CSV viewer") {

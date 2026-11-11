@@ -178,7 +178,7 @@ public:
         kCopyLink,
         kCopyLinkInText,
         kCopyText,
-        kMarkUnread,
+        kMarkUnread, // the conversation from here, or the thread from a reply
         kPin,
         kUnpin,
         kSave,
@@ -209,6 +209,10 @@ public:
     // The file action bar ("…" → the file menu), for the hovered file.
     void openFileMenu(Ts ts, const std::string &path, ui::PointF windowPos);
     void fileHovered(ui::View *fileView, Ts ts, const std::string &path, bool on);
+    // A file view going (its row rebuilt, the message deleted or edited, another
+    // conversation) or naming another message: the file bar it showed goes with it,
+    // so its buttons never act on a message that is no longer under them.
+    void fileGone(ui::View *fileView);
     // These run in the background (model::jobs(): the footer's cog lists
     // them) and outlive the list.
     void downloadFile(Ts ts, const std::string &path); // the bar's Download
@@ -222,6 +226,11 @@ public:
     void pressButton(Ts ts, const std::string &buttonId, ui::PointF windowPos);
     void showToast(const std::string &text, int ms, ui::PointF windowPos);
     void reply(Ts ts);
+    // "Mark unread": what the message's read cursor is — 0 for the
+    // conversation's (a top-level message, a thread's root, a reply also
+    // sent to the channel), else the thread's root (a reply).
+    Ts   unreadThreadOf(const model::Message &m) const;
+    void markUnread(Ts ts);
 
     // ── Internal (rows): state the rows read and the actions they take ─────
     void               applySelection(MessageRow &row) const;
@@ -332,7 +341,8 @@ private:
                               *_tbMore = nullptr;
     class ActionButton        *_tbSave = nullptr;
     ui::View                  *_fileBar = nullptr, *_fileView = nullptr; // the hovered file
-    Ts                         _fileTs = 0;
+    class ActionButton        *_fbReact = nullptr;
+    Ts                         _fileTs  = 0;
     std::string                _filePath;
     MessageRow                *_toolbarRow = nullptr;
     std::vector<Item>          _items;

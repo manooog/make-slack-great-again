@@ -264,6 +264,8 @@ void Store::clear() {
     _saved.clear();
     _scheduled.clear();
     _sections.clear();
+    _redactedSections.clear();
+    _sectionsComplete = false;
     ++_sectionsRev;
     _usergroups.clear();
     _channelNames.clear();
@@ -1118,6 +1120,11 @@ void Store::markRead(ConvRef ref, Ts ts) {
     emit({ChangeKind::Meta, ref});
 }
 
+void Store::threadRead(ConvRef ref, Ts root, Ts ts) {
+    if (ref < _convs.size() && root && ts)
+        emit({ChangeKind::ThreadRead, ref, root, ts});
+}
+
 void Store::markUnread(ConvRef ref, Ts ts) {
     if (ref >= _convs.size() || ts <= 0)
         return;
@@ -1331,6 +1338,18 @@ void Store::setSections(std::vector<Section> sections) {
     if (sections == _sections)
         return;
     _sections = std::move(sections);
+    ++_sectionsRev;
+    emit({ChangeKind::Meta});
+}
+
+void Store::setSectionsSnapshot(
+    std::vector<Section> sections, std::unordered_set<std::string> redacted
+) {
+    if (sections == _sections && redacted == _redactedSections && _sectionsComplete)
+        return;
+    _sections          = std::move(sections);
+    _redactedSections  = std::move(redacted);
+    _sectionsComplete  = true;
     ++_sectionsRev;
     emit({ChangeKind::Meta});
 }
