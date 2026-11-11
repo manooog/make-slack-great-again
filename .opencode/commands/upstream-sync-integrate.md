@@ -85,7 +85,13 @@ Review the complete final tree and run the broadest practical relevant build/tes
 
 Fix integration-caused failures. Do not weaken tests or CI. Report unsupported or unrun checks honestly.
 
-## 7. Push and create a Draft PR
+## 7. Revalidate and publish
+
+Before pushing, fetch origin/dev, origin/master and upstream/master again.
+
+If origin/dev advanced, merge its latest tip into the integration branch without rebasing. If upstream/master advanced, review and merge the new upstream commits using the Skill's policy. Resolve conflicts, rerun affected checks and verify that the latest dev and upstream tips are ancestors of the final HEAD.
+
+Record any additional merge commits and their parents. Do not force-push or rewrite history.
 
 Push only the new integration branch.
 
