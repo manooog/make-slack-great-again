@@ -1,7 +1,5 @@
 ---
 description: Merge all pending upstream changes into MSGA dev, preserve product decisions, verify and create a Draft PR.
-agent: build
-model: "ollama-cloud/deepseek-v4.1-flash:1017#max"
 subagent: false
 ---
 
