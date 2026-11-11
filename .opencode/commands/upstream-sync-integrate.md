@@ -1,5 +1,5 @@
 ---
-description: Merge all pending upstream changes into MSGA dev, preserve product decisions, verify and create a Draft PR.
+description: Merge upstream into MSGA dev, preserve product decisions, verify changes, create a Draft PR and close the CI feedback loop.
 subagent: false
 ---
 
@@ -137,10 +137,10 @@ Report:
 End with exactly one applicable status:
 
 - DRAFT PR CREATED — CI GREEN
-- DRAFT PR CREATED — CI BLOCKED (EXTERNAL)
+- DRAFT PR CREATED — CI BLOCKED
 - NO UPSTREAM CHANGES
 - BLOCKED — TECHNICAL PRECONDITION
 
-Use CI GREEN only when all applicable checks have completed successfully for the latest PR head SHA. Use CI BLOCKED (EXTERNAL) only after safe investigation and the bounded targeted retry policy; explain the evidence and leave the PR Draft. Do not use a generic "PR created" status to imply completion.
+Use CI GREEN only when all applicable checks have completed successfully for the latest PR head SHA. Use CI BLOCKED only after safe investigation and the bounded targeted retry policy, when a demonstrably external, pre-existing or permission-related failure cannot be resolved within the authorized scope; explain the evidence and leave the PR Draft. Do not use a generic "PR created" status to imply completion.
 
 Do not report completion until the remote branch, ancestry, Draft PR and latest-head CI state have been verified.
