@@ -386,6 +386,7 @@ Creating the Draft PR is not the end of the task. The task must remain active un
 
 - Re-read the repository's current workflow definitions rather than assuming a fixed check list. At the time this Skill was written, `.github/workflows/ci.yml` and `.github/workflows/memory.yml` both run for pull requests; the README's "Maintaining this fork" section describes their intent. Workflow names and triggers can change.
 - Wait for all applicable checks on the latest pushed commit. A successful result for an older head SHA does not validate a newer push. Do not report success while checks are queued or in progress.
+- If no checks or workflow runs appear, verify that the PR event was registered and inspect each workflow's trigger/condition. Wait for expected runs to appear; an empty check list is not a successful CI result.
 - When a check fails, inspect the exact workflow run, job, failed step and logs. Classify the cause as an integration/code regression, test regression, workflow/configuration issue, or external infrastructure/permission failure.
 - For code or test failures introduced by the integration, reproduce with the closest available CI configuration, fix the cause, add or correct regression coverage, commit and push to the same integration branch, then wait for checks on the new head SHA.
 - Do not weaken assertions, delete valid tests, skip jobs, alter expected behavior or make unrelated workflow changes just to obtain a green result.
