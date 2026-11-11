@@ -413,20 +413,43 @@ The current CI workflow includes Ubuntu GCC test/build validation, Ubuntu Clang 
 
 ## 13. Final report
 
-Report facts, not confidence claims:
+Report facts, not confidence claims. Include only the fields applicable to the active mode.
 
-- source and target refs
-- exact SHAs and merge base
-- number of upstream commits covered
-- logical change groups and action labels
-- merge commit SHA and parents
-- adaptation commits
-- product contracts checked
-- build, test and CI results
-- Draft PR URL
-- remaining technical limitations
+### REVIEW report
+
+- source and target refs, exact SHAs and merge base
+- number of pending upstream commits and the complete commit-to-change coverage ledger
+- logical change groups and ADOPT / ADAPT / PRESERVE-STRONGER / OMIT-REMOVED-SCOPE decisions
+- conflict hotspots and concrete implementation notes
+- risk analysis, regression tests or manual verification planned
+- recommended integration sequence and any technical limitations
+
+### INTEGRATE report
+
+- source and target refs, exact SHAs and merge base
+- number of upstream commits covered and logical change groups/action labels
+- merge commit SHA and both parents
+- adaptation commits and preserved product contracts
+- Git ancestry verification
+- build, test and CI results for the latest PR revision
+- Draft PR URL and remaining technical limitations
+
+### Final status
+
+Use exactly one status from the active mode:
+
+**REVIEW mode**
+- `REVIEW COMPLETE — INTEGRATION PLAN READY`: every pending upstream commit is accounted for and the plan is evidence-based and actionable.
+- `NO UPSTREAM CHANGES`: the verified upstream range contains no pending commits.
+- `BLOCKED — TECHNICAL PRECONDITION`: repository identity, refs or another genuine precondition prevents a reliable review.
+
+**INTEGRATE mode**
+- `DRAFT PR CREATED — CI GREEN`: the Draft PR exists and every applicable check for its latest revision has passed, or has an explicitly verified expected skip/neutral result.
+- `DRAFT PR CREATED — CI BLOCKED`: the Draft PR exists, but CI cannot be confirmed green because of an evidence-backed external, demonstrably pre-existing or permission/access blocker after safe investigation and the bounded retry policy. Leave the PR Draft and state the evidence. Do not use this status to conceal an unresolved integration-caused regression.
+- `NO UPSTREAM CHANGES`: the verified upstream range contains no pending commits.
+- `BLOCKED — TECHNICAL PRECONDITION`: integration cannot safely reach a Draft PR because a genuine technical or authorization precondition remains unresolved.
 
 ### Completion criteria
 
 - **REVIEW mode:** complete when the full pending upstream range is accounted for, repository references and merge base are verified, decisions are evidence-based, and conflict/risk/verification plans are actionable. Do not create a branch or PR, modify files, or wait for CI.
-- **INTEGRATE mode:** complete when the full upstream history is merged, MSGA contracts are preserved, ancestry is verified, the integration branch is pushed, the Draft PR is created, and all applicable checks pass for the latest head SHA. If an external, demonstrably pre-existing or permission-related failure cannot be resolved within the authorized scope, leave the PR Draft and report the exact evidence and limitation instead of claiming CI success.
+- **INTEGRATE mode:** complete when the full upstream history is merged, MSGA contracts are preserved, ancestry is verified, the integration branch is pushed, the Draft PR is created, and all applicable checks pass for the latest PR revision. If an external, demonstrably pre-existing or permission-related failure cannot be resolved within the authorized scope, leave the PR Draft and report the exact evidence and limitation instead of claiming CI success.

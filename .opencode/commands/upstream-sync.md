@@ -71,11 +71,7 @@ Exact source ref, latest dev starting point, new branch naming and merge operati
 
 Do not ask the user to approve routine product adaptations. If no upstream changes exist, report NO UPSTREAM CHANGES.
 
-End with one of:
-
-- REVIEW COMPLETE — INTEGRATION PLAN READY
-- NO UPSTREAM CHANGES
-- BLOCKED — TECHNICAL PRECONDITION
+End with the applicable REVIEW status defined in Skill section 13.
 
 A plan marked ready is informational; the integration command must independently refresh and verify all references before acting.
 
