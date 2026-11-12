@@ -104,10 +104,18 @@ void SlackBackend::fillActivity(ActivityFeed page, ActivityDone done) {
             if (--pending == 0 && done)
                 done(true, std::move(page));
         }
+        // A reaction's feed item names only the message, never its thread: the
+        // message once it is here does, so a click can open the thread it lives in.
+        static void adoptThread(Item &it) {
+            if (!it.thread && it.message.isReply())
+                it.thread = it.message.threadTs;
+        }
         void take(ConvRef conv, model::Message m) {
             for (Item &it : page.items)
-                if (it.conv == conv && it.ts == m.ts && !it.message.ts)
+                if (it.conv == conv && it.ts == m.ts && !it.message.ts) {
                     it.message = m.clone();
+                    adoptThread(it);
+                }
         }
     };
     auto acc  = std::make_shared<Acc>();
@@ -118,6 +126,7 @@ void SlackBackend::fillActivity(ActivityFeed page, ActivityDone done) {
     for (Item &it : acc->page.items) {
         if (const model::Message *m = _store.findMessage(it.conv, it.ts)) {
             it.message = m->clone();
+            Acc::adoptThread(it);
             continue;
         }
         auto w = std::find_if(wanted.begin(), wanted.end(), [&](const auto &x) {

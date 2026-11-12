@@ -1423,6 +1423,29 @@ TEST("slack features: the Activity feed — items, their messages from messages.
     CHECK_STR(Log().get("activity.feed", 3)["form"]["types"].str(), "thread_v2");
 }
 
+// A reaction's item names only the message; the thread it lives in comes from
+// the message itself, which is what a click needs to open it there.
+const char *kReactionReplyFeed = R"({"activity.feed": {"ok": true, "items": [
+  {"is_unread": false, "feed_ts": "1800000020.000000", "key": "message_reaction.9",
+   "item": {"type": "message_reaction", "message": {"ts": "1800000020.000100", "channel": "C1"},
+            "reaction": {"user": "UMIRA", "name": "tada"}}}],
+  "response_metadata": {"next_cursor": ""}},
+ "messages.list": {"ok": true, "messages_data": {
+   "C1": {"messages": [{"ts": "1800000020.000100", "user": "UME", "text": "a reply",
+                        "thread_ts": "1800000001.000100"}]}}}})";
+
+TEST("slack features: a reaction's message brings its thread, so the click can open it") {
+    if (!haveServer())
+        return;
+    Env e(kReactionReplyFeed);
+    REQUIRE(e.connect());
+    const Feed f = loadFeed(e, model::Backend::ActivityFilter::All, false);
+    REQUIRE(f.ok);
+    REQUIRE(f.page.items.size() == 1);
+    CHECK(f.page.items[0].thread == model::parseTs("1800000001.000100"));
+    CHECK_STR(f.page.items[0].message.text, "a reply");
+}
+
 TEST("slack features: an Activity item is marked read and unread with its key") {
     if (!haveServer())
         return;
