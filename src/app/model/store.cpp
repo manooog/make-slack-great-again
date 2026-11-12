@@ -265,9 +265,8 @@ void Store::clear() {
     _scheduled.clear();
     _sections.clear();
     _redactedSections.clear();
-    _sectionsComplete     = false;
-    _sectionsDirty        = false;
-    _sectionsConfirmedRev = 0;
+    _sectionsComplete = false;
+    _sectionsDirty    = false; // the next confirmed snapshot is a new state
     ++_sectionsRev;
     _usergroups.clear();
     _channelNames.clear();
