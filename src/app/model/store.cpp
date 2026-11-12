@@ -264,6 +264,9 @@ void Store::clear() {
     _saved.clear();
     _scheduled.clear();
     _sections.clear();
+    _redactedSections.clear();
+    _sectionsComplete = false;
+    _sectionsDirty    = false; // the next confirmed snapshot is a new state
     ++_sectionsRev;
     _usergroups.clear();
     _channelNames.clear();
@@ -1118,6 +1121,11 @@ void Store::markRead(ConvRef ref, Ts ts) {
     emit({ChangeKind::Meta, ref});
 }
 
+void Store::threadRead(ConvRef ref, Ts root, Ts ts) {
+    if (ref < _convs.size() && root && ts)
+        emit({ChangeKind::ThreadRead, ref, root, ts});
+}
+
 void Store::markUnread(ConvRef ref, Ts ts) {
     if (ref >= _convs.size() || ts <= 0)
         return;
@@ -1330,8 +1338,27 @@ const Store::Section *Store::findSection(std::string_view id) const {
 void Store::setSections(std::vector<Section> sections) {
     if (sections == _sections)
         return;
-    _sections = std::move(sections);
+    _sections       = std::move(sections);
+    _sectionsDirty  = true;
     ++_sectionsRev;
+    emit({ChangeKind::Meta});
+}
+
+void Store::setSectionsSnapshot(
+    std::vector<Section> sections, std::unordered_set<std::string> redacted
+) {
+    const bool changed =
+        sections != _sections || redacted != _redactedSections || !_sectionsComplete;
+    // The confirmation itself matters even when an optimistic edit already
+    // produced the same list: the local deletion is only now authoritative.
+    if (!changed && !_sectionsDirty)
+        return;
+    _sections             = std::move(sections);
+    _redactedSections     = std::move(redacted);
+    _sectionsComplete     = true;
+    _sectionsDirty        = false;
+    ++_sectionsRev;
+    ++_sectionsConfirmedRev;
     emit({ChangeKind::Meta});
 }
 

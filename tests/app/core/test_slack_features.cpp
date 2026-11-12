@@ -421,6 +421,170 @@ TEST("slack features: the Threads entry — unread from the feed, read by markTh
 }
 
 
+TEST("slack features: an old thread feed cannot clear a pending Mark unread") {
+    if (!haveServer())
+        return;
+    Env e;
+    ctl("POST",
+        "/_ctl/script",
+        R"({"method": "subscriptions.thread.getView", "responses": [
+          {"ok": true, "total_unread_replies": 0, "__delay": 1.0,
+           "threads": [{"root_msg": {"channel": "C1", "ts": "1800000000.000100",
+                                     "user": "UME", "text": "root",
+                                     "last_read": "1800000002.000100"},
+                        "latest_replies": [{"ts": "1800000001.000100", "user": "UMIRA",
+                                            "text": "reply",
+                                            "thread_ts": "1800000000.000100"},
+                                           {"ts": "1800000002.000100", "user": "UMIRA",
+                                            "text": "later",
+                                            "thread_ts": "1800000000.000100"}]}]}]})");
+    REQUIRE(e.connect());
+    REQUIRE(pumpUntil([&] { return count("subscriptions.thread.getView") >= 1; }, 5000));
+    const ConvRef c = e.conv("C1");
+    REQUIRE(c != kNoConv);
+    model::Message root;
+    root.ts   = model::parseTs("1800000000.000100");
+    root.user = e.store.me;
+    root.text = "root";
+    model::Message reply;
+    reply.ts       = model::parseTs("1800000001.000100");
+    reply.threadTs = root.ts;
+    reply.user     = e.store.findUser("UMIRA");
+    reply.text     = "reply";
+    std::vector<model::Message> page;
+    page.push_back(std::move(root));
+    page.push_back(std::move(reply));
+    e.store.addPage(c, std::move(page));
+    REQUIRE(e.be->canMarkThreadUnread(c, root.ts));
+    e.be->markThreadUnread(c, root.ts, reply.ts);
+    CHECK(e.store.unreadThreads() == 1);
+    pumpFor(1400); // the old feed answer lands after the mark
+    CHECK(e.store.unreadThreads() == 1);
+    // The server's cursor acknowledgement keeps the thread unread; a later
+    // feed that says it was read elsewhere then clears it normally.
+    ctl("POST",
+        "/_ctl/script",
+        R"({"method": "subscriptions.thread.getView", "responses": [
+          {"ok": true, "total_unread_replies": 1, "threads": [
+            {"root_msg": {"channel": "C1", "ts": "1800000000.000100",
+                          "user": "UME", "text": "root",
+                          "last_read": "1800000001.000099"},
+             "latest_replies": [{"ts": "1800000001.000100", "user": "UMIRA",
+                                 "text": "reply",
+                                 "thread_ts": "1800000000.000100"},
+                                {"ts": "1800000002.000100", "user": "UMIRA",
+                                 "text": "later",
+                                 "thread_ts": "1800000000.000100"}]}]},
+          {"ok": true, "total_unread_replies": 0, "__delay": 0.5, "threads": [
+            {"root_msg": {"channel": "C1", "ts": "1800000000.000100",
+                          "user": "UME", "text": "root",
+                          "last_read": "1800000002.000100"},
+             "latest_replies": [{"ts": "1800000001.000100", "user": "UMIRA",
+                                 "text": "reply",
+                                 "thread_ts": "1800000000.000100"},
+                                {"ts": "1800000002.000100", "user": "UMIRA",
+                                 "text": "later",
+                                 "thread_ts": "1800000000.000100"}]}]}]})");
+    REQUIRE(pumpUntil([&] { return count("subscriptions.thread.getView") >= 3; }, 5000));
+    pumpFor(900);
+    CHECK(e.store.unreadThreads() == 0); // acknowledged, then read elsewhere
+}
+
+TEST("slack features: a Mark unread guards only its own thread in a feed batch") {
+    if (!haveServer())
+        return;
+    Env e;
+    ctl("POST",
+        "/_ctl/script",
+        R"({"method": "subscriptions.thread.getView", "responses": [
+          {"ok": true, "total_unread_replies": 0, "__delay": 1.0, "threads": [
+            {"root_msg": {"channel": "C1", "ts": "1800000000.000100", "user": "UME",
+                          "text": "root A", "last_read": "1800000002.000100"},
+             "latest_replies": [{"ts": "1800000001.000100", "user": "UMIRA",
+                                 "text": "A reply", "thread_ts": "1800000000.000100"},
+                                {"ts": "1800000002.000100", "user": "UMIRA",
+                                 "text": "A later", "thread_ts": "1800000000.000100"}]},
+            {"root_msg": {"channel": "C1", "ts": "1800000010.000100", "user": "UME",
+                          "text": "root B", "last_read": "1800000012.000100"},
+             "latest_replies": [{"ts": "1800000011.000100", "user": "UMIRA",
+                                 "text": "B reply", "thread_ts": "1800000010.000100"},
+                                {"ts": "1800000012.000100", "user": "UMIRA",
+                                 "text": "B later", "thread_ts": "1800000010.000100"}]}]}]})");
+    REQUIRE(e.connect());
+    REQUIRE(pumpUntil([&] { return count("subscriptions.thread.getView") >= 1; }, 5000));
+    const ConvRef c = e.conv("C1");
+    REQUIRE(c != kNoConv);
+    model::Message rootA;
+    rootA.ts   = model::parseTs("1800000000.000100");
+    rootA.user = e.store.me;
+    rootA.text = "root A";
+    model::Message replyA;
+    replyA.ts       = model::parseTs("1800000001.000100");
+    replyA.threadTs = rootA.ts;
+    replyA.user     = e.store.findUser("UMIRA");
+    replyA.text     = "A reply";
+    std::vector<model::Message> page;
+    page.push_back(std::move(rootA));
+    page.push_back(std::move(replyA));
+    e.store.addPage(c, std::move(page));
+    const Ts rootATs = model::parseTs("1800000000.000100");
+    const Ts replyATs = model::parseTs("1800000001.000100");
+    REQUIRE(e.be->canMarkThreadUnread(c, rootATs));
+    e.be->markThreadUnread(c, rootATs, replyATs);
+    CHECK(e.store.unreadThreads() == 1);
+    pumpFor(1400); // the feed requested before A's mark returns
+    // A stays unread; B applies its server read cursor and is not held.
+    CHECK(e.store.unreadThreads() == 1);
+}
+
+TEST("slack features: a pending Mark unread waits for write confirmation before a later cursor clears it") {
+    if (!haveServer())
+        return;
+    Env e;
+    REQUIRE(e.connect());
+    const ConvRef c = e.conv("C1");
+    REQUIRE(c != kNoConv);
+    model::Message root;
+    root.ts   = model::parseTs("1800000000.000100");
+    root.user = e.store.me;
+    root.text = "root";
+    model::Message reply;
+    reply.ts       = model::parseTs("1800000001.000100");
+    reply.threadTs = root.ts;
+    reply.user     = e.store.findUser("UMIRA");
+    reply.text     = "reply";
+    std::vector<model::Message> page;
+    page.push_back(std::move(root));
+    page.push_back(std::move(reply));
+    e.store.addPage(c, std::move(page));
+    const Ts rootTs  = model::parseTs("1800000000.000100");
+    const Ts replyTs = model::parseTs("1800000001.000100");
+    REQUIRE(e.be->canMarkThreadUnread(c, rootTs));
+    // Delay the write acknowledgement, and have the feed report a cursor
+    // beyond the mark target before that acknowledgement.
+    ctl("POST",
+        "/_ctl/script",
+        R"({"method": "subscriptions.thread.mark",
+            "responses": [{"ok": true, "__delay": 0.6}]})");
+    set(R"({"subscriptions.thread.getView": {
+        "ok": true, "total_unread_replies": 0,
+        "threads": [{"root_msg": {"channel": "C1", "ts": "1800000000.000100",
+                                  "user": "UME", "text": "root",
+                                  "last_read": "1800000002.000100"},
+                     "latest_replies": [{"ts": "1800000001.000100", "user": "UMIRA",
+                                         "text": "reply",
+                                         "thread_ts": "1800000000.000100"},
+                                        {"ts": "1800000002.000100", "user": "UMIRA",
+                                         "text": "later",
+                                         "thread_ts": "1800000000.000100"}]}]}})");
+    e.be->markThreadUnread(c, rootTs, replyTs);
+    REQUIRE(pumpUntil([&] { return count("subscriptions.thread.mark") >= 1; }, 3000));
+    pumpFor(250); // the feed can answer while the write acknowledgement waits
+    CHECK(e.store.unreadThreads() == 1);
+    // Once the write lands, a later feed cursor is authoritative.
+    REQUIRE(pumpUntil([&] { return e.store.unreadThreads() == 0; }, 4000));
+}
+
 TEST("slack features: the Threads feed caches thread-only messages for message actions") {
     if (!haveServer())
         return;
@@ -852,6 +1016,7 @@ TEST("slack features: custom sidebar sections — the list, moves, create, a ref
     );
     REQUIRE(e.connect());
     REQUIRE(pumpUntil([&] { return e.store.sections().size() == 2; }));
+    CHECK(e.store.sectionsComplete()); // the whole list: a section not in it is gone
     CHECK(e.be->capabilities().customSections);
     CHECK_STR(e.store.sections()[0].name, "Projects");
     CHECK_STR(e.store.sections()[0].emoji, "rocket");
@@ -868,6 +1033,7 @@ TEST("slack features: custom sidebar sections — the list, moves, create, a ref
     e.be->moveSection("L2", -1);
     REQUIRE(pumpUntil([] { return count("users.channelSections.set") == 2; }));
     {
+        // Both are in flight at once: the log order is the arrival order.
         const Log   sets;
         json::Value r = sets.get("users.channelSections.set", 0)["form"];
         json::Value m = sets.get("users.channelSections.set", 1)["form"];
@@ -933,6 +1099,119 @@ TEST("slack features: custom sidebar sections — the list, moves, create, a ref
     REQUIRE(pumpUntil([&] { return e.store.findSection("L2") != nullptr; }));
     REQUIRE(!e.errors.empty());
     CHECK(e.errors.back().find("section_not_found") != std::string::npos);
+}
+
+TEST("slack features: sidebar sections follow the top-level cursor, and redacted ones stay known") {
+    if (!haveServer())
+        return;
+    Env e(R"({
+      "users.channelSections.list": [
+        {"ok": true, "cursor": "P2", "channel_sections": [
+          {"channel_section_id": "L1", "type": "standard", "name": "One", "emoji": "",
+           "next_channel_section_id": "L2",
+           "channel_ids_page": {"channel_ids": ["C1"], "count": 1, "cursor": ""}},
+          {"channel_section_id": "L_R", "type": "standard", "name": "Hidden", "emoji": "",
+           "next_channel_section_id": null, "is_redacted": true,
+           "channel_ids_page": {"channel_ids": [], "count": 0, "cursor": ""}}]},
+        {"ok": true, "cursor": "", "channel_sections": [
+          {"channel_section_id": "L2", "type": "standard", "name": "Two", "emoji": "",
+           "next_channel_section_id": null,
+           "channel_ids_page": {"channel_ids": [], "count": 0, "cursor": "C1"}}]}
+      ]})");
+    REQUIRE(e.connect());
+    REQUIRE(pumpUntil([&] { return e.store.sectionsComplete() && e.store.sections().size() == 2; }));
+    CHECK_STR(e.store.sections()[0].name, "One");
+    CHECK_STR(e.store.sections()[1].name, "Two");
+    CHECK(e.store.sectionRedacted("L_R"));
+    CHECK(e.store.findSection("L_R") == nullptr);
+    const Log log;
+    REQUIRE(log.count("users.channelSections.list") >= 2);
+    CHECK_STR(log.get("users.channelSections.list", 1)["form"]["cursor"].str(), "P2");
+}
+
+TEST("slack features: a successful section delete requests the confirming snapshot at once") {
+    if (!haveServer())
+        return;
+    Env e;
+    ctl("POST",
+        "/_ctl/script",
+        R"({"method": "users.channelSections.list", "responses": [
+          {"ok": true, "cursor": "", "channel_sections": [
+            {"channel_section_id": "L_DEL", "type": "standard", "name": "Delete me",
+             "emoji": "", "next_channel_section_id": null,
+             "channel_ids_page": {"channel_ids": [], "count": 0}}]},
+          {"ok": true, "cursor": "", "channel_sections": []}]})");
+    ctl("POST",
+        "/_ctl/script",
+        R"({"method": "users.channelSections.delete", "responses": [{"ok": true}]})");
+    REQUIRE(e.connect());
+    REQUIRE(pumpUntil([&] { return e.store.findSection("L_DEL") != nullptr; }, 3000));
+    REQUIRE(count("users.channelSections.list") == 1);
+    e.be->deleteSection("L_DEL");
+    CHECK(e.store.findSection("L_DEL") == nullptr);
+    // The successful write asks for the full list right away, not on the next
+    // periodic tick: the empty answer is the confirmation that prunes.
+    REQUIRE(pumpUntil([&] { return count("users.channelSections.list") >= 2; }, 2000));
+    REQUIRE(pumpUntil([&] { return e.store.sections().empty(); }, 1000));
+    CHECK(e.store.sectionsComplete());
+}
+
+TEST("slack features: an answer without channel_sections is not a complete list") {
+    if (!haveServer())
+        return;
+    Env e;
+    e.store.setSections({{"L1", "Keep", "", {}}});
+    ctl("POST",
+        "/_ctl/script",
+        R"({"method": "users.channelSections.list",
+            "responses": [{"ok": true, "cursor": ""}]})");
+    REQUIRE(e.connect());
+    REQUIRE(pumpUntil([&] { return count("users.channelSections.list") >= 1; }));
+    pumpFor(100);
+    CHECK_FALSE(e.store.sectionsComplete());
+    REQUIRE(e.store.findSection("L1") != nullptr);
+    CHECK_STR(e.store.findSection("L1")->name, "Keep");
+}
+
+// A list that started before an edit must never replace the list requested
+// after it, even when the old answer arrives last.
+TEST("slack features: a stale section list cannot undo a newer one") {
+    if (!haveServer())
+        return;
+    Env e;
+    e.store.setSections({{"L1", "Old", "", {}}});
+    ctl("POST",
+        "/_ctl/script",
+        R"({"method": "users.channelSections.list", "responses": [
+          {"ok": true, "cursor": "", "__delay": 1.0, "channel_sections": [
+            {"channel_section_id": "L1", "type": "standard", "name": "Old", "emoji": "",
+             "next_channel_section_id": null,
+             "channel_ids_page": {"channel_ids": [], "count": 0}}]},
+          {"ok": true, "cursor": "", "channel_sections": [
+            {"channel_section_id": "L1", "type": "standard", "name": "New", "emoji": "",
+             "next_channel_section_id": "L2",
+             "channel_ids_page": {"channel_ids": [], "count": 0}},
+            {"channel_section_id": "L2", "type": "standard", "name": "Kept", "emoji": "",
+             "next_channel_section_id": null,
+             "channel_ids_page": {"channel_ids": [], "count": 0}}]}]})");
+    ctl("POST",
+        "/_ctl/script",
+        R"({"method": "users.channelSections.set",
+            "responses": [{"ok": true}]})");
+    REQUIRE(e.connect());
+    REQUIRE(pumpUntil([&] { return count("users.channelSections.list") >= 1; }));
+    e.be->updateSection("L1", "New", "");
+    REQUIRE(pumpUntil([&] { return count("users.channelSections.set") == 1; }));
+    // B is requested immediately, before A's delayed answer: its L2 exists.
+    REQUIRE(pumpUntil([&] { return e.store.findSection("L2") != nullptr; }, 500));
+    const uint64_t rev = e.store.sectionsRevision();
+    CHECK(count("users.channelSections.list") == 2);
+    pumpFor(1200); // the old answer has returned by now
+    REQUIRE(e.store.findSection("L1") != nullptr);
+    CHECK_STR(e.store.findSection("L1")->name, "New");
+    CHECK(e.store.findSection("L2") != nullptr);
+    CHECK(e.store.sectionsRevision() == rev);
+    CHECK(count("users.channelSections.list") == 2); // no third refresh from the stale answer
 }
 
 TEST("slack features: leaving a custom section restores Slack Connect grouping") {

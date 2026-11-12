@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace slack::mapjson {
@@ -83,13 +84,26 @@ std::vector<Counts> toCounts(const json::Value &resp);
 // stars.list items that are conversations (not starred messages or files).
 void starredConversationIds(const json::Value &items, std::vector<std::string> &out);
 
-// users.channelSections.list: the custom ("standard") sections in sidebar
-// order (Slack chains them by next_channel_section_id), and the id of each
-// of Slack's own sections by type ("channels", "direct_messages"…).
+// One users.channelSections.list entry, accumulated across its top-level
+// cursor pages before the linked-list order is resolved.
+struct SectionRecord {
+    std::string              id, name, emoji, next, type;
+    std::vector<std::string> convs;
+    bool                     redacted = false;
+};
+
+// Append one response page's channel_sections.
+void appendSections(const json::Value &resp, std::vector<SectionRecord> &out);
+
+// Resolve the complete list: the custom ("standard") sections in sidebar
+// order (Slack chains them by next_channel_section_id), the id of each of
+// Slack's own sections by type ("channels", "direct_messages"…), and the
+// ids marked is_redacted.
 void toSections(
-    const json::Value                            &resp,
+    const std::vector<SectionRecord>            &records,
     std::vector<model::Store::Section>           &out,
-    std::unordered_map<std::string, std::string> &system
+    std::unordered_map<std::string, std::string> &system,
+    std::unordered_set<std::string>              &redacted
 );
 
 // An app's or bot's picture from an "icons" object: image_72, else 48, else
