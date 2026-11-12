@@ -360,6 +360,10 @@ struct SlackBackend::Read {
     // The feed's read cursor last passed on (Store::threadRead): a thread
     // read on another client takes its notifications back here too.
     std::unordered_map<std::string, Ts> threadReadSeen;
+    // A local Mark unread whose server cursor has not come back yet. While
+    // set, an old feed answer must not clear the unread state.
+    std::unordered_map<std::string, Ts> threadUnreadPending;
+    uint64_t                            threadUnreadGen = 0;
     void                                noteUnreadThreadReply(ConvRef c, Ts root, Ts ts);
     void                                threadRead(ConvRef c, Ts root, Ts upTo);
     void                                threadUnread(ConvRef c, Ts root, Ts to);
@@ -381,7 +385,8 @@ struct SlackBackend::Read {
         Ts                 newest,
         Ts                 lastRead,
         bool               priming,
-        Ts                &baseline
+        Ts                &baseline,
+        uint64_t           unreadGenAtStart
     );
     void announceReplies(
         const std::string           &key,
@@ -2974,10 +2979,12 @@ void SlackBackend::Read::pollThreadReplies() {
         pollThreadSubs();
         return;
     }
+    const uint64_t unreadGenAtStart = threadUnreadGen;
     call(
         "subscriptions.thread.getView",
         threadsForm("limit=10&priority_mode=all"),
-        [this, sentTeam = b._threadsTeamId](const json::Document &doc, const std::string &err) {
+        [this, sentTeam = b._threadsTeamId, unreadGenAtStart](const json::Document &doc,
+                                                             const std::string &err) {
             if (!err.empty()) {
                 if (isFeedRefusal(err)) {
                     LOG_WARN("slack", "subscriptions.thread.getView: %s", err.c_str());
@@ -2995,14 +3002,26 @@ void SlackBackend::Read::pollThreadReplies() {
                 const std::string key    = threadKey(ft.conv, ft.root);
                 const Ts          newest = ft.replies.empty() ? 0 : ft.replies.back().ts;
                 Ts                baseline;
-                if (feedThread(key, ft.conv, ft.root, newest, ft.lastRead, priming, baseline))
+                if (feedThread(
+                        key, ft.conv, ft.root, newest, ft.lastRead, priming, baseline,
+                        unreadGenAtStart
+                    ))
                     announceReplies(
                         key, ft.conv, baseline, newest, ft.replies, ft.parentIsMe, injected
                     );
             }
             // "All clear" from the server (the count is threads, not replies).
-            if (doc.root()["total_unread_replies"].integer() == 0)
-                unreadThreads.clear();
+            // A local Mark unread still waiting for its cursor survives both
+            // an old answer and the server's all-clear.
+            if (doc.root()["total_unread_replies"].integer() == 0 &&
+                unreadGenAtStart == threadUnreadGen) {
+                for (auto it = unreadThreads.begin(); it != unreadThreads.end();) {
+                    if (threadUnreadPending.count(it->first))
+                        ++it;
+                    else
+                        it = unreadThreads.erase(it);
+                }
+            }
             publishUnreadThreads();
         }
     );
@@ -3012,21 +3031,35 @@ void SlackBackend::Read::pollThreadReplies() {
 // entry's unread state; baseline: where its news starts. false: none to
 // announce (it has nothing past its read cursor yet).
 bool SlackBackend::Read::feedThread(
-    const std::string &key, ConvRef c, Ts root, Ts newest, Ts lastRead, bool priming, Ts &baseline
+    const std::string &key,
+    ConvRef            c,
+    Ts                 root,
+    Ts                 newest,
+    Ts                 lastRead,
+    bool               priming,
+    Ts                &baseline,
+    uint64_t           unreadGenAtStart
 ) {
     follow(key); // the feed IS the subscription list
+    const bool staleRead = unreadGenAtStart != threadUnreadGen;
+    auto       pending   = threadUnreadPending.find(key);
+    if (!staleRead && pending != threadUnreadPending.end() && lastRead == pending->second)
+        pending = threadUnreadPending.erase(pending); // the server applied it
+    const bool protectedUnread = staleRead || pending != threadUnreadPending.end();
     // Read further on some client (here or elsewhere): its notifications go.
-    if (Ts &seen = threadReadSeen[key]; lastRead > seen) {
-        seen = lastRead;
-        s.threadRead(c, root, lastRead);
-    }
-    // The Threads entry: the feed's own
-    // read cursor or mine, whichever is further; the first page
-    // after a start restores it.
-    const Ts floor = std::max(lastRead, threadReadFloor[key]);
+    // An answer older than a local Mark unread is not such a read.
+    if (!protectedUnread)
+        if (Ts &seen = threadReadSeen[key]; lastRead > seen) {
+            seen = lastRead;
+            s.threadRead(c, root, lastRead);
+        }
+    // The Threads entry: the feed's own read cursor or mine, whichever is
+    // further; a pending local Mark unread keeps its lower floor.
+    const Ts floor = protectedUnread ? threadReadFloor[key]
+                                     : std::max(lastRead, threadReadFloor[key]);
     if (newest > floor && !s.threadMuted(c, root))
         unreadThreads[key] = newest;
-    else
+    else if (!protectedUnread)
         unreadThreads.erase(key);
     baseline = 0;
     if (const auto it = threadBaseline.find(key); it != threadBaseline.end())
@@ -3085,10 +3118,12 @@ void SlackBackend::Read::announceReplies(
 // only a thread whose newest message moved past its baseline costs a
 // conversations.replies for the news.
 void SlackBackend::Read::pollThreadSubs() {
+    const uint64_t unreadGenAtStart = threadUnreadGen;
     call(
         "subscriptions.thread.getTimestamps",
         threadsForm(kSubsForm),
-        [this, sentTeam = b._threadsTeamId](const json::Document &doc, const std::string &err) {
+        [this, sentTeam = b._threadsTeamId, unreadGenAtStart](const json::Document &doc,
+                                                             const std::string &err) {
             if (!err.empty()) {
                 if (isFeedRefusal(err)) {
                     LOG_WARN("slack", "subscriptions.thread.getTimestamps: %s", err.c_str());
@@ -3105,7 +3140,10 @@ void SlackBackend::Read::pollThreadSubs() {
                     continue;
                 const std::string key = threadKey(t.conv, t.root);
                 Ts                baseline;
-                if (!feedThread(key, t.conv, t.root, t.latest, t.lastRead, priming, baseline))
+                if (!feedThread(
+                        key, t.conv, t.root, t.latest, t.lastRead, priming, baseline,
+                        unreadGenAtStart
+                    ))
                     continue;
                 if (t.latest <= baseline) {
                     threadBaseline[key] = baseline;
@@ -3165,6 +3203,7 @@ void SlackBackend::Read::noteUnreadThreadReply(ConvRef c, Ts root, Ts ts) {
 // upTo; the thread is read once its newest unread reply is.
 void SlackBackend::Read::threadRead(ConvRef c, Ts root, Ts upTo) {
     const std::string key = threadKey(c, root);
+    threadUnreadPending.erase(key);
     Ts               &f   = threadReadFloor[key];
     f                     = std::max(f, upTo);
     Ts &base              = threadBaseline[key];
@@ -3180,7 +3219,9 @@ void SlackBackend::Read::threadRead(ConvRef c, Ts root, Ts upTo) {
 // reply. The baseline stays: what was announced isn't announced again.
 void SlackBackend::Read::threadUnread(ConvRef c, Ts root, Ts to) {
     const std::string key = threadKey(c, root);
-    threadReadFloor[key]  = to;
+    ++threadUnreadGen;
+    threadUnreadPending[key] = to;
+    threadReadFloor[key]     = to;
     Ts &newest            = unreadThreads[key];
     newest                = std::max({newest, newestHeldReply(c, root), to + 1});
     publishUnreadThreads();
@@ -3613,7 +3654,7 @@ void SlackBackend::Read::pruneThreadState() {
         std::erase_if(followed, [cut](const std::string &k) { return keyTs(k) < cut; });
         extrasChanged();
     }
-    for (auto *m : {&threadBaseline, &threadReadFloor, &threadReadSeen}) {
+    for (auto *m : {&threadBaseline, &threadReadFloor, &threadReadSeen, &threadUnreadPending}) {
         if (m->size() <= 2 * kMaxThreadState)
             continue;
         std::vector<Ts> roots;

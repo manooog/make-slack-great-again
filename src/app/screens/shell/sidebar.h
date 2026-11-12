@@ -332,7 +332,7 @@ private:
     // The Store open at setCollapsed, and the one (and its sections
     // revision) deleted sections were last looked for in.
     const model::Store *_collapsedOf = nullptr, *_prunedOf = nullptr;
-    uint64_t            _prunedRev   = 0;
+    uint64_t            _prunedConfirmedRev = 0;
     uint64_t _sectionsRev     = 0;       // Store::sectionsRevision at the last rebuild
     ConvRow *_dragRow         = nullptr; // a row being dragged
     bool     _showAllChannels = false;

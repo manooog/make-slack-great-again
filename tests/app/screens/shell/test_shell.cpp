@@ -1327,6 +1327,41 @@ TEST("sections: a manual order wins over DMs-first until it is reset") {
     CHECK(titles(sb).rfind("Activity|Threads|Direct messages|", 0) == 0);
 }
 
+TEST("sections: long-inactive External chats stay discoverable") {
+    Harness         h;
+    shell::Sidebar &sb = h.sh->sidebar();
+    const ConvRef   dm = h.conv("D0MIRA");
+    const ConvRef   ch = h.conv("C0RANDOM");
+    const UserRef   u  = h.store.findUser("U0MIRA");
+    h.store.user(u).stranger = true;
+    h.store.usersChanged(u);
+    h.store.updateConversation(dm, [](Conversation &c) {
+        c.latest = 100;
+        c.lastRead = 100;
+    });
+    h.store.updateConversation(ch, [](Conversation &c) {
+        c.extShared = true;
+        c.latest = 100;
+        c.lastRead = 100;
+    });
+    h.settings.relevantDays = 1;
+    h.sh->applySettings();
+    pump();
+    REQUIRE(sb.sectionTitles().size() > 0);
+    CHECK_STR(sb.rowState(dm).section, "External connections");
+    CHECK_STR(sb.rowState(ch).section, "External connections");
+    CHECK(sb.rowState(dm).visible);
+    CHECK(sb.rowState(ch).visible);
+    // The unreads-only filter keeps matching long-inactive External chats too.
+    h.store.updateConversation(dm, [](Conversation &c) { c.unread = 1; });
+    h.store.updateConversation(ch, [](Conversation &c) { c.unread = 1; c.mentions = 1; });
+    h.settings.unreadsOnly = true;
+    h.sh->applySettings();
+    pump();
+    CHECK(sb.rowState(dm).visible);
+    CHECK(sb.rowState(ch).visible);
+}
+
 TEST("sections: DMs with a stranger are external too; a starred one stays starred") {
     Harness         h;
     shell::Sidebar &sb       = h.sh->sidebar();
@@ -4075,14 +4110,14 @@ TEST("collapse: a deleted section's state and sort go, deleted here or while ano
     CHECK(collapsedPrefs(w.settings) == both);
     CHECK(sortPrefs(w.settings) == std::vector<std::string>{kKeyA + " S0PLAY alpha"});
     // Deleted here or in another client: its state and its sort go.
-    w.a.setSections({work});
+    w.a.setSectionsSnapshot({work}, {});
     pump();
     CHECK(collapsedPrefs(w.settings) == std::vector<std::string>{kKeyA + " S0WORK"});
     CHECK(w.settings.sidebarSorts.empty());
     // Deleted while another workspace is open: gone on coming back, and
     // the other one's list never touched this one's.
     w.show(kKeyB);
-    w.a.setSections({});
+    w.a.setSectionsSnapshot({}, {});
     pump();
     CHECK(collapsedPrefs(w.settings) == std::vector<std::string>{kKeyA + " S0WORK"});
     w.show(kKeyA);
@@ -4168,6 +4203,60 @@ TEST("collapse: a redacted section keeps its state until it is really gone") {
     CHECK(std::find(titles.begin(), titles.end(), "Redacted") != titles.end());
     CHECK(sb.collapsed().count("S0RED") == 1);
     CHECK(w.settings.sidebarCollapsedUnreads.size() == 1);
+}
+
+TEST("collapse: an optimistic delete waits for the confirmed section snapshot") {
+    Harness         h;
+    shell::Sidebar &sb = h.sh->sidebar();
+    const ConvRef   eng = h.conv("C0ENG");
+    h.backend.createSection("Projects", "", eng);
+    pump();
+    const std::string id = h.store.sections()[0].id;
+    REQUIRE(sb.toggleSection("Projects"));
+    sb.setSort(id, {shell::SectionSort::By::Alpha});
+    auto confirmed = h.store.sections();
+    h.store.setSectionsSnapshot(std::move(confirmed), {});
+    pump();
+    REQUIRE(!h.settings.sidebarCollapsed.empty());
+    REQUIRE(!h.settings.sidebarSorts.empty());
+    // Optimistic delete: the UI loses the section, the preferences do not.
+    h.backend.deleteSection(id);
+    pump();
+    CHECK(h.store.findSection(id) == nullptr);
+    CHECK(!h.settings.sidebarCollapsed.empty());
+    CHECK(!h.settings.sidebarSorts.empty());
+    // The server confirms exactly the optimistic list: the confirmation must
+    // still prune, even though the contents are equal.
+    auto same = h.store.sections();
+    h.store.setSectionsSnapshot(std::move(same), {});
+    pump();
+    CHECK(h.settings.sidebarCollapsed.empty());
+    CHECK(h.settings.sidebarSorts.empty());
+}
+
+TEST("collapse: a refused section delete keeps its preferences") {
+    Harness         h;
+    shell::Sidebar &sb = h.sh->sidebar();
+    const ConvRef   eng = h.conv("C0ENG");
+    h.backend.createSection("Projects", "", eng);
+    pump();
+    const std::string id = h.store.sections()[0].id;
+    REQUIRE(sb.toggleSection("Projects"));
+    sb.setSort(id, {shell::SectionSort::By::Alpha});
+    auto confirmed = h.store.sections();
+    h.store.setSectionsSnapshot(std::move(confirmed), {});
+    pump();
+    h.backend.deleteSection(id);
+    pump();
+    CHECK(h.store.findSection(id) == nullptr);
+    CHECK(!h.settings.sidebarCollapsed.empty());
+    // Slack refused it: the next confirmed list brings the section back.
+    const Store::Section back = {id, "Projects", "", {}};
+    h.store.setSectionsSnapshot({back}, {});
+    pump();
+    REQUIRE(h.store.findSection(id) != nullptr);
+    CHECK(!h.settings.sidebarCollapsed.empty());
+    CHECK(!h.settings.sidebarSorts.empty());
 }
 
 TEST("collapse: a signed-out workspace's go; signed in again it starts afresh") {

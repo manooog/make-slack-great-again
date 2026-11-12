@@ -356,6 +356,9 @@ public:
         std::vector<Section> sections, std::unordered_set<std::string> redacted
     );
     bool     sectionsComplete() const { return _sectionsComplete; }
+    // Grows only when a confirmed server snapshot is accepted. Local
+    // optimistic edits leave it alone, so pruning waits for confirmation.
+    uint64_t sectionsConfirmedRevision() const { return _sectionsConfirmedRev; }
     bool     sectionRedacted(std::string_view id) const {
         return _redactedSections.count(std::string(id)) != 0;
     }
@@ -441,8 +444,10 @@ private:
     std::vector<ScheduledItem>                   _scheduled;
     std::vector<Section>                         _sections;
     std::unordered_set<std::string>              _redactedSections;
-    uint64_t                                     _sectionsRev      = 0;
-    bool                                         _sectionsComplete = false;
+    uint64_t                                     _sectionsRev           = 0;
+    uint64_t                                     _sectionsConfirmedRev  = 0;
+    bool                                         _sectionsComplete      = false;
+    bool                                         _sectionsDirty         = false; // local edit after a snapshot
     std::vector<Usergroup>                       _usergroups;
     std::unordered_map<std::string, std::string> _channelNames;
     std::unordered_map<std::string, UserRef>     _linkedAuthors; // "conv/ts"

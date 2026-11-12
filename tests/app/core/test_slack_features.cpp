@@ -421,6 +421,47 @@ TEST("slack features: the Threads entry — unread from the feed, read by markTh
 }
 
 
+TEST("slack features: an old thread feed cannot clear a pending Mark unread") {
+    if (!haveServer())
+        return;
+    Env e(R"({"subscriptions.thread.getView": {
+        "ok": true, "total_unread_replies": 0, "__delay": 1.0,
+        "threads": [{"root_msg": {"channel": "C1", "ts": "1800000000.000100",
+                                  "user": "UME", "text": "root",
+                                  "last_read": "1800000002.000100"},
+                     "latest_replies": [{"ts": "1800000001.000100", "user": "UMIRA",
+                                         "text": "reply",
+                                         "thread_ts": "1800000000.000100"},
+                                        {"ts": "1800000002.000100", "user": "UMIRA",
+                                         "text": "later",
+                                         "thread_ts": "1800000000.000100"}]}]}})");
+    REQUIRE(e.connect());
+    REQUIRE(pumpUntil([&] { return count("subscriptions.thread.getView") >= 1; }, 5000));
+    const ConvRef c = e.conv("C1");
+    REQUIRE(c != kNoConv);
+    model::Message root;
+    root.ts   = model::parseTs("1800000000.000100");
+    root.user = e.store.me;
+    root.text = "root";
+    model::Message reply;
+    reply.ts       = model::parseTs("1800000001.000100");
+    reply.threadTs = root.ts;
+    reply.user     = e.store.findUser("UMIRA");
+    reply.text     = "reply";
+    std::vector<model::Message> page;
+    page.push_back(std::move(root));
+    page.push_back(std::move(reply));
+    e.store.addPage(c, std::move(page));
+    REQUIRE(e.be->canMarkThreadUnread(c, root.ts));
+    e.be->markThreadUnread(c, root.ts, reply.ts);
+    CHECK(e.store.unreadThreads() == 1);
+    pumpFor(1400); // the old feed answer lands after the mark
+    CHECK(e.store.unreadThreads() == 1);
+    // Reading the thread still clears it, and releases the pending guard.
+    e.be->markThreadRead(c, root.ts, model::parseTs("1800000002.000100"));
+    CHECK(e.store.unreadThreads() == 0);
+}
+
 TEST("slack features: the Threads feed caches thread-only messages for message actions") {
     if (!haveServer())
         return;

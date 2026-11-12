@@ -1061,7 +1061,7 @@ void Sidebar::rebuild() {
     }
 
     // Bucketed by classify(); sorted per section by sortOf().
-    std::vector<ConvRef> lists[4], hiddenCh, hiddenExt, external, vipUnread, drafts;
+    std::vector<ConvRef> lists[4], hiddenCh, external, vipUnread, drafts;
     const auto           listed = [&](ConvRef c) {
         return !_filters.unreadsOnly || c == _selected || paintsUnread(store.conversation(c));
     };
@@ -1123,12 +1123,10 @@ void Sidebar::rebuild() {
             vipUnread.push_back(c); // unread already required; always shown
             break;
         case External:
-            if (relevant(c) && listed(c))
+            // Keep external conversations discoverable beyond the relevance
+            // window, as before the DMs-first change.
+            if (listed(c))
                 external.push_back(c);
-            // A separate hidden list: putting it in Channels would make the
-            // reclassified check move it every time it changes.
-            else if (!cv.isDirect())
-                hiddenExt.push_back(c);
             break;
         case Direct:
             if (relevant(c) && listed(c))
@@ -1146,11 +1144,9 @@ void Sidebar::rebuild() {
             break; // classify() never returns these
         }
     }
-    _hiddenChannels = _showAllChannels ? 0 : int(hiddenCh.size() + hiddenExt.size());
-    if (_showAllChannels) {
+    _hiddenChannels = _showAllChannels ? 0 : int(hiddenCh.size());
+    if (_showAllChannels)
         lists[Channels].insert(lists[Channels].end(), hiddenCh.begin(), hiddenCh.end());
-        external.insert(external.end(), hiddenExt.begin(), hiddenExt.end());
-    }
     struct Def {
         Icon        icon;
         const char *title;
@@ -1310,12 +1306,14 @@ void Sidebar::rebuild() {
 // that nothing is pruned: the list may simply not have come yet.
 void Sidebar::forgetDeletedSections() {
     const model::Store &store = _ctx.store();
-    if (&store != _collapsedOf || !store.sectionsComplete())
+    if (&store != _collapsedOf || !store.sectionsComplete() ||
+        store.sectionsConfirmedRevision() == 0)
         return;
-    if (_prunedOf == &store && _prunedRev == store.sectionsRevision())
-        return; // the same list (most rebuilds)
-    _prunedOf  = &store;
-    _prunedRev = store.sectionsRevision();
+    if (_prunedOf == &store &&
+        _prunedConfirmedRev == store.sectionsConfirmedRevision())
+        return; // this confirmed list was already pruned
+    _prunedOf           = &store;
+    _prunedConfirmedRev = store.sectionsConfirmedRevision();
     const auto gone = [&store](const std::string &key) {
         return !key.empty() && key[0] != '#' && !store.findSection(key) &&
                !store.sectionRedacted(key);
@@ -1563,8 +1561,7 @@ void Sidebar::setSorts(Sorts sorts) {
     std::erase_if(sorts, [](const auto &e) { return e.first.empty() || e.second.plain(); });
     if (sorts == _sorts)
         return;
-    _sorts    = std::move(sorts);
-    _prunedOf = nullptr; // another state: checked again (the rebuild does)
+    _sorts = std::move(sorts);
     rebuild();
 }
 
@@ -1632,7 +1629,6 @@ void Sidebar::setCollapsed(Collapsed collapsed) {
         }
     }
     _collapsedOf = &_ctx.store();
-    _prunedOf    = nullptr; // another state: checked again
     for (SectionHeader *h : _sections) {
         const bool was = h->collapsed;
         restoreCollapse(h);

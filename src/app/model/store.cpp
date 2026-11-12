@@ -265,7 +265,9 @@ void Store::clear() {
     _scheduled.clear();
     _sections.clear();
     _redactedSections.clear();
-    _sectionsComplete = false;
+    _sectionsComplete     = false;
+    _sectionsDirty        = false;
+    _sectionsConfirmedRev = 0;
     ++_sectionsRev;
     _usergroups.clear();
     _channelNames.clear();
@@ -1337,7 +1339,8 @@ const Store::Section *Store::findSection(std::string_view id) const {
 void Store::setSections(std::vector<Section> sections) {
     if (sections == _sections)
         return;
-    _sections = std::move(sections);
+    _sections       = std::move(sections);
+    _sectionsDirty  = true;
     ++_sectionsRev;
     emit({ChangeKind::Meta});
 }
@@ -1345,12 +1348,18 @@ void Store::setSections(std::vector<Section> sections) {
 void Store::setSectionsSnapshot(
     std::vector<Section> sections, std::unordered_set<std::string> redacted
 ) {
-    if (sections == _sections && redacted == _redactedSections && _sectionsComplete)
+    const bool changed =
+        sections != _sections || redacted != _redactedSections || !_sectionsComplete;
+    // The confirmation itself matters even when an optimistic edit already
+    // produced the same list: the local deletion is only now authoritative.
+    if (!changed && !_sectionsDirty)
         return;
-    _sections          = std::move(sections);
-    _redactedSections  = std::move(redacted);
-    _sectionsComplete  = true;
+    _sections             = std::move(sections);
+    _redactedSections     = std::move(redacted);
+    _sectionsComplete     = true;
+    _sectionsDirty        = false;
     ++_sectionsRev;
+    ++_sectionsConfirmedRev;
     emit({ChangeKind::Meta});
 }
 
