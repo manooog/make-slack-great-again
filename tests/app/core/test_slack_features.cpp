@@ -457,9 +457,34 @@ TEST("slack features: an old thread feed cannot clear a pending Mark unread") {
     CHECK(e.store.unreadThreads() == 1);
     pumpFor(1400); // the old feed answer lands after the mark
     CHECK(e.store.unreadThreads() == 1);
-    // Reading the thread still clears it, and releases the pending guard.
-    e.be->markThreadRead(c, root.ts, model::parseTs("1800000002.000100"));
-    CHECK(e.store.unreadThreads() == 0);
+    // The server's cursor acknowledgement keeps the thread unread; a later
+    // feed that says it was read elsewhere then clears it normally.
+    ctl("POST",
+        "/_ctl/script",
+        R"({"method": "subscriptions.thread.getView", "responses": [
+          {"ok": true, "total_unread_replies": 1, "threads": [
+            {"root_msg": {"channel": "C1", "ts": "1800000000.000100",
+                          "user": "UME", "text": "root",
+                          "last_read": "1800000001.000099"},
+             "latest_replies": [{"ts": "1800000001.000100", "user": "UMIRA",
+                                 "text": "reply",
+                                 "thread_ts": "1800000000.000100"},
+                                {"ts": "1800000002.000100", "user": "UMIRA",
+                                 "text": "later",
+                                 "thread_ts": "1800000000.000100"}]}]},
+          {"ok": true, "total_unread_replies": 0, "__delay": 0.5, "threads": [
+            {"root_msg": {"channel": "C1", "ts": "1800000000.000100",
+                          "user": "UME", "text": "root",
+                          "last_read": "1800000002.000100"},
+             "latest_replies": [{"ts": "1800000001.000100", "user": "UMIRA",
+                                 "text": "reply",
+                                 "thread_ts": "1800000000.000100"},
+                                {"ts": "1800000002.000100", "user": "UMIRA",
+                                 "text": "later",
+                                 "thread_ts": "1800000000.000100"}]}]}]})");
+    REQUIRE(pumpUntil([&] { return count("subscriptions.thread.getView") >= 3; }, 5000));
+    pumpFor(900);
+    CHECK(e.store.unreadThreads() == 0); // acknowledged, then read elsewhere
 }
 
 TEST("slack features: the Threads feed caches thread-only messages for message actions") {

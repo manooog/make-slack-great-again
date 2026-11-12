@@ -3042,10 +3042,12 @@ bool SlackBackend::Read::feedThread(
 ) {
     follow(key); // the feed IS the subscription list
     const bool staleRead = unreadGenAtStart != threadUnreadGen;
-    auto       pending   = threadUnreadPending.find(key);
-    if (!staleRead && pending != threadUnreadPending.end() && lastRead == pending->second)
-        pending = threadUnreadPending.erase(pending); // the server applied it
-    const bool protectedUnread = staleRead || pending != threadUnreadPending.end();
+    if (!staleRead) {
+        const auto it = threadUnreadPending.find(key);
+        if (it != threadUnreadPending.end() && lastRead == it->second)
+            threadUnreadPending.erase(it); // the server applied it
+    }
+    const bool protectedUnread = staleRead || threadUnreadPending.count(key) != 0;
     // Read further on some client (here or elsewhere): its notifications go.
     // An answer older than a local Mark unread is not such a read.
     if (!protectedUnread)
