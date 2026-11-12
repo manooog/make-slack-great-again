@@ -42,9 +42,8 @@ void MessageStandIn::rebuild() {
     if (_thread) {
         if (const auto *root = store.findMessage(_conv, _thread))
             msgs.push_back(root);
-        if (const auto *replies = store.replies(_conv, _thread))
-            for (const auto &m : *replies)
-                msgs.push_back(&m);
+        for (const model::Message *m : store.threadTimeline(_conv, _thread))
+            msgs.push_back(m);
     } else {
         for (const auto &m : store.conversation(_conv).messages)
             msgs.push_back(&m);

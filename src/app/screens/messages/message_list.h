@@ -226,6 +226,9 @@ public:
     void pressButton(Ts ts, const std::string &buttonId, ui::PointF windowPos);
     void showToast(const std::string &text, int ms, ui::PointF windowPos);
     void reply(Ts ts);
+    // "View thread" on a broadcast reply: open its original thread, at the
+    // reply when the shell can navigate there.
+    void viewThread(Ts root, Ts reply = 0);
     // "Mark unread": what the message's read cursor is — 0 for the
     // conversation's (a top-level message, a thread's root, a reply also
     // sent to the channel), else the thread's root (a reply).

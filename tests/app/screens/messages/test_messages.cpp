@@ -1558,7 +1558,7 @@ TEST("actions: the message menu, item for item, acts through the backend") {
 }
 
 TEST("thread actions: replies and thread panel messages never offer nested Reply") {
-    Env e(true);
+    Env           e(true);
     const ConvRef design = e.conv("C0DESIGN");
     e.list->showConversation(design);
     pump(10);
@@ -1567,19 +1567,20 @@ TEST("thread actions: replies and thread panel messages never offer nested Reply
         if (m.replyCount > 0) { root = m.ts; break; }
     REQUIRE(root);
     CHECK(menuLabels(e.list->menuItems(root)).starts_with("Reply in thread|"));
-    // A reply broadcast into the main timeline should offer Open thread,
-    // not create a nested reply. The separate Open action doesn't focus edit.
-    model::Message broadcast = msg(e.store.me, model::tsSecs(root) + 9100, "broadcast reply");
-    const Ts broadcastTs = broadcast.ts;
+    // A reply broadcast into the main timeline should offer View thread,
+    // not create a nested reply. The separate action doesn't focus edit.
+    model::Message broadcast   = msg(e.store.me, model::tsSecs(root) + 9100, "broadcast reply");
+    broadcast.threadTs         = root;
+    broadcast.extras().subtype = "thread_broadcast";
+    broadcast.extras().threadParentText = "parent topic";
+    const Ts broadcastTs                = broadcast.ts;
     e.store.addMessage(design, std::move(broadcast));
-    e.store.updateMessage(design, broadcastTs, [root](model::Message &m) {
-        m.threadTs = root;
-    });
     pump();
-    CHECK(menuLabels(e.list->menuItems(broadcastTs)).starts_with("Open thread|"));
+    CHECK(menuLabels(e.list->menuItems(broadcastTs)).starts_with("View thread|"));
     e.list->runMenuAction(broadcastTs, MessageList::kOpenThread);
     REQUIRE(e.threads.size() == 1);
     CHECK(e.threads.back().first == design && e.threads.back().second == root);
+    CHECK(e.store.replies(design, broadcastTs) == nullptr); // never a new thread root
     e.threads.clear();
 
     e.list->showThread(design, root);
@@ -1592,6 +1593,115 @@ TEST("thread actions: replies and thread panel messages never offer nested Reply
     CHECK(menuLabels(e.list->menuItems(reply)).find("Add reaction") != std::string::npos);
     e.list->runMenuAction(reply, MessageList::kReply);
     CHECK(e.threads.empty()); // cannot initiate a nested thread via an old menu id
+}
+
+TEST("broadcast: channel rows keep their thread context and view the parent thread") {
+    Env            e(false);
+    const Ts       root                 = model::parseTs("1700000100.000000");
+    const Ts       insideTs             = model::parseTs("1700000200.000000");
+    const Ts       reply                = model::parseTs("1700000300.000000");
+    const Ts       normal               = model::parseTs("1700000400.000000");
+    model::Message rootMsg              = msgAt(1, root, "original topic");
+    rootMsg.replyCount                  = 2;
+    rootMsg.latestReply                 = reply;
+    model::Message inside               = msgAt(2, insideTs, "thread reply");
+    inside.threadTs                     = root;
+    model::Message broadcast            = msgAt(2, reply, "broadcast reply");
+    broadcast.threadTs                  = root;
+    broadcast.extras().subtype          = "thread_broadcast";
+    broadcast.extras().threadParentText = "original topic";
+    broadcast.extras().threadParentUser = 1;
+    model::Message              regular = msgAt(1, normal, "regular message");
+    std::vector<model::Message> msgs;
+    msgs.push_back(std::move(rootMsg));
+    msgs.push_back(std::move(inside));
+    msgs.push_back(std::move(broadcast));
+    msgs.push_back(std::move(regular));
+    const ConvRef c = addConv(e.store, std::move(msgs));
+    e.list->showConversation(c);
+    pump(10);
+    REQUIRE(e.row(reply) && e.row(normal));
+
+    // A regular channel message keeps Reply in thread; a broadcast opens the
+    // thread its reply already belongs to.
+    CHECK(menuLabels(e.list->menuItems(normal)).starts_with("Reply in thread|"));
+    CHECK(menuLabels(e.list->menuItems(reply)).starts_with("View thread|"));
+
+    // The row says it is a thread reply, with the parent's preview.
+    ui::View *context = findByTooltip(e.row(reply), "View thread");
+    REQUIRE(context != nullptr);
+    std::string                     text;
+    std::function<void(ui::View *)> collect = [&](ui::View *v) {
+        if (!v->accessibleName().empty())
+            text += v->accessibleName() + "\n";
+        for (size_t i = 0; i < v->childCount(); ++i)
+            collect(v->child(i));
+    };
+    collect(context);
+    CHECK(text.find("replied to a thread:") != std::string::npos);
+    CHECK(text.find("original topic") != std::string::npos);
+    CHECK(text.find("Also sent to channel") == std::string::npos);
+
+    // Clicking the context and the menu action both open the original root.
+    static_cast<ui::Clickable *>(context)->activate();
+    pump(2);
+    REQUIRE(e.threads.size() == 1);
+    CHECK(e.threads[0].first == c && e.threads[0].second == root);
+    e.threads.clear();
+    ConvRef openedConv = model::kNoConv;
+    Ts      openedTs = 0, openedThread = 0;
+    e.ctx.openMessage = [&](ConvRef conv, Ts ts, Ts thread) {
+        openedConv   = conv;
+        openedTs     = ts;
+        openedThread = thread;
+    };
+    e.list->runMenuAction(reply, MessageList::kOpenThread);
+    CHECK(openedConv == c && openedTs == reply && openedThread == root);
+    e.ctx.openMessage = nullptr;
+
+    // A regular message still starts its own thread, and the broadcast never
+    // becomes a thread root of its own.
+    e.list->runMenuAction(normal, MessageList::kReply);
+    REQUIRE(e.threads.size() == 1);
+    CHECK(e.threads.back().second == normal);
+    CHECK(e.store.replies(c, reply) == nullptr);
+
+    // The thread view shows the broadcast among its replies, once.
+    e.list->showThread(c, root);
+    pump(10);
+    size_t replyRows = 0;
+    for (const auto &it : e.list->items())
+        if (it.kind == Kind::Message && it.ts == reply)
+            ++replyRows;
+    CHECK(replyRows == 1);
+    REQUIRE(e.row(reply) && e.row(insideTs));
+    text.clear();
+    collect(e.row(reply));
+    CHECK(text.find("Also sent to channel") != std::string::npos);
+    CHECK(text.find("replied to a thread:") == std::string::npos);
+    text.clear();
+    collect(e.row(insideTs));
+    CHECK(text.find("Also sent to channel") == std::string::npos);
+
+    // A live broadcast behaves like one restored from history.
+    e.list->showConversation(c);
+    pump(6);
+    const Ts       liveTs          = model::parseTs("1700000500.000000");
+    model::Message live            = msgAt(2, liveTs, "live broadcast");
+    live.threadTs                  = root;
+    live.extras().subtype          = "thread_broadcast";
+    live.extras().threadParentText = "original topic";
+    e.store.addMessage(c, std::move(live));
+    pump(4);
+    REQUIRE(e.row(liveTs) != nullptr);
+    CHECK(menuLabels(e.list->menuItems(liveTs)).starts_with("View thread|"));
+    CHECK(e.store.findMessage(c, root)->replyCount == 3);
+    size_t liveRows = 0;
+    for (const auto &it : e.list->items())
+        if (it.kind == Kind::Message && it.ts == liveTs)
+            ++liveRows;
+    CHECK(liveRows == 1);
+    CHECK(e.store.replies(c, liveTs) == nullptr);
 }
 
 TEST("actions: Save for later and Remind me need messageReminders (session tokens)") {

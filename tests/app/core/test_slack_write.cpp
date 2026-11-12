@@ -137,15 +137,57 @@ TEST("slack write: a broadcast reply carries thread_ts and reply_broadcast") {
     Env    e;
     Result r;
     e.be->sendBroadcast(e.general, "also here", e.old, r.cb());
+    const model::Message *pending = e.last(e.general);
+    REQUIRE(pending && pending->pending);
+    CHECK(pending->isBroadcast() && pending->threadTs == e.old);
+    CHECK(e.store.replies(e.general, e.old) == nullptr);
+
     REQUIRE(pumpUntil([&] { return r.called; }));
     CHECK(r.ok);
     Log         log;
     json::Value req = log.get("chat.postMessage");
     CHECK(req["form"]["thread_ts"].str() == model::formatTs(e.old));
     CHECK_STR(req["form"]["reply_broadcast"].str(), "true");
-    const auto *replies = e.store.replies(e.general, e.old);
-    REQUIRE(replies && replies->size() == 1);
-    CHECK(!replies->front().pending && replies->front().threadTs == e.old);
+    // The fake's chat.postMessage answer omits the thread_broadcast subtype
+    // and the reply broadcast intent must still survive confirmation.
+    const model::Message *m = e.last(e.general);
+    REQUIRE(m != nullptr);
+    CHECK(!m->pending && m->isBroadcast() && m->threadTs == e.old);
+    CHECK_STR(m->text, "also here");
+    CHECK(e.store.conversation(e.general).messages.size() == 2);
+    CHECK(e.store.findMessage(e.general, e.old)->replyCount == 1);
+    CHECK(
+        e.store.replies(e.general, e.old) == nullptr || e.store.replies(e.general, e.old)->empty()
+    );
+    const auto timeline = e.store.threadTimeline(e.general, e.old);
+    REQUIRE(timeline.size() == 1);
+    CHECK(timeline[0]->ts == m->ts && timeline[0]->isBroadcast());
+}
+
+TEST("slack write: a reconciled broadcast keeps its broadcast identity") {
+    if (!haveServer())
+        return;
+    Env e;
+    // The post lands, but its answer is lost. The scan returns Slack's
+    // stored message, which also lacks the thread_broadcast subtype.
+    script("chat.postMessage", R"([{"__partial":true,"__deliver":true}])");
+    Result r;
+    e.be->sendBroadcast(e.general, "also recovered", e.old, r.cb());
+    REQUIRE(pumpUntil([&] { return r.called; }, 8000));
+    CHECK(r.ok);
+    Log log;
+    CHECK_STR(log.order(), "chat.postMessage,conversations.replies");
+    const model::Message *m = e.last(e.general);
+    REQUIRE(m != nullptr);
+    CHECK(!m->pending && m->isBroadcast() && m->threadTs == e.old);
+    CHECK_STR(m->text, "also recovered");
+    CHECK(e.store.findMessage(e.general, e.old)->replyCount == 1);
+    CHECK(
+        e.store.replies(e.general, e.old) == nullptr || e.store.replies(e.general, e.old)->empty()
+    );
+    const auto timeline = e.store.threadTimeline(e.general, e.old);
+    REQUIRE(timeline.size() == 1);
+    CHECK(timeline[0]->ts == m->ts && timeline[0]->isBroadcast());
 }
 
 TEST("slack write: replying in a thread follows it") {

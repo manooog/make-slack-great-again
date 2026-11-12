@@ -579,7 +579,9 @@ MessageList::MessageList(Context &ctx)
         if (!_toolbarRow)
             return;
         const Ts ts = _toolbarRow->ts();
-        if (const model::Message *m = message(ts); m && m->isReply()) {
+        if (const model::Message *m = message(ts); m && m->isBroadcast())
+            viewThread(m->threadTs, m->ts);
+        else if (m && m->isReply()) {
             if (_ctx.openThread)
                 _ctx.openThread(_conv, m->threadTs);
         } else
@@ -954,9 +956,8 @@ void MessageList::rebuild(bool notify) {
             // The thread view: the root and its replies as one run with day
             // dividers ("Yesterday" above the root), no reply-count row.
             std::vector<const model::Message *> run{root};
-            if (const auto *replies = _ctx.store().replies(_conv, _root))
-                for (const model::Message &m : *replies)
-                    run.push_back(&m);
+            for (const model::Message *m : _ctx.store().threadTimeline(_conv, _root))
+                run.push_back(m);
             addRun(run, true);
         }
     }
@@ -1322,10 +1323,9 @@ void MessageList::usersChanged() {
         bool hit = touches(*m, c);
         // An inline thread's replies draw in their root's row.
         if (!hit && _root == 0 && has(_inlineThreads, ts))
-            if (const auto *replies = st.replies(_conv, ts))
-                for (const model::Message &r : *replies)
-                    if ((hit = touches(r, c)))
-                        break;
+            for (const model::Message *r : st.threadTimeline(_conv, ts))
+                if ((hit = touches(*r, c)))
+                    break;
         if (hit)
             rowsChanged(i, 1);
     }
@@ -1338,9 +1338,10 @@ std::string MessageList::itemLabel(size_t i) const {
     if (it.kind == Kind::Day)
         return base::dayLabel(model::tsSecs(it.ts), base::nowSecs());
     if (it.kind == Kind::Divider) {
-        const model::Message              *root = message(_root);
-        const std::vector<model::Message> *r    = _ctx.store().replies(_conv, _root);
-        const size_t                       n    = r ? r->size() : root ? root->replyCount : 0;
+        const model::Message *root     = message(_root);
+        const auto            timeline = _ctx.store().threadTimeline(_conv, _root);
+        const size_t          n =
+            !timeline.empty() ? timeline.size() : root ? root->replyCount : 0;
         return n == 1 ? std::string(tr("1 reply")) : arg(tr("%1 replies"), str::number(int64_t(n)));
     }
     return {};
@@ -1400,10 +1401,10 @@ void MessageList::checkEdges() {
         // An open thread reads itself — on load and on each new reply
         // (markThreadRead: its cursor, the Threads entry) — unless it was
         // marked unread here.
-        const auto *replies = _ctx.store().replies(_conv, _root);
-        if (!_loadingThread && replies && !replies->empty() && !replies->back().pending &&
-            replies->back().ts != _markedTs && !_ctx.unreadHeld(_conv, _root)) {
-            _markedTs = replies->back().ts;
+        const auto timeline = _ctx.store().threadTimeline(_conv, _root);
+        if (!_loadingThread && !timeline.empty() && !timeline.back()->pending &&
+            timeline.back()->ts != _markedTs && !_ctx.unreadHeld(_conv, _root)) {
+            _markedTs = timeline.back()->ts;
             _ctx.backend.markThreadRead(_conv, _root, _markedTs);
         }
         return;
@@ -1505,7 +1506,11 @@ void MessageList::placeToolbar() {
     }
     _tbEmoji->setVisible(true);
     _tbReply->setVisible(_root == 0);
-    _tbReply->setTooltip(m->isReply() ? tr("Open thread") : tr("Reply in thread"));
+    _tbReply->setTooltip(
+        m->isBroadcast() ? tr("View thread")
+        : m->isReply()   ? tr("Open thread")
+                         : tr("Reply in thread")
+    );
     syncQuickReactions(true);
     _tbSave->setVisible(_ctx.backend.capabilities().messageReminders);
     const bool saved = m->saved || _ctx.store().reminderAt(_conv, m->ts) != 0;
@@ -1716,6 +1721,17 @@ void MessageList::reply(Ts ts) {
     if (onReply)
         onReply(_conv, root);
     else if (_ctx.openThread)
+        _ctx.openThread(_conv, root);
+}
+
+void MessageList::viewThread(Ts root, Ts reply) {
+    if (!root)
+        return;
+    if (reply && _ctx.openMessage) {
+        _ctx.openMessage(_conv, reply, root);
+        return;
+    }
+    if (_ctx.openThread)
         _ctx.openThread(_conv, root);
 }
 
@@ -2016,8 +2032,11 @@ std::vector<ui::MenuItem> MessageList::menuItems(Ts ts) const {
 
     // Frequent actions first, matching the hover toolbar and Slack's right-click
     // hierarchy. A reply in a thread opens that thread, never a nested thread.
-    if (_root == 0)
-        addItem(items, m->isReply() ? kOpenThread : kReply);
+    if (_root == 0) {
+        ui::MenuItem &item = addItem(items, m->isReply() ? kOpenThread : kReply);
+        if (m->isBroadcast())
+            item.label = tr("View thread");
+    }
     addItem(items, kReact);
     addItem(items, kForward, bool(_ctx.forwardMessage));
     ui::addMenuSeparator(items);
@@ -2174,8 +2193,12 @@ void MessageList::runMenuAction(Ts ts, int id, const std::string &path, ui::Poin
         reply(ts);
         break;
     case kOpenThread:
-        if (_root == 0 && msg->isReply() && msg->threadTs && _ctx.openThread)
-            _ctx.openThread(conv, msg->threadTs);
+        if (_root == 0 && msg->isReply() && msg->threadTs) {
+            if (msg->isBroadcast())
+                viewThread(msg->threadTs, msg->ts);
+            else if (_ctx.openThread)
+                _ctx.openThread(conv, msg->threadTs);
+        }
         break;
     case kReact:
         openReactionPicker(ts, {at.x, at.y, 0, 0});

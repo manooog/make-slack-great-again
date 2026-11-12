@@ -22,6 +22,7 @@ using fakeslack::app;
 using fakeslack::count;
 using fakeslack::ctl;
 using fakeslack::pumpUntil;
+using fakeslack::script;
 using fakeslack::set;
 using model::ConvRef;
 using model::kNoConv;
@@ -196,6 +197,50 @@ TEST("slack cache: a cold start writes it, a warm start shows it before the netw
         3000
     ));
     CHECK_STR(e.c("C1").messages[1].text, "third"); // "second" was deleted
+}
+
+TEST("slack cache: a broadcast reply keeps its thread context across a restart") {
+    if (!haveServer())
+        return;
+    wipe();
+    const Ts root = model::parseTs("1700000100.000100");
+    const Ts ts   = model::parseTs("1700000300.000300");
+    {
+        Env e;
+        REQUIRE(e.connect());
+        const ConvRef c = e.conv("C1");
+        REQUIRE(c != kNoConv);
+        e.be->setActiveConversation(c, 0); // tracked: its messages go to the cache
+        script("conversations.history", R"([
+          {"ok": true, "has_more": false, "messages": [
+            {"type": "message", "ts": "1700000300.000300", "thread_ts": "1700000100.000100",
+             "subtype": "thread_broadcast", "user": "UMIRA", "text": "broadcast reply",
+             "root": {"type": "message", "ts": "1700000100.000100", "user": "UME",
+                      "text": "original topic"}},
+            {"type": "message", "ts": "1700000100.000100", "thread_ts": "1700000100.000100",
+             "user": "UME", "text": "original topic", "reply_count": 1,
+             "latest_reply": "1700000300.000300"}]}
+        ])");
+        bool done = false;
+        e.be->loadHistory(c, 0, [&](bool, const std::string &) { done = true; });
+        REQUIRE(pumpUntil([&] { return done; }));
+        const auto &messages = e.c("C1").messages;
+        REQUIRE(messages.size() == 2);
+        CHECK(messages.back().isBroadcast() && messages.back().threadTs == root);
+    } // closes the cache after the broadcast was written
+
+    Env e(false);
+    REQUIRE(e.warm);
+    const ConvRef c = e.conv("C1");
+    REQUIRE(c != kNoConv);
+    e.be->setActiveConversation(c, 0);
+    const auto &messages = e.c("C1").messages;
+    REQUIRE(messages.size() == 2);
+    const model::Message &broadcast = messages.back();
+    CHECK(broadcast.ts == ts && broadcast.isBroadcast());
+    CHECK(broadcast.threadTs == root);
+    REQUIRE(broadcast.extra);
+    CHECK_STR(broadcast.extra->threadParentText, "original topic");
 }
 
 TEST("slack cache: in-flight and failed outgoing copies survive restart safely") {

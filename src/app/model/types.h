@@ -203,6 +203,11 @@ struct MessageExtras {
     std::vector<Block>      blocks; // drawn instead of `text` when present (see Block)
     std::string             botId;  // Slack: the posting app's bot id (a button press names it)
     Huddle                  huddle; // subtype "huddle_thread": its room's summary
+    // A thread_broadcast reply's `root`: the parent as Slack sends it for
+    // rendering (no attachments or buttons). Shown in the channel preview
+    // until the parent itself is loaded.
+    std::string             threadParentText;
+    UserRef                 threadParentUser = kNoUser;
     // Only on local outgoing copies; kept with the cached message for a faithful Retry.
     std::string             sendBlocks;
     bool                    sendBroadcast = false;
@@ -237,7 +242,11 @@ struct Message {
     std::unique_ptr<MessageExtras> extra;
 
     bool                           isReply() const { return threadTs != 0 && threadTs != ts; }
+    bool                           isBroadcast() const; // a reply also sent to the channel
     bool                           isHuddle() const; // subtype huddle_thread (extra->huddle)
+    // A refetch or message_changed event may omit the subtype/root Slack sent
+    // with the original thread_broadcast: keep that identity and preview.
+    void                           preserveBroadcastContext(const Message &old);
     MessageExtras                 &extras();         // creates on first use
     const std::string             &subtype() const;
     const std::vector<File>       &files() const;

@@ -99,7 +99,8 @@ private:
     // picture over its name's letter.
     ui::View *addAvatar(ui::View *parent, const model::Message &m);
     void      buildSystem(const model::Message &m);
-    void      buildHeader(ui::View *col, const model::Message &m, bool tight);
+    void      buildBroadcastContext(ui::View *col, const model::Message &m);
+    void      buildHeader(ui::View *col, const model::Message &m, bool tight, bool threadContext);
     // The message's content under the header: body or blocks, buttons,
     // files, attachments (index ≥ 0 cards get the dismiss "×"), reactions.
     void      buildContent(ui::View *col, const model::Message &m, bool root);

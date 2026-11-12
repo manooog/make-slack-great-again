@@ -84,10 +84,9 @@ void collect(Export &x) {
     std::vector<const model::Message *> msgs;
     if (const model::Message *r = st.findMessage(x.conv, x.root))
         msgs.push_back(r);
-    if (const auto *rs = st.replies(x.conv, x.root))
-        for (const auto &m : *rs)
-            if (!m.pending)
-                msgs.push_back(&m);
+    for (const model::Message *m : st.threadTimeline(x.conv, x.root))
+        if (!m->pending)
+            msgs.push_back(m);
     // Bulletproof against pagination quirks: the root, repeated on every
     // page, is deduplicated, and all is re-sorted by time.
     std::stable_sort(msgs.begin(), msgs.end(), [](auto *a, auto *b) { return a->ts < b->ts; });

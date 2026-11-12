@@ -4,6 +4,7 @@
 #include "app/model/store_slot.h"
 #include "support/test.h"
 
+#include <algorithm>
 #include <utility>
 
 using namespace model;
@@ -795,6 +796,137 @@ TEST("store: thread replies update their root") {
     CHECK(f.s.findMessage(f.c, 100)->replyCount == 0);
     CHECK((r.log[0].kind == ChangeKind::Remove && r.log[0].thread == 100 && r.log[0].ts == 150));
     CHECK((r.log[1].kind == ChangeKind::Update && r.log[1].ts == 100));
+}
+
+TEST("store: a broadcast reply is a channel row of its original thread") {
+    Fixture f;
+    f.s.addPage(f.c, page({100}, f.mira));
+    f.s.updateConversation(f.c, [](Conversation &c) { c.lastRead = 100; });
+    Message broadcast          = msg(200, f.mira, "broadcast", 100);
+    broadcast.extras().subtype = "thread_broadcast";
+    Recorder r;
+    f.s.observe(f.c, r.fn());
+
+    f.s.addMessage(f.c, std::move(broadcast));
+    const Message *m = f.s.findMessage(f.c, 200);
+    REQUIRE(m != nullptr);
+    CHECK(m->isReply() && m->isBroadcast());
+    CHECK(m->threadTs == 100);
+    CHECK(f.s.conversation(f.c).messages.size() == 2);
+    CHECK(f.s.indexOf(f.c, 200) == 1);             // its own channel row
+    CHECK(f.s.indexOf(f.c, 200, 100) == SIZE_MAX); // not stored as a thread
+    CHECK(f.s.replies(f.c, 100) == nullptr);       // and no thread was invented
+    const Message *root = f.s.findMessage(f.c, 100);
+    REQUIRE(root != nullptr);
+    CHECK(root->replyCount == 1 && root->latestReply == 200);
+    CHECK(f.s.conversation(f.c).unread == 1);
+    const auto timeline = f.s.threadTimeline(f.c, 100);
+    REQUIRE(timeline.size() == 1);
+    CHECK(timeline[0]->ts == 200);
+
+    // A realtime update reaches both the channel row and the thread view.
+    r.log.clear();
+    CHECK(f.s.updateMessage(f.c, 200, [](Message &x) { x.text = "edited broadcast"; }));
+    CHECK_STR(f.s.findMessage(f.c, 200)->text, "edited broadcast");
+    CHECK(std::any_of(r.log.begin(), r.log.end(), [](const Change &c) {
+        return c.kind == ChangeKind::Update && c.thread == 0 && c.ts == 200;
+    }));
+    CHECK(std::any_of(r.log.begin(), r.log.end(), [](const Change &c) {
+        return c.kind == ChangeKind::Update && c.thread == 100 && c.ts == 200;
+    }));
+
+    // Deleting it leaves the root in place and drops the reply count.
+    CHECK(f.s.removeMessage(f.c, 200));
+    CHECK(f.s.conversation(f.c).messages.size() == 1);
+    CHECK(f.s.findMessage(f.c, 100)->replyCount == 0);
+    CHECK(f.s.threadTimeline(f.c, 100).empty());
+    CHECK(f.s.conversation(f.c).unread == 0);
+}
+
+TEST("store: a loaded thread reply becomes a broadcast without duplication") {
+    Fixture f;
+    f.s.addPage(f.c, page({100}, f.mira));
+    f.s.updateConversation(f.c, [](Conversation &c) { c.lastRead = 100; });
+    std::vector<Message> thread;
+    thread.push_back(msg(200, f.mira, "reply", 100));
+    f.s.addPage(f.c, std::move(thread));
+    f.s.updateMessage(f.c, 100, [](Message &root) {
+        root.replyCount  = 1;
+        root.latestReply = 200;
+    });
+    REQUIRE(f.s.replies(f.c, 100) && f.s.replies(f.c, 100)->size() == 1);
+    CHECK(f.s.indexOf(f.c, 200) == SIZE_MAX);
+
+    Message broadcast          = msg(200, f.mira, "broadcast reply", 100);
+    broadcast.extras().subtype = "thread_broadcast";
+    f.s.addMessage(f.c, std::move(broadcast));
+    CHECK(f.s.indexOf(f.c, 200) != SIZE_MAX);
+    CHECK(f.s.replies(f.c, 100)->empty()); // moved out of the thread collection
+    const auto timeline = f.s.threadTimeline(f.c, 100);
+    REQUIRE(timeline.size() == 1);
+    CHECK(timeline[0]->isBroadcast());
+    const Message *root = f.s.findMessage(f.c, 100);
+    REQUIRE(root != nullptr);
+    CHECK(root->replyCount == 1); // the same logical reply, not a second one
+    CHECK(root->latestReply == 200);
+    CHECK(f.s.conversation(f.c).unread == 1);
+
+    // A repeated event updates that one row, and changes nothing else.
+    Message again          = msg(200, f.mira, "edited broadcast", 100);
+    again.extras().subtype = "thread_broadcast";
+    f.s.addMessage(f.c, std::move(again));
+    CHECK(f.s.conversation(f.c).messages.size() == 2);
+    CHECK(f.s.replies(f.c, 100)->empty());
+    CHECK(f.s.threadTimeline(f.c, 100).size() == 1);
+    CHECK(f.s.findMessage(f.c, 100)->replyCount == 1);
+    CHECK(f.s.conversation(f.c).unread == 1);
+    CHECK_STR(f.s.findMessage(f.c, 200)->text, "edited broadcast");
+
+    CHECK(f.s.removeMessage(f.c, 200));
+    CHECK(f.s.conversation(f.c).messages.size() == 1);
+    CHECK(f.s.findMessage(f.c, 100)->replyCount == 0);
+    CHECK(f.s.threadTimeline(f.c, 100).empty());
+    CHECK(f.s.conversation(f.c).unread == 0);
+}
+
+TEST("store: a broadcast from history replaces a thread copy and stays canonical") {
+    Fixture f;
+    f.s.addPage(f.c, page({100}, f.mira));
+    std::vector<Message> thread;
+    thread.push_back(msg(300, f.mira, "thread v1", 100));
+    f.s.addPage(f.c, std::move(thread));
+    f.s.updateMessage(f.c, 100, [](Message &r) {
+        r.replyCount  = 1;
+        r.latestReply = 300;
+    });
+    REQUIRE(f.s.indexOf(f.c, 300) == SIZE_MAX);
+    REQUIRE(f.s.replies(f.c, 100) && f.s.replies(f.c, 100)->size() == 1);
+
+    // Channel history later carries the same reply as a broadcast.
+    Message fromHistory          = msg(300, f.mira, "broadcast v2", 100);
+    fromHistory.extras().subtype = "thread_broadcast";
+    std::vector<Message> historyPage;
+    historyPage.push_back(std::move(fromHistory));
+    f.s.addPage(f.c, std::move(historyPage));
+    CHECK(f.s.indexOf(f.c, 300) != SIZE_MAX);
+    CHECK(f.s.replies(f.c, 100)->empty());
+    REQUIRE(f.s.threadTimeline(f.c, 100).size() == 1);
+    CHECK_STR(f.s.findMessage(f.c, 300)->text, "broadcast v2");
+
+    // Thread loading comes later with the same reply, at a newer revision.
+    Message fromThread          = msg(300, f.mira, "broadcast v3", 100);
+    fromThread.extras().subtype = "thread_broadcast";
+    std::vector<Message> repliesPage;
+    repliesPage.push_back(std::move(fromThread));
+    f.s.addPage(f.c, std::move(repliesPage));
+    CHECK(f.s.replies(f.c, 100)->empty());
+    CHECK(f.s.conversation(f.c).messages.size() == 2);
+    CHECK_STR(f.s.findMessage(f.c, 300)->text, "broadcast v3");
+    const auto timeline = f.s.threadTimeline(f.c, 100);
+    REQUIRE(timeline.size() == 1);
+    CHECK(timeline[0]->ts == 300);
+    CHECK_STR(timeline[0]->text, "broadcast v3");
+    CHECK(f.s.findMessage(f.c, 100)->replyCount == 1);
 }
 
 TEST("store: reactions, updates and removal notify with the ts") {

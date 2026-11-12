@@ -767,6 +767,14 @@ model::Message toMessage(const json::Value &in, model::Store &store) {
         !structure.empty()) {
         model::MessageExtras &x = m.extras();
         x.subtype               = std::string(subtype);
+        // Slack's thread_broadcast event carries a renderable copy of the
+        // thread's parent. Keep just what the channel preview needs until the
+        // parent itself is loaded.
+        if (subtype == "thread_broadcast" && o.has("root")) {
+            const model::Message parent = toMessage(o["root"], store);
+            x.threadParentText          = parent.text;
+            x.threadParentUser          = parent.user;
+        }
         if (bot) {
             // username (a custom per-post name) > bot_profile.name; icons
             // image_72 > 48 > 36 > the post's icon_url.

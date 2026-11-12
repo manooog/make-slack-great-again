@@ -470,6 +470,7 @@ void SlackBackend::Live::onMessage(const json::Value &ev, bool ours) {
         s.updateMessage(c, m.ts, [&m](model::Message &x) {
             const Ts   thread = x.threadTs;
             const bool saved = x.saved, pending = x.pending;
+            m.preserveBroadcastContext(x);
             x          = std::move(m);
             x.threadTs = thread;
             x.saved    = saved;

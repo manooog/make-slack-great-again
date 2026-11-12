@@ -176,12 +176,17 @@ public:
     void setThreadRoot(ConvRef c, Message root);
     // Replies of a loaded thread (null if never loaded).
     const std::vector<Message> *replies(ConvRef c, Ts root) const;
+    // Everything a thread views: its loaded replies plus the replies that
+    // were broadcast into the channel timeline, oldest first. Pointers stay
+    // valid until the Store changes.
+    std::vector<const Message *> threadTimeline(ConvRef c, Ts root) const;
     // Position of ts in the top-level list (thread == 0) or in a thread;
     // SIZE_MAX if absent. Binary search: the lists are sorted by ts.
     size_t                      indexOf(ConvRef c, Ts ts, Ts thread = 0) const;
 
-    // A page of history or thread replies (any order, all in the same list:
-    // top-level messages, or replies with the same threadTs). Existing ts are
+    // A page of history or thread replies, any order: top-level messages,
+    // thread replies, or a history page mixing both (a broadcast reply keeps
+    // its channel row). Each message goes to its list. Existing ts are
     // replaced (Update); older ones Prepend, newer ones Append, others
     // Insert. Does not touch unread counts or roots' reply counters — a page
     // is what the server already counted.
