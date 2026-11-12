@@ -305,3 +305,5 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 30
+
+# Registered by a no-op commit: a fork starts with its workflows unregistered.
