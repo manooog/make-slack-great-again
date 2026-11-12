@@ -362,9 +362,20 @@ struct SlackBackend::Read {
     std::unordered_map<std::string, Ts> threadReadSeen;
     // A local Mark unread whose server cursor has not come back yet. While
     // set, an old feed answer must not clear the unread state.
-    std::unordered_map<std::string, Ts> threadUnreadPending;
-    uint64_t                            threadUnreadGen = 0;
-    void                                noteUnreadThreadReply(ConvRef c, Ts root, Ts ts);
+    struct ThreadUnreadPending {
+        Ts       target         = 0;
+        uint64_t confirmedEpoch = 0;
+    };
+    std::unordered_map<std::string, ThreadUnreadPending> threadUnreadPending;
+    // Per thread, when its last local Mark unread was issued; and globally,
+    // when any mark was issued / a thread-mark write was confirmed. A feed
+    // request carries both epochs so only the affected thread is guarded and
+    // a write confirmation can release that guard.
+    std::unordered_map<std::string, uint64_t> threadUnreadMarkEpoch;
+    uint64_t                                  threadUnreadEpoch = 0;
+    uint64_t                                  threadUnreadConfirmedEpoch = 0;
+    void threadMarkConfirmed(ConvRef c, Ts root, Ts target, bool ok);
+    void noteUnreadThreadReply(ConvRef c, Ts root, Ts ts);
     void                                threadRead(ConvRef c, Ts root, Ts upTo);
     void                                threadUnread(ConvRef c, Ts root, Ts to);
     void                                publishUnreadThreads();
@@ -386,7 +397,8 @@ struct SlackBackend::Read {
         Ts                 lastRead,
         bool               priming,
         Ts                &baseline,
-        uint64_t           unreadGenAtStart
+        uint64_t           unreadEpochAtStart,
+        uint64_t           confirmEpochAtStart
     );
     void announceReplies(
         const std::string           &key,
@@ -1924,7 +1936,10 @@ void SlackBackend::updateSection(const std::string &id, std::string name, std::s
 
 void SlackBackend::deleteSection(const std::string &id) {
     Backend::deleteSection(id);
-    sectionCall("users.channelSections.delete", net::formEncode({{"channel_section_id", id}}), {});
+    sectionCall(
+        "users.channelSections.delete", net::formEncode({{"channel_section_id", id}}),
+        [this](const json::Document &) { _read->sectionsStale = true; }
+    );
 }
 
 void SlackBackend::moveToSection(ConvRef conv, const std::string &id) {
@@ -2979,12 +2994,14 @@ void SlackBackend::Read::pollThreadReplies() {
         pollThreadSubs();
         return;
     }
-    const uint64_t unreadGenAtStart = threadUnreadGen;
+    const uint64_t unreadEpochAtStart  = threadUnreadEpoch;
+    const uint64_t confirmEpochAtStart = threadUnreadConfirmedEpoch;
     call(
         "subscriptions.thread.getView",
         threadsForm("limit=10&priority_mode=all"),
-        [this, sentTeam = b._threadsTeamId, unreadGenAtStart](const json::Document &doc,
-                                                             const std::string &err) {
+        [this, sentTeam = b._threadsTeamId, unreadEpochAtStart, confirmEpochAtStart](
+            const json::Document &doc, const std::string &err
+        ) {
             if (!err.empty()) {
                 if (isFeedRefusal(err)) {
                     LOG_WARN("slack", "subscriptions.thread.getView: %s", err.c_str());
@@ -3004,7 +3021,7 @@ void SlackBackend::Read::pollThreadReplies() {
                 Ts                baseline;
                 if (feedThread(
                         key, ft.conv, ft.root, newest, ft.lastRead, priming, baseline,
-                        unreadGenAtStart
+                        unreadEpochAtStart, confirmEpochAtStart
                     ))
                     announceReplies(
                         key, ft.conv, baseline, newest, ft.replies, ft.parentIsMe, injected
@@ -3014,7 +3031,7 @@ void SlackBackend::Read::pollThreadReplies() {
             // A local Mark unread still waiting for its cursor survives both
             // an old answer and the server's all-clear.
             if (doc.root()["total_unread_replies"].integer() == 0 &&
-                unreadGenAtStart == threadUnreadGen) {
+                unreadEpochAtStart == threadUnreadEpoch) {
                 for (auto it = unreadThreads.begin(); it != unreadThreads.end();) {
                     if (threadUnreadPending.count(it->first))
                         ++it;
@@ -3038,14 +3055,25 @@ bool SlackBackend::Read::feedThread(
     Ts                 lastRead,
     bool               priming,
     Ts                &baseline,
-    uint64_t           unreadGenAtStart
+    uint64_t           unreadEpochAtStart,
+    uint64_t           confirmEpochAtStart
 ) {
     follow(key); // the feed IS the subscription list
-    const bool staleRead = unreadGenAtStart != threadUnreadGen;
+    const auto mark = threadUnreadMarkEpoch.find(key);
+    const bool staleRead = mark != threadUnreadMarkEpoch.end() &&
+                           unreadEpochAtStart < mark->second;
     if (!staleRead) {
         const auto it = threadUnreadPending.find(key);
-        if (it != threadUnreadPending.end() && lastRead == it->second)
-            threadUnreadPending.erase(it); // the server applied it
+        if (it != threadUnreadPending.end()) {
+            const bool confirmedBefore =
+                it->second.confirmedEpoch != 0 &&
+                confirmEpochAtStart >= it->second.confirmedEpoch;
+            // The echo of the mark itself is always safe. A later cursor is
+            // only safe once this client's write has been confirmed.
+            if (lastRead == it->second.target ||
+                (confirmedBefore && lastRead > it->second.target))
+                threadUnreadPending.erase(it);
+        }
     }
     const bool protectedUnread = staleRead || threadUnreadPending.count(key) != 0;
     // Read further on some client (here or elsewhere): its notifications go.
@@ -3120,12 +3148,14 @@ void SlackBackend::Read::announceReplies(
 // only a thread whose newest message moved past its baseline costs a
 // conversations.replies for the news.
 void SlackBackend::Read::pollThreadSubs() {
-    const uint64_t unreadGenAtStart = threadUnreadGen;
+    const uint64_t unreadEpochAtStart  = threadUnreadEpoch;
+    const uint64_t confirmEpochAtStart = threadUnreadConfirmedEpoch;
     call(
         "subscriptions.thread.getTimestamps",
         threadsForm(kSubsForm),
-        [this, sentTeam = b._threadsTeamId, unreadGenAtStart](const json::Document &doc,
-                                                             const std::string &err) {
+        [this, sentTeam = b._threadsTeamId, unreadEpochAtStart, confirmEpochAtStart](
+            const json::Document &doc, const std::string &err
+        ) {
             if (!err.empty()) {
                 if (isFeedRefusal(err)) {
                     LOG_WARN("slack", "subscriptions.thread.getTimestamps: %s", err.c_str());
@@ -3144,7 +3174,7 @@ void SlackBackend::Read::pollThreadSubs() {
                 Ts                baseline;
                 if (!feedThread(
                         key, t.conv, t.root, t.latest, t.lastRead, priming, baseline,
-                        unreadGenAtStart
+                        unreadEpochAtStart, confirmEpochAtStart
                     ))
                     continue;
                 if (t.latest <= baseline) {
@@ -3216,14 +3246,31 @@ void SlackBackend::Read::threadRead(ConvRef c, Ts root, Ts upTo) {
     s.threadRead(c, root, upTo);
 }
 
+// A subscriptions.thread.mark answer for one local Mark unread. Confirming
+// only the matching target lets a later feed release the guard.
+void SlackBackend::Read::threadMarkConfirmed(ConvRef c, Ts root, Ts target, bool ok) {
+    if (!ok)
+        return;
+    const std::string key = threadKey(c, root);
+    const auto        it  = threadUnreadPending.find(key);
+    if (it == threadUnreadPending.end() || it->second.target != target)
+        return;
+    it->second.confirmedEpoch = ++threadUnreadConfirmedEpoch;
+}
+
 // "Mark unread" on a reply: the floor goes back to `to` (just before the
 // reply) and the thread lights the Threads entry again, up to its newest
 // reply. The baseline stays: what was announced isn't announced again.
+void SlackBackend::markThreadConfirmed(ConvRef c, Ts root, Ts target, bool ok) {
+    _read->threadMarkConfirmed(c, root, target, ok);
+}
+
 void SlackBackend::Read::threadUnread(ConvRef c, Ts root, Ts to) {
     const std::string key = threadKey(c, root);
-    ++threadUnreadGen;
-    threadUnreadPending[key] = to;
-    threadReadFloor[key]     = to;
+    const uint64_t epoch       = ++threadUnreadEpoch;
+    threadUnreadMarkEpoch[key] = epoch;
+    threadUnreadPending[key]   = {to, 0};
+    threadReadFloor[key]       = to;
     Ts &newest            = unreadThreads[key];
     newest                = std::max({newest, newestHeldReply(c, root), to + 1});
     publishUnreadThreads();
@@ -3656,18 +3703,23 @@ void SlackBackend::Read::pruneThreadState() {
         std::erase_if(followed, [cut](const std::string &k) { return keyTs(k) < cut; });
         extrasChanged();
     }
-    for (auto *m : {&threadBaseline, &threadReadFloor, &threadReadSeen, &threadUnreadPending}) {
-        if (m->size() <= 2 * kMaxThreadState)
-            continue;
+    const auto pruneMap = [&](auto &m) {
+        if (m.size() <= 2 * kMaxThreadState)
+            return;
         std::vector<Ts> roots;
-        for (const auto &[k, ts] : *m)
+        for (const auto &[k, ts] : m)
             roots.push_back(keyTs(k));
         const Ts cut = pruneCut(std::move(roots), kMaxThreadState);
-        std::erase_if(*m, [&](const auto &kv) {
+        std::erase_if(m, [&](const auto &kv) {
             return keyTs(kv.first) < cut && !followed.count(kv.first) &&
                    !unreadThreads.count(kv.first);
         });
-    }
+    };
+    pruneMap(threadBaseline);
+    pruneMap(threadReadFloor);
+    pruneMap(threadReadSeen);
+    pruneMap(threadUnreadPending);
+    pruneMap(threadUnreadMarkEpoch);
 }
 
 // The newest reply of a loaded thread that isn't a pending send (0: none).

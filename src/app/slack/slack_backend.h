@@ -294,6 +294,8 @@ private:
     void        threadUnread(model::ConvRef c, model::Ts root, model::Ts to);
     // subscriptions.thread.mark's form (read = false: "Mark unread").
     std::string threadMarkForm(model::ConvRef c, model::Ts root, model::Ts ts, bool read) const;
+    // A subscriptions.thread.mark answer for a local Mark unread.
+    void markThreadConfirmed(model::ConvRef c, model::Ts root, model::Ts target, bool ok);
     // The DM read-cursor sweeps (the DM activity sweep, resyncUnreads;
     // slack_backend.cpp): which conversations, and one conversations.info
     // on the paced lane (null: it failed; channel_not_found marks it dead).

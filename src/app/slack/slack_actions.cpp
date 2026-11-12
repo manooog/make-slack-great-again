@@ -245,8 +245,9 @@ struct SlackBackend::Write {
     // user last put it (read, then "Mark unread"). While one is out, only
     // the newest waiting form is kept and sent once it answers.
     struct Mark {
-        std::string key, waiting; // waiting: the next form to send ("" none)
-        bool        inFlight = false;
+        std::string               key, waiting; // waiting: the next form to send ("" none)
+        bool                      inFlight = false;
+        std::function<void(bool)> done, waitingDone;
     };
     std::vector<Mark> marks;
 
@@ -255,26 +256,41 @@ struct SlackBackend::Write {
             "conversations.mark", channel, net::formEncode({{"channel", channel}, {"ts", ts}})
         );
     }
-    void markThread(const std::string &channel, Ts root, std::string form) {
+    void markThread(
+        const std::string        &channel,
+        Ts                        root,
+        std::string               form,
+        std::function<void(bool)> done = {}
+    ) {
         markCursor(
-            "subscriptions.thread.mark", channel + "/" + model::formatTs(root), std::move(form)
+            "subscriptions.thread.mark",
+            channel + "/" + model::formatTs(root),
+            std::move(form),
+            std::move(done)
         );
     }
 
-    void markCursor(const char *method, const std::string &key, std::string form) {
+    void markCursor(
+        const char               *method,
+        const std::string        &key,
+        std::string               form,
+        std::function<void(bool)> done = {}
+    ) {
         Mark *m = nullptr;
         for (auto &x : marks)
             if (x.key == key)
                 m = &x;
         if (!m) {
-            marks.push_back({key, {}, false});
+            marks.push_back({key, {}, false, {}, {}});
             m = &marks.back();
         }
         if (m->inFlight) {
-            m->waiting = std::move(form);
+            m->waiting     = std::move(form);
+            m->waitingDone = std::move(done);
             return;
         }
         m->inFlight = true;
+        m->done     = std::move(done);
         // Retried like a read: a lost mark leaves the chat unread elsewhere.
         b.readCall(
             method,
@@ -292,10 +308,14 @@ struct SlackBackend::Write {
                     if (marks[i].key != key)
                         continue;
                     marks[i].inFlight = false;
-                    std::string next  = std::move(marks[i].waiting);
+                    std::string               next     = std::move(marks[i].waiting);
+                    std::function<void(bool)> nextDone = std::move(marks[i].waitingDone);
+                    auto                      done     = std::move(marks[i].done);
                     marks.erase(marks.begin() + i);
+                    if (done)
+                        done(err.empty());
                     if (!next.empty())
-                        markCursor(method, key, std::move(next));
+                        markCursor(method, key, std::move(next), std::move(nextDone));
                     return;
                 }
             }
@@ -1376,8 +1396,12 @@ void SlackBackend::markThreadUnread(ConvRef conv, Ts root, Ts ts) {
     // channel's does in markUnread); the channel's stays where it is.
     if (!canMarkThreadUnread(conv, root) || ts <= root)
         return;
-    threadUnread(conv, root, ts - 1); // the Threads entry
-    _write->markThread(convId(conv), root, threadMarkForm(conv, root, ts - 1, false));
+    const Ts target = ts - 1;
+    threadUnread(conv, root, target); // the Threads entry
+    _write->markThread(
+        convId(conv), root, threadMarkForm(conv, root, target, false),
+        [this, conv, root, target](bool ok) { markThreadConfirmed(conv, root, target, ok); }
+    );
 }
 
 void SlackBackend::markUnread(ConvRef conv, Ts ts) {
