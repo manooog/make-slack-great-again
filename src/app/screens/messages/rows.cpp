@@ -1361,7 +1361,43 @@ void MessageRow::buildSystem(const model::Message &m) {
     l->style().flex(1);
 }
 
-void MessageRow::buildHeader(ui::View *col, const model::Message &m, bool tight) {
+void MessageRow::buildBroadcastContext(ui::View *col, const model::Message &m) {
+    Context       &ctx = _list.ctx();
+    const Store   &st  = ctx.store;
+    std::string    preview;
+    model::UserRef author = model::kNoUser;
+    if (const model::Message *root = st.findMessage(_list.conversation(), m.threadTs);
+        root && root->ts == m.threadTs) {
+        preview = plainText(st, root->text);
+        author  = root->user;
+    } else if (m.extra) {
+        preview = plainText(st, m.extra->threadParentText);
+        author  = m.extra->threadParentUser;
+    }
+    if (author != model::kNoUser && !preview.empty())
+        preview = str::concat({st.user(author).label(), ": ", preview});
+    auto *line = col->add<ui::Clickable>();
+    line->setLook({C::None, C::RowHover, C::RowHover, C::None, 4});
+    line->style().row().height(20).spacing(5).items(Align::Center).margins(0, 0, 0, 1);
+    line->setTooltip(tr("View thread"));
+    line->setRole(ui::Role::Button);
+    line->add<ui::IconView>(gfx::Icon::MessageSquareReply, 12, C::TextFaint);
+    auto *lead = line->add<ui::Label>(
+        arg(tr("%1 replied to a thread:"), authorName(st, m)), Font::Small, C::TextMuted
+    );
+    lead->setMaxLines(1);
+    lead->style().noShrink();
+    if (!preview.empty()) {
+        auto *text = line->add<ui::Label>(std::move(preview), Font::Small, C::TextFaint);
+        text->setMaxLines(1);
+    }
+    const Ts root = m.threadTs, reply = m.ts;
+    line->onClick = [this, root, reply] { _list.viewThread(root, reply); };
+}
+
+void MessageRow::buildHeader(
+    ui::View *col, const model::Message &m, bool tight, bool threadContext
+) {
     Context     &ctx = _list.ctx();
     const Store &st  = ctx.store;
     const bool   bot = isBot(st, m);
@@ -1392,6 +1428,13 @@ void MessageRow::buildHeader(ui::View *col, const model::Message &m, bool tight)
     hdr->add<ui::Label>(base::formatTime(model::tsSecs(m.ts)), Font::Small, C::TextFaint)
         ->style()
         .margins(8, 0, 0, 0);
+    if (threadContext && m.isBroadcast()) {
+        auto *sent = hdr->add<ui::View>();
+        sent->style().row().spacing(3).items(Align::Center).margins(8, 0, 0, 0).noShrink();
+        sent->add<ui::IconView>(gfx::Icon::Hash, 10, C::TextMuted);
+        auto *label = sent->add<ui::Label>(tr("Also sent to channel"), Font::Small, C::TextMuted);
+        label->setMaxLines(1);
+    }
 }
 
 void MessageRow::applyBanners(const model::Message &m, bool grouped) {
@@ -1444,8 +1487,10 @@ void MessageRow::buildMessage(const model::Message &m, bool grouped) {
     }
     auto *col = add<ui::View>();
     col->style().flex(1).spacing(0);
+    if (m.isBroadcast() && !_list.threadMode())
+        buildBroadcastContext(col, m);
     if (!grouped)
-        buildHeader(col, m, false);
+        buildHeader(col, m, false, _list.threadMode());
     buildContent(col, m, true);
     _col = col;
     rememberBody(m);
@@ -1455,7 +1500,8 @@ void MessageRow::buildMessage(const model::Message &m, bool grouped) {
 void MessageRow::buildTail(ui::View *col, const model::Message &m) {
     if (!m.reactions.empty())
         buildReactions(col, m);
-    if (m.replyCount > 0 && !(_list.threadMode() && m.ts == _list.threadRoot())) {
+    if (m.replyCount > 0 && !m.isBroadcast() &&
+        !(_list.threadMode() && m.ts == _list.threadRoot())) {
         buildThreadSummary(col, m);
         if (_list.inlineOpen(m.ts))
             buildInlineThread(col, m);
@@ -2003,8 +2049,8 @@ void MessageRow::buildInlineThread(ui::View *col, const model::Message &root) {
     const Store &st  = ctx.store;
     auto        *box = col->add<ui::View>();
     box->style().spacing(0).margins(0, 8, 0, 0);
-    const std::vector<model::Message> *replies = st.replies(_list.conversation(), root.ts);
-    if (!replies || replies->empty()) {
+    const auto replies = st.threadTimeline(_list.conversation(), root.ts);
+    if (replies.empty()) {
         auto *l = ui::styledLabel(
             box,
             tr("Loading replies\xE2\x80\xA6"),
@@ -2013,10 +2059,10 @@ void MessageRow::buildInlineThread(ui::View *col, const model::Message &root) {
         l->style().height(28);
     } else {
         const model::Message *prev = nullptr;
-        for (const model::Message &r : *replies) {
+        for (const model::Message *r : replies) {
             // Collapsed as in the list: same author within five minutes.
-            const bool grouped = prev && groupable(*prev, r);
-            prev               = &r;
+            const bool grouped = prev && groupable(*prev, *r);
+            prev               = r;
             auto *rr           = box->add<ui::View>();
             rr->style()
                 .row()
@@ -2028,12 +2074,12 @@ void MessageRow::buildInlineThread(ui::View *col, const model::Message &root) {
             if (grouped)
                 rr->add<ui::View>()->style().size(kAvSize, 1).noShrink();
             else
-                addAvatar(rr, r)->style().size(kAvSize, kAvSize).margins(0, 2, 0, 0).noShrink();
+                addAvatar(rr, *r)->style().size(kAvSize, kAvSize).margins(0, 2, 0, 0).noShrink();
             auto *rc = rr->add<ui::View>();
             rc->style().flex(1).spacing(0);
             if (!grouped)
-                buildHeader(rc, r, false);
-            buildContent(rc, r, false);
+                buildHeader(rc, *r, false, true);
+            buildContent(rc, *r, false);
         }
     }
     auto    *foot = box->add<FooterLink>(tr("Reply to thread"));

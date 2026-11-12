@@ -36,6 +36,8 @@ bool groupable(const model::Message &prev, const model::Message &cur) {
         return false;
     if (prev.isHuddle() || cur.isHuddle()) // each huddle its own row (its tile and name)
         return false;
+    if (prev.isBroadcast() || cur.isBroadcast()) // its thread context is a header of its own
+        return false;
     if (prev.replyCount > 0 || cur.replyCount > 0)
         return false;
     return cur.ts - prev.ts < kGroupMicros;

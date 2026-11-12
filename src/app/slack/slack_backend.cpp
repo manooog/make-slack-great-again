@@ -2285,9 +2285,10 @@ void SlackBackend::resolveChannel(const std::string &id) {
 
 // ── History and threads ─────────────────────────────────────────────────────
 
-// Maps a page (any order) oldest first. History pages are top-level lists:
-// an "also sent to channel" reply sits there as a top-level copy. Local
-// state the server doesn't echo (my saved flag) carries over.
+// Maps a page (any order) oldest first. History pages are top-level lists,
+// except that a thread_broadcast reply appears there too while keeping its
+// thread_ts: Slack shows that reply in the channel and in its original
+// thread. Local state the server doesn't echo (my saved flag) carries over.
 std::vector<model::Message>
 SlackBackend::Read::mapPage(ConvRef c, const json::Value &arr, bool topLevel) {
     std::vector<model::Message> page;
@@ -2296,15 +2297,24 @@ SlackBackend::Read::mapPage(ConvRef c, const json::Value &arr, bool topLevel) {
         model::Message m = mapjson::toMessage(v, s);
         if (!m.ts)
             continue;
-        if (topLevel && m.isReply())
+        if (topLevel && m.isReply() && !m.isBroadcast())
             m.threadTs = 0;
-        if (const model::Message *old = s.findMessage(c, m.ts))
+        if (const model::Message *old = s.findMessage(c, m.ts)) {
             m.saved = old->saved;
-        else
+            m.preserveBroadcastContext(*old);
+        } else
             m.saved = serverSaved.count(threadKey(c, m.ts)) > 0;
         page.push_back(std::move(m));
     }
     model::sortByTs(page);
+    page.erase(
+        std::unique(
+            page.begin(),
+            page.end(),
+            [](const model::Message &a, const model::Message &b) { return a.ts == b.ts; }
+        ),
+        page.end()
+    );
     return page;
 }
 
@@ -2423,24 +2433,24 @@ void SlackBackend::Read::loadThreadPages(ConvRef c, Ts root, bool live, Backend:
                 }
             }
             resolveAuthors(acc->replies);
-            const std::vector<model::Message> *have = s.replies(c, root);
+            std::vector<const model::Message *> have = s.threadTimeline(c, root);
             // Every page was read, so the set is complete: a reply we hold
             // that the server no longer has was deleted elsewhere.
-            if (have) {
+            if (!have.empty()) {
                 std::vector<Ts> fetched, gone;
                 fetched.reserve(acc->replies.size());
                 for (const model::Message &x : acc->replies)
                     fetched.push_back(x.ts);
                 std::sort(fetched.begin(), fetched.end());
-                for (const model::Message &m : *have)
-                    if (!m.pending && !std::binary_search(fetched.begin(), fetched.end(), m.ts))
-                        gone.push_back(m.ts);
+                for (const model::Message *m : have)
+                    if (!m->pending && !std::binary_search(fetched.begin(), fetched.end(), m->ts))
+                        gone.push_back(m->ts);
                 for (Ts ts : gone)
                     s.removeMessage(c, ts);
-                have = s.replies(c, root);
+                have = s.threadTimeline(c, root);
             }
-            if (live && have) {
-                const Ts newest = have->empty() ? 0 : have->back().ts;
+            if (live && !have.empty()) {
+                const Ts newest = have.back()->ts;
                 for (size_t i = 0; i < acc->replies.size(); ++i)
                     if (acc->replies[i].ts > newest)
                         inject(c, acc->replies[i].clone(), acc->parentIsMe[i]);
@@ -3561,16 +3571,24 @@ void SlackBackend::loadMessage(ConvRef conv, Ts ts, MessageDone done) {
 // a muted conversation badges only mentions and followed-thread replies,
 // plain channel thread replies don't badge the channel.
 bool SlackBackend::Read::inject(ConvRef c, model::Message m, bool parentIsMe) {
-    if (c >= s.conversationCount() || s.findMessage(c, m.ts))
-        return false; // seen already (a history page, the send's own echo)
-    const bool own  = s.me != kNoUser && m.user == s.me;
-    const Ts   root = m.isReply() ? m.threadTs : 0;
+    if (c >= s.conversationCount())
+        return false;
+    if (s.findMessage(c, m.ts)) {
+        // A loaded ordinary thread reply may later be broadcast. Let that
+        // event move it into the channel; anything else is already seen.
+        const bool needsChannelRow = m.isBroadcast() && s.indexOf(c, m.ts) == SIZE_MAX;
+        if (!needsChannelRow)
+            return false;
+    }
+    const bool own            = s.me != kNoUser && m.user == s.me;
+    const Ts   root           = m.isReply() ? m.threadTs : 0;
+    const bool channelVisible = !root || m.isBroadcast(); // a broadcast has a channel row
     if (own && !m.sendId.empty()) {
         // A client's exact request id is stronger than matching text: two
         // consecutive identical messages are independent sends. Also retire
         // an unconfirmed copy recovered after a restart if an echo confirms it.
         const std::vector<model::Message> *list =
-            root ? s.replies(c, root) : &s.conversation(c).messages;
+            root && !channelVisible ? s.replies(c, root) : &s.conversation(c).messages;
         if (list)
             for (const model::Message &local : *list)
                 if (local.delivery != model::DeliveryState::Confirmed &&
@@ -3610,7 +3628,7 @@ bool SlackBackend::Read::inject(ConvRef c, model::Message m, bool parentIsMe) {
     bool                       counted  = !own && cv.member && ts > lastRead;
     const bool                 isDm = cv.isDirect(), muted = cv.muted;
 
-    if (root && !s.replies(c, root)) {
+    if (root && !channelVisible && !s.replies(c, root)) {
         // The thread isn't loaded: count the reply on its root only (the
         // panel reads the whole thread when it opens).
         s.updateMessage(c, root, [&](model::Message &r) {
@@ -3643,7 +3661,7 @@ bool SlackBackend::Read::inject(ConvRef c, model::Message m, bool parentIsMe) {
     if (counted) {
         const bool threadMuted = root && s.threadMuted(c, root);
         const bool isFollowed  = !threadMuted && root && (parentIsMe || followed.count(key));
-        if (root && !mention && !isFollowed && (threadMuted || !isDm)) {
+        if (!channelVisible && root && !mention && !isFollowed && (threadMuted || !isDm)) {
             // lives in the thread, not the channel
         } else if (!muted) {
             du = 1;
@@ -3724,11 +3742,10 @@ void SlackBackend::Read::pruneThreadState() {
 
 // The newest reply of a loaded thread that isn't a pending send (0: none).
 Ts SlackBackend::Read::newestHeldReply(ConvRef c, Ts root) const {
-    const std::vector<model::Message> *have = s.replies(c, root);
-    if (have)
-        for (size_t i = have->size(); i-- > 0;)
-            if (!(*have)[i].pending)
-                return (*have)[i].ts;
+    const std::vector<const model::Message *> have = s.threadTimeline(c, root);
+    for (size_t i = have.size(); i-- > 0;)
+        if (!have[i]->pending)
+            return have[i]->ts;
     return 0;
 }
 

@@ -560,6 +560,10 @@ msgstr "%1と%2"
 msgid "Several people are typing…"
 msgstr "複数の人が入力中…"
 
+#: src/app/screens/messages/message_list.cpp src/app/screens/messages/rows.cpp
+msgid "View thread"
+msgstr "スレッドを表示"
+
 #: src/app/screens/messages/message_list.cpp
 msgid "Open thread"
 msgstr "スレッドを開く"
@@ -806,12 +810,12 @@ msgid "Close thread"
 msgstr "スレッドを閉じる"
 
 #: src/app/screens/messages/rows.cpp
-msgid "View thread"
-msgstr "スレッドを表示"
-
-#: src/app/screens/messages/rows.cpp
 msgid "%1 joined."
 msgstr "%1 が参加しました。"
+
+#: src/app/screens/messages/rows.cpp
+msgid "%1 replied to a thread:"
+msgstr ""
 
 #: src/app/screens/messages/rows.cpp src/app/slack/slack_json.cpp
 msgid "A huddle happened"
@@ -820,6 +824,10 @@ msgstr "ハドルが行われました"
 #: src/app/screens/messages/rows.cpp src/app/slack/slack_json.cpp
 msgid "A huddle started"
 msgstr "ハドルが開始されました"
+
+#: src/app/screens/messages/rows.cpp
+msgid "Also sent to channel"
+msgstr ""
 
 #: src/app/screens/messages/rows.cpp
 msgid "Pinned by %1"

@@ -295,6 +295,41 @@ TEST("slack read: history pages arrive oldest first, hasMoreBefore follows has_m
     CHECK_STR(l.get("conversations.history", 1)["form"]["inclusive"].str(), "false");
 }
 
+TEST("slack read: history keeps broadcast replies in the channel with their thread") {
+    if (!haveServer())
+        return;
+    Env           e(nullptr);
+    const ConvRef c    = e.addChannel("C1");
+    const Ts      root = model::parseTs("1700000100.000100");
+    const Ts      ts   = model::parseTs("1700000300.000300");
+    script("conversations.history", R"([
+      {"ok": true, "has_more": false, "messages": [
+        {"type": "message", "ts": "1700000300.000300", "thread_ts": "1700000100.000100",
+         "subtype": "thread_broadcast", "user": "UMIRA", "text": "broadcast reply",
+         "root": {"type": "message", "ts": "1700000100.000100", "user": "UJONAS",
+                  "text": "original topic"}},
+        {"type": "message", "ts": "1700000100.000100", "thread_ts": "1700000100.000100",
+         "user": "UJONAS", "text": "original topic", "reply_count": 1,
+         "latest_reply": "1700000300.000300", "reply_users": ["UMIRA"]}]}
+    ])");
+    REQUIRE(e.history(c, 0));
+    const auto &conv = e.store.conversation(c);
+    REQUIRE(conv.messages.size() == 2);
+    CHECK(!conv.messages[0].isReply());
+    const model::Message &broadcast = conv.messages[1];
+    CHECK(broadcast.ts == ts);
+    CHECK(broadcast.isReply() && broadcast.isBroadcast());
+    CHECK(broadcast.threadTs == root);
+    REQUIRE(broadcast.extra);
+    CHECK_STR(broadcast.extra->threadParentText, "original topic");
+    CHECK(broadcast.extra->threadParentUser == e.store.findUser("UJONAS"));
+    // The thread owns the relationship; the channel row is the same reply.
+    const auto timeline = e.store.threadTimeline(c, root);
+    REQUIRE(timeline.size() == 1);
+    CHECK(timeline[0]->ts == ts);
+    CHECK(e.store.replies(c, root) == nullptr); // no nested thread was invented
+}
+
 TEST("slack read: a thread loads every replies page and refreshes its root") {
     if (!haveServer())
         return;
@@ -326,14 +361,20 @@ TEST("slack read: a thread loads every replies page and refreshes its root") {
     });
     REQUIRE(pumpUntil([&] { return called; }) && ok);
     const std::vector<model::Message> *replies = e.store.replies(c, root);
-    REQUIRE(replies && replies->size() == 2);
+    REQUIRE(replies && replies->size() == 1);
     CHECK_STR((*replies)[0].text, "one");
-    CHECK_STR((*replies)[1].text, "two");
-    CHECK((*replies)[1].threadTs == root);
+    // A broadcast reply belongs to the thread and has its channel row too.
+    const auto timeline = e.store.threadTimeline(c, root);
+    REQUIRE(timeline.size() == 2);
+    CHECK_STR(timeline[1]->text, "two");
+    CHECK(timeline[1]->threadTs == root && timeline[1]->isBroadcast());
+    const auto &channel = e.store.conversation(c).messages;
+    REQUIRE(channel.size() == 2);
+    CHECK(channel.back().ts == timeline[1]->ts);
+    CHECK(channel.back().isBroadcast());
     const model::Message *r = e.store.findMessage(c, root);
     REQUIRE(r);
     CHECK(r->replyCount == 2 && r->replyUsers.size() == 2);
-    CHECK(e.store.conversation(c).messages.size() == 1); // replies stay in the thread
     Log l;
     CHECK_STR(l.get("conversations.replies", 1)["form"]["cursor"].str(), "r2");
     CHECK_STR(l.get("conversations.replies")["form"]["ts"].str(), "1700000200.000200");

@@ -143,13 +143,12 @@ void fetchNext(const JobPtr &j) {
         if (j->asked || j->next >= j->roots.size() || j->roots[j->next] != root)
             return; // the deadline went on without it
         if (j->sameStore())
-            if (const auto *list = j->ctx.store().replies(j->conv, root))
-                for (const model::Message &m : *list) {
-                    if (m.ts == root || m.pending || isSystem(m))
-                        continue;
-                    if (std::string t = j->text(m); !t.empty())
-                        j->replies[j->next].push_back({j->author(m), std::move(t), true});
-                }
+            for (const model::Message *m : j->ctx.store().threadTimeline(j->conv, root)) {
+                if (m->ts == root || m->pending || isSystem(*m))
+                    continue;
+                if (std::string t = j->text(*m); !t.empty())
+                    j->replies[j->next].push_back({j->author(*m), std::move(t), true});
+            }
         ++j->next;
         fetchNext(j);
     });

@@ -505,6 +505,10 @@ struct SlackBackend::Write {
             m.user = store().me;
         if (!m.threadTs && st->thread)
             m.threadTs = st->thread;
+        // chat.postMessage and its reconciliation may omit the subtype Slack
+        // gives a broadcast reply. Keep the intent this send was created with.
+        if (st->broadcast)
+            m.extras().subtype = "thread_broadcast";
         m.pending  = false;
         m.delivery = model::DeliveryState::Confirmed;
         if (st->undone) { // undo send while in flight: the server copy goes too

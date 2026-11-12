@@ -789,10 +789,10 @@ void Composer::editLast() {
         return m.user == st.me && st.me != model::kNoUser && m.subtype().empty() && !m.pending;
     };
     if (_key.thread) {
-        if (const auto *r = st.replies(_key.conv, _key.thread))
-            for (auto it = r->rbegin(); it != r->rend(); ++it)
-                if (mine(*it))
-                    return beginEdit(it->ts);
+        const auto r = st.threadTimeline(_key.conv, _key.thread);
+        for (auto it = r.rbegin(); it != r.rend(); ++it)
+            if (mine(**it))
+                return beginEdit((*it)->ts);
         const model::Message *root = st.findMessage(_key.conv, _key.thread);
         if (root && mine(*root))
             beginEdit(root->ts);
@@ -989,13 +989,19 @@ void Composer::offerUndo(const std::string &html, const std::vector<std::string>
     if (!window())
         return;
     // The ghost: my newest pending message in this list.
-    const auto *list = _key.thread ? _ctx.store().replies(_key.conv, _key.thread)
-                                   : &_ctx.store().conversation(_key.conv).messages;
-    _undoTs          = 0;
-    if (list)
-        for (auto it = list->rbegin(); it != list->rend() && !_undoTs; ++it)
-            if (it->user == _ctx.store().me && it->pending)
+    const model::Store &st = _ctx.store();
+    _undoTs                = 0;
+    if (_key.thread) {
+        const auto list = st.threadTimeline(_key.conv, _key.thread);
+        for (auto it = list.rbegin(); it != list.rend() && !_undoTs; ++it)
+            if ((*it)->user == st.me && (*it)->pending)
+                _undoTs = (*it)->ts;
+    } else {
+        const auto &list = st.conversation(_key.conv).messages;
+        for (auto it = list.rbegin(); it != list.rend() && !_undoTs; ++it)
+            if (it->user == st.me && it->pending)
                 _undoTs = it->ts;
+    }
     if (!_undoTs)
         return;
     _undoHtml        = html;

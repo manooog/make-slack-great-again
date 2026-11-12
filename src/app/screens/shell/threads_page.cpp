@@ -385,13 +385,13 @@ void ThreadsPage::Card::onChange(const model::Change &ch) {
     bool changed = false;
     if (ch.kind == K::Append || ch.kind == K::Insert) {
         // Live replies: a realtime one, or our own pending send.
-        const std::vector<model::Message> *list = store.replies(_item.conv, _item.root.ts);
-        if (!list)
+        const auto list = store.threadTimeline(_item.conv, _item.root.ts);
+        if (list.empty())
             return;
-        const size_t n = ch.kind == K::Append ? std::min<size_t>(ch.count, list->size()) : 0;
+        const size_t n = ch.kind == K::Append ? std::min<size_t>(ch.count, list.size()) : 0;
         std::vector<const model::Message *> added;
-        for (size_t i = list->size() - n; i < list->size(); ++i)
-            added.push_back(&(*list)[i]);
+        for (size_t i = list.size() - n; i < list.size(); ++i)
+            added.push_back(list[i]);
         if (ch.kind == K::Insert)
             if (const model::Message *m = store.findMessage(_item.conv, ch.ts))
                 added.push_back(m);
