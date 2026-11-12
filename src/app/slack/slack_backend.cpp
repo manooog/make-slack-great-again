@@ -317,6 +317,9 @@ struct SlackBackend::Read {
     // The open thread whose root the head page no longer carries: its root
     // alone (limit 1) tells whether latest_reply moved.
     void                        checkThreadTip(ConvRef c, Ts root);
+    // An open thread's reaction pills: latest_reply moves only for replies, so
+    // one page of its replies is merged to catch reactions added or removed.
+    void                        refreshThreadReactions(ConvRef c, Ts root);
     Ts                          newestHeldReply(ConvRef c, Ts root) const;
 
     // ── Polling (the realtime health check) ─────────────────────────────────
@@ -2877,13 +2880,16 @@ void SlackBackend::Read::pollConversation(ConvRef c, bool foreground, Ts hint) {
                 const model::Message *root =
                     it != page.end() && it->ts == openThread ? &*it : nullptr;
                 const Ts newest = newestHeldReply(c, openThread);
-                if (!root)
+                if (!root) {
                     checkThreadTip(c, openThread);
-                else if (
+                    refreshThreadReactions(c, openThread);
+                } else if (
                     (root->latestReply ? root->latestReply : root->ts) !=
                     (newest ? newest : root->ts)
                 )
                     loadThreadPages(c, openThread, true, nullptr);
+                else
+                    refreshThreadReactions(c, openThread);
             }
             s.addPage(c, std::move(page));
         }
@@ -3562,6 +3568,36 @@ void SlackBackend::Read::checkThreadTip(ConvRef c, Ts root) {
                     loadThreadPages(c, root, true, nullptr);
                 return;
             }
+        }
+    );
+}
+
+// Reactions inside an open thread arrive on a polled workspace only when the
+// thread is re-read, and the poll's cue for that (the root's latest_reply) moves
+// for replies alone. One page of replies, merged through addPage, keeps the
+// pills current without the full pagination loadThreadPages does.
+void SlackBackend::Read::refreshThreadReactions(ConvRef c, Ts root) {
+    const std::string &id = b.convId(c);
+    if (id.empty() || !root)
+        return;
+    call(
+        "conversations.replies",
+        net::formEncode({{"channel", id}, {"ts", model::formatTs(root)}, {"limit", "1000"}}),
+        [this, c, root](const json::Document &doc, const std::string &err) {
+            if (!err.empty() || openConv != c || openThread != root)
+                return;
+            std::vector<model::Message> page;
+            for (const json::Value v : doc.root()["messages"]) {
+                model::Message m = mapjson::toMessage(v, s);
+                if (!m.ts || m.ts == root)
+                    continue;
+                m.threadTs = root;
+                if (const model::Message *old = s.findMessage(c, m.ts))
+                    m.saved = old->saved;
+                page.push_back(std::move(m));
+            }
+            if (!page.empty())
+                s.addPage(c, std::move(page));
         }
     );
 }
