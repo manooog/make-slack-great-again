@@ -17,7 +17,7 @@ MessageStandIn::MessageStandIn(screens::Context &ctx, Avatars &avatars)
     content()->style().padding(0, 12, 0, 12).spacing(2);
     _observer = ctx.store.observe(model::Store::kAnyConv, [this](const model::Change &ch) {
         if (ch.conv == _conv && ch.kind != model::ChangeKind::Typing &&
-            ch.kind != model::ChangeKind::Meta)
+            ch.kind != model::ChangeKind::Meta && ch.kind != model::ChangeKind::ThreadRead)
             rebuild();
     });
 }
@@ -42,9 +42,8 @@ void MessageStandIn::rebuild() {
     if (_thread) {
         if (const auto *root = store.findMessage(_conv, _thread))
             msgs.push_back(root);
-        if (const auto *replies = store.replies(_conv, _thread))
-            for (const auto &m : *replies)
-                msgs.push_back(&m);
+        for (const model::Message *m : store.threadTimeline(_conv, _thread))
+            msgs.push_back(m);
     } else {
         for (const auto &m : store.conversation(_conv).messages)
             msgs.push_back(&m);

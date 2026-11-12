@@ -55,6 +55,7 @@ struct Settings {
     int                      fontSize    = 1;   // 0 small, 1 medium, 2 large, 3 custom
     int                      fontPercent = 100; // custom: % of medium
     std::string              fontFamily; // empty = automatic UI font; applies on restart
+    std::string              monoFamily; // empty = automatic code font; applies on restart
     std::string              language    = "system"; // "system", "en", "ja"
     bool                     use24h = false, threadsInline = false, linkPreviews = true;
     // use24h came from the file; without it the clock follows the language
@@ -72,6 +73,14 @@ struct Settings {
     // (model::Backend::NamesMode).
     int                      names        = 0;
     bool                     showAgentsApps = true, unreadsOnly = false;
+    bool                     externalSection = true; // off: Connect chats stay in Channels / DMs
+    // Direct messages/Sessions and External connections above Starred,
+    // custom sections and Channels; off, the existing order is unchanged.
+    bool                     directAndExternalFirst             = false;
+    // "Show only unread conversations" also hides the read ones in the
+    // user's own sections / in Starred (off: those are always listed).
+    bool                     unreadsOnlyAppliesToCustomSections = false;
+    bool                     unreadsOnlyAppliesToStarred        = false;
     bool                     animateEmoji = true, animateMedia = true;
     // The message toolbar's one-click reactions: 0 off, 1 the most used (the
     // emoji picker's Frequently used), 2 quickReactionNames.
@@ -122,6 +131,12 @@ struct Settings {
         std::vector<std::string> sections;
     };
     std::vector<SectionOrderPref> sidebarSectionOrders;
+    // Collapsed sidebar sections (sectionKey), per workspace. Only collapsed
+    // sections are stored.
+    struct SectionCollapsedPref {
+        std::string workspace, section;
+    };
+    std::vector<SectionCollapsedPref> sidebarCollapsed;
     // Show unread conversations in a collapsed section (off by default).
     // Keys use Sidebar::sectionKey, scoped to the signed-in workspace.
     struct CollapsedUnreadPref {

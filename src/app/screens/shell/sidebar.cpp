@@ -1,6 +1,7 @@
 #include "screens/shell/sidebar.h"
 
 #include "screens/common/tag_badge.h"
+#include "screens/messages/image_cache.h"
 
 #include "base/crypto.h"
 #include "base/i18n.h"
@@ -266,6 +267,21 @@ bool looksLikeUserId(std::string_view s) {
     return true;
 }
 
+// The list's content. Rows a rebuild just made have no frames until the
+// layout pass, so revealing one waits for this view's layout: after it, the
+// rows sit where they will be drawn (scrolling from paint instead would move
+// content that is already being drawn).
+class ListItems : public View {
+public:
+    std::function<void()> onLaidOut;
+
+    void layout() override {
+        View::layout();
+        if (onLaidOut)
+            onLaidOut();
+    }
+};
+
 } // namespace
 
 bool deadDm(const model::Store &store, const model::Conversation &c) {
@@ -281,7 +297,7 @@ bool deadDm(const model::Store &store, const model::Conversation &c) {
 class SectionHeader final : public HoverRow {
 public:
     SectionHeader(Sidebar &sb, Sidebar::Kind k, Icon i, std::string text)
-        : sidebar(sb), kind(k), icon(i), title(text) {
+        : sidebar(sb), images(sb._ctx.images), kind(k), icon(i), title(text) {
         setLook({C::None, C::SidebarHover, C::SidebarHover, C::None, 0}); // full width
         setRole(k == Sidebar::Vip ? Role::Text : Role::Button); // VIP unreads takes no click
         // VIP's "VIP" pill is a real row child, not painted in the icon's
@@ -353,11 +369,14 @@ public:
         }
         return HoverRow::onEvent(e);
     }
-    // A custom section's emoji, drawn where the icon goes ("" = the icon).
-    void setEmoji(std::string glyph) {
-        emoji = std::move(glyph);
+    // A custom section's emoji, drawn where the icon goes (empty = the icon).
+    void setEmoji(model::Store::EmojiGlyph g) {
+        emoji = std::move(g.unicode);
+        emojiImage = std::move(g.image);
         emojiLayout.reset();
+        emojiHeld.reset();
     }
+    ~SectionHeader() override { images.forget(this); }
     void refreshLook() override {
         const C bg = dropTarget ? C::SidebarSelected : lit() ? C::SidebarHover : C::None;
         setLook({bg, bg, C::SidebarHover, C::None, 0});
@@ -378,31 +397,46 @@ public:
         // The section's icon; hovered, the chevron previewing the click.
         const Icon  i = !lit() ? icon : collapsed ? Icon::ChevronRight : Icon::ChevronDown;
         const float y = snapPx((height() - 14) / 2);
-        if (!lit() && !emoji.empty()) {
-            const float scale = windowScale();
-            if (!emojiLayout || emojiScale != scale) {
-                text::AttributedText t;
-                t.append(emoji, font(Font::Body, C::SidebarText));
-                emojiLayout = text::Layout::build(std::move(t), {}, scale);
-                emojiScale  = scale;
+        if (!lit()) {
+            if (!emoji.empty()) {
+                const float scale = windowScale();
+                if (!emojiLayout || emojiScale != scale) {
+                    text::AttributedText t;
+                    t.append(emoji, font(Font::Body, C::SidebarText));
+                    emojiLayout = text::Layout::build(std::move(t), {}, scale);
+                    emojiScale  = scale;
+                }
+                emojiLayout->paint(
+                    p,
+                    {kPadH + (14 - emojiLayout->width()) / 2,
+                     (height() - emojiLayout->height()) / 2}
+                );
+                return;
             }
-            emojiLayout->paint(
-                p, {kPadH + (14 - emojiLayout->width()) / 2, (height() - emojiLayout->height()) / 2}
-            );
-            return;
+            if (!emojiImage.empty()) {
+                const int sz = int(std::lround(14 * windowScale()));
+                if (auto bmp = images.get({emojiImage, sz, sz}, this, &emojiHeld)) {
+                    p.drawBitmap(bmp->view(), {kPadH, y, 14, 14});
+                    return;
+                }
+                // Still loading: fall through to the default icon for now.
+            }
         }
         gfx::drawIcon(p, i, {kPadH, y, 14, 14}, color(labelInk()));
     }
     Sidebar                      &sidebar;
+    screens::ImageCache          &images; // outlives the Sidebar: forget() in the destructor
     // 0 starred, 1 channels, 2 direct messages, 3 Slack agents & apps,
     // 5 a custom section (sectionId), 6 external connections
     int                           kind;
     Icon                          icon;
     std::string                   title;
     std::string                   sectionId; // Custom: Store::Section::id
-    std::string                   emoji;     // Custom: its glyph ("" = the icon)
+    std::string                   emoji;     // Custom: its unicode glyph ("" = none/image/icon)
+    std::string                   emojiImage;
     std::unique_ptr<text::Layout> emojiLayout;
     float                         emojiScale = 0;
+    screens::ImageCache::Handle   emojiHeld;
     Label                        *label      = nullptr;
     HeaderButton                 *plus       = nullptr;
     HeaderButton                 *more       = nullptr;
@@ -553,9 +587,11 @@ public:
                 you->style().margins(4, 0, 0, 0).noShrink();
             }
         }
-        add<View>()->style().flex(1);
-        // The badge and the huddle pill (in that order, last) are made the
-        // first time they show: most rows never need either.
+        spacer = add<View>();
+        spacer->style().flex(1);
+        // The "Draft" label (before the spacer), the badge and the huddle pill
+        // (in that order, last) are made the first time they show: most rows
+        // never need any.
         onClick = [this] {
             if (sidebar._ctx.openConversation)
                 sidebar._ctx.openConversation(conv);
@@ -602,6 +638,17 @@ public:
     PointF                 pressAt;
     bool                   pressing = false;
 
+    Label *makeDraft() {
+        if (!draft) {
+            draft = new Label(tr("Draft"), Font::Small, C::SidebarTextMuted);
+            draft->style().margins(6, 0, 0, 0).noShrink();
+            int at = 0;
+            while (child(size_t(at)) != spacer)
+                ++at;
+            adopt(std::unique_ptr<View>(draft), at);
+        }
+        return draft;
+    }
     CountBadge *makeBadge() {
         if (!badge) { // before the huddle pill, when there is one
             badge = new CountBadge();
@@ -649,10 +696,8 @@ public:
         const bool  quiet = sidebar.muted(cv);
         const bool  stale =
             cv.latest && tsSecs(cv.latest) < sidebar._ctx.backend.nowSecs() - kMaxNotifyAgeSecs;
-        unread        = sidebar.paintsUnread(cv);
-        // DMs count unread messages; channels count mentions.
-        const int red = cv.isDirect() ? int(cv.unread) : int(cv.mentions);
-        count         = !stale && !quiet && red > 0 ? red : 0;
+        unread = sidebar.paintsUnread(cv);
+        count  = sidebar.redCount(cv);
         dot = !stale && !quiet && sidebar.level(cv) == model::NotifyLevel::All && !cv.isDirect() &&
               cv.mentions == 0 && cv.unread > 0;
         const C text = ink(sel, unread);
@@ -663,6 +708,11 @@ public:
             glyph->setTint(text);
         if (you)
             you->setColor(sel ? text : C::SidebarTextMuted);
+        // Not on the open chat's row: its draft is in the composer, live,
+        // while the Store keeps the one stashed when it was last left.
+        const bool drafted = !sel && store.draft(conv, 0) != nullptr;
+        if (drafted || draft)
+            makeDraft()->setVisible(drafted);
         refreshPresence();
         if (count > 0 || dot || badge)
             makeBadge()->set(count, count == 0 && dot);
@@ -690,6 +740,8 @@ public:
     Avatar        *avatar  = nullptr;
     IconView      *glyph   = nullptr;
     Label         *you     = nullptr;
+    Label         *draft   = nullptr; // "Draft" (makeDraft)
+    View          *spacer  = nullptr; // between the name and the badge
     CountBadge    *badge   = nullptr;
     HuddlePill    *huddle  = nullptr;
     SectionHeader *section = nullptr;
@@ -707,7 +759,13 @@ Sidebar::Sidebar(screens::Context &ctx, Avatars &avatars) : _ctx(ctx), _avatars(
     _scroll->setClickFocus(true);
     _scroll->setThinThumb(C::SidebarScrollbar);
     _scroll->style().flex(1);
-    _items = _scroll->content();
+    auto *items      = static_cast<ListItems *>(_scroll->setContent(std::make_unique<ListItems>()));
+    items->onLaidOut = [this] {
+        if (std::exchange(_revealSelectedOnLayout, false))
+            if (ConvRow *r = rowFor(_selected))
+                _scroll->ensureVisible(r, 8);
+    };
+    _items = items;
     // Keep the last row off the viewport edge when scrolled to the bottom.
     _items->style().padding(0, kTopPad, 0, 12).spacing(0);
     _footer = add<SidebarFooter>(*this, ctx, avatars);
@@ -731,9 +789,7 @@ Sidebar::Sidebar(screens::Context &ctx, Avatars &avatars) : _ctx(ctx), _avatars(
             else if (ch.thread == 0 && rowFor(ch.conv)) {
                 // A group DM's new message may lift it into VIP unreads (isVip
                 // reads it); else most recent first may move it.
-                const ConvRow *r = rowFor(ch.conv);
-                if (r->section->kind != Sidebar::Custom &&
-                    r->section->kind != classify(_ctx.store().conversation(ch.conv)))
+                if (misplaced(ch.conv))
                     rebuildSoon(false);
                 else
                     resortSoon();
@@ -767,17 +823,21 @@ Sidebar::Sidebar(screens::Context &ctx, Avatars &avatars) : _ctx(ctx), _avatars(
             }
             if (ch.conv >= _ctx.store().conversationCount())
                 break;
-            const auto &cv = _ctx.store().conversation(ch.conv);
-            ConvRow    *r  = rowFor(ch.conv);
+            const auto &cv    = _ctx.store().conversation(ch.conv);
+            ConvRow    *r     = rowFor(ch.conv);
             // Under unreads-only a row comes or goes when its bold state
-            // flips (the selected row and Starred stay regardless).
+            // flips (the selected row and Drafts stay regardless; Starred and
+            // the user's sections unless their scope is on). A starred one in
+            // one of the user's sections is listed there: that scope decides.
+            const bool  inOwn = r && r->section->kind == Sidebar::Custom;
             const bool  filterFlip =
-                _filters.unreadsOnly && ch.conv != _selected && !cv.starred &&
-                !(r && r->section->kind == Sidebar::Custom) &&
+                _filters.unreadsOnly && ch.conv != _selected &&
+                !(cv.starred && !inOwn && !_filters.unreadsOnlyAppliesToStarred) &&
+                !(inOwn && !_filters.unreadsOnlyAppliesToCustomSections) &&
+                !(r && r->section->kind == Sidebar::Drafts) &&
                 (r ? r->unread != paintsUnread(cv) : cv.member && paintsUnread(cv));
-            // Same classifier as rebuild(): only rebuild when this row changes sections.
-            const bool reclassified =
-                r && r->section->kind != Sidebar::Custom && r->section->kind != classify(cv);
+            // Same classify() rebuild() uses, so a row only looks "moved" when it would be.
+            const bool reclassified = r && misplaced(ch.conv);
             if (!r != !cv.member || reclassified || filterFlip)
                 rebuildSoon(false); // once per burst; the list stays where it was scrolled
             else {
@@ -805,6 +865,11 @@ void Sidebar::paint(gfx::Painter &p) {
     paintNavGradient(*this, p, C::Sidebar);
 }
 
+void Sidebar::revealSelectedAfterLayout() {
+    _revealSelectedOnLayout = true;
+    _items->invalidateLayout(); // the pass that runs it comes for sure
+}
+
 void Sidebar::setFilters(const Filters &f) {
     if (f == _filters)
         return;
@@ -829,6 +894,14 @@ bool Sidebar::paintsUnread(const model::Conversation &c) const {
         level(c) == model::NotifyLevel::Mentions && !_filters.highlightMentionsOnly &&
         !c.isDirect() && c.mentions == 0
     );
+}
+
+int Sidebar::redCount(const model::Conversation &c) const {
+    if (muted(c) || (c.latest && tsSecs(c.latest) < _ctx.backend.nowSecs() - kMaxNotifyAgeSecs))
+        return 0;
+    // DMs count unread messages; channels count mentions.
+    // This fork has no agent-session capability (that feature was removed).
+    return c.isDirect() ? int(c.unread) : int(c.mentions);
 }
 
 bool Sidebar::isApp(const model::Conversation &c) const {
@@ -867,15 +940,20 @@ bool Sidebar::isVip(const model::Conversation &c) const {
 }
 
 // VIP unreads first: Slack lifts them above every section, starred and app
-// DMs included (a VIP may be an app).
-Sidebar::Kind Sidebar::classify(const model::Conversation &c) const {
+// DMs included (a VIP may be an app). Then a conversation with an unsent
+// draft goes to Drafts, out of Starred and the user's sections too (see
+// rebuild), so the draft is never out of sight.
+Sidebar::Kind Sidebar::classify(model::ConvRef ref) const {
+    const auto &c = _ctx.store().conversation(ref);
     if (_ctx.backend.capabilities().vips && isVip(c))
         return Vip;
+    if (_ctx.store().draft(ref, 0) != nullptr)
+        return Drafts;
     if (c.starred)
         return Starred;
     if (isApp(c))
         return Apps;
-    if (isExternal(c))
+    if (_filters.externalSection && isExternal(c))
         return External;
     return c.isDirect() ? Direct : Channels;
 }
@@ -892,6 +970,17 @@ void Sidebar::clearVisited() {
     rebuild();
     if (onVisitedChanged)
         onVisitedChanged();
+}
+
+// A listed row in a section classify() would no longer put it in. One in
+// a section of the user's stays there unless a draft lifts it to Drafts
+// (as rebuild does).
+bool Sidebar::misplaced(ConvRef ref) const {
+    const ConvRow *r = rowFor(ref);
+    if (!r)
+        return false;
+    const Kind want = classify(ref);
+    return r->section->kind == Custom ? want == Drafts : r->section->kind != want;
 }
 
 // Relevant: unread, open, visited or active within the window, or a
@@ -912,13 +1001,17 @@ bool Sidebar::relevant(ConvRef ref) const {
 }
 
 void Sidebar::rebuild() {
-    for (auto *h : _sections) { // survives the rebuild
-        if (h->kind == Sidebar::Custom)
-            _collapsedCustom[h->sectionId] = h->collapsed;
-        else
-            _collapsed[h->kind] = h->collapsed;
-    }
-    _dragRow = nullptr; // a drag under way ends with its row
+    // Keyboard focus on a row survives: it moves to the same conversation's new row.
+    Window *win       = window();
+    ConvRef focusConv = kNoConv;
+    if (View *f = win ? win->focusView() : nullptr)
+        for (ConvRow *r : _rows)
+            if (r == f) {
+                focusConv = r->conv;
+                break;
+            }
+    const bool focusRing = win && win->focusVisible();
+    _dragRow             = nullptr; // a drag under way ends with its row
     _items->clearChildren();
     _rows.clear();
     _rowOf.assign(_ctx.store().conversationCount(), nullptr);
@@ -967,9 +1060,8 @@ void Sidebar::rebuild() {
         _navDivider->style().margins(20, 12, 20, 10);
     }
 
-    // Starred and custom sections win over automatic grouping; external
-    // conversations share one section across channels and DMs.
-    std::vector<ConvRef> lists[4], hiddenCh, external, vipUnread;
+    // Bucketed by classify(); sorted per section by sortOf().
+    std::vector<ConvRef> lists[4], hiddenCh, external, vipUnread, drafts;
     const auto           listed = [&](ConvRef c) {
         return !_filters.unreadsOnly || c == _selected || paintsUnread(store.conversation(c));
     };
@@ -991,8 +1083,9 @@ void Sidebar::rebuild() {
     if (seeded && onVisitedChanged)
         onVisitedChanged();
     // The user's own sections, under Starred: each lists its conversations
-    // in its own order, like Starred regardless of the filters, and takes
-    // them out of the other sections (Starred too).
+    // in its own order, like Starred regardless of the filters (unless
+    // unreads-only is set to hide their read ones too), and takes them out
+    // of the other sections (Starred too).
     const bool                        own  = caps.customSections;
     const auto                       &secs = store.sections();
     std::vector<std::vector<ConvRef>> custom(own ? secs.size() : 0);
@@ -1000,19 +1093,27 @@ void Sidebar::rebuild() {
     for (size_t s = 0; s < custom.size(); ++s)
         for (const std::string &id : secs[s].convs) {
             const ConvRef c = store.findConversation(id);
-            if (c == kNoConv || inCustom[c])
+            if (c == kNoConv || inCustom[c] || classify(c) == Drafts) // a draft lifts it out
                 continue;
             inCustom[c] = 1;
-            if (store.conversation(c).member && !deadDm(store, store.conversation(c)))
+            if (store.conversation(c).member && !deadDm(store, store.conversation(c)) &&
+                (!_filters.unreadsOnly || !_filters.unreadsOnlyAppliesToCustomSections ||
+                 listed(c)))
                 custom[s].push_back(c);
         }
     for (ConvRef c = 0; c < store.conversationCount(); ++c) {
         const auto &cv = store.conversation(c);
         if (!cv.member || deadDm(store, cv) || inCustom[c])
             continue;
-        switch (classify(cv)) {
+        // classify() picks the bucket; each case keeps its own visibility
+        // rule (unread-only filter, relevance window, ...).
+        switch (classify(c)) {
+        case Drafts:
+            drafts.push_back(c); // a draft is never hidden by the filters
+            break;
         case Starred:
-            lists[Starred].push_back(c);
+            if (!_filters.unreadsOnly || !_filters.unreadsOnlyAppliesToStarred || listed(c))
+                lists[Starred].push_back(c);
             break;
         case Apps:
             if (listed(c) && (_filters.showAgentsApps || c == _selected))
@@ -1022,7 +1123,8 @@ void Sidebar::rebuild() {
             vipUnread.push_back(c); // unread already required; always shown
             break;
         case External:
-            // Keep external conversations discoverable beyond the relevance window.
+            // Keep external conversations discoverable beyond the relevance
+            // window, as before the DMs-first change.
             if (listed(c))
                 external.push_back(c);
             break;
@@ -1065,16 +1167,13 @@ void Sidebar::rebuild() {
                              const std::vector<ConvRef> &rows,
                              const std::string          &id = {}) {
         auto *h      = _items->add<SectionHeader>(*this, kind, icon, std::move(title));
-        h->collapsed = kind != Custom && kind != Vip && _collapsed[kind];
+        h->sectionId = id;
+        restoreCollapse(h);
         _sections.push_back(h);
         // VIP unreads never collapses: a lift for unreads, not a section to
         // fold away (its header shows the pill, no chevron to say so).
         if (kind != Vip)
-            h->onClick = [this, h] {
-                h->collapsed = !h->collapsed;
-                applyCollapse(h);
-            };
-        h->sectionId = id;
+            h->onClick = [this, h] { toggleCollapse(h); };
         for (size_t i : sortedOrder(sortOf(h), rows)) {
             const ConvRef c   = rows[i];
             auto         *row = _items->add<ConvRow>(*this, c);
@@ -1087,11 +1186,16 @@ void Sidebar::rebuild() {
         }
         return h;
     };
-    // VIP unreads stay pinned above the reorderable section plan.
+    // VIP unreads stay pinned above everything, then unsent drafts.
     if (!vipUnread.empty()) {
         auto *h = section(Vip, Icon::Star, tr("VIP unreads"), vipUnread);
         applyCollapse(h);
     }
+    if (!drafts.empty()) {
+        auto *h = section(Drafts, Icon::Edit3, tr("Drafts"), drafts);
+        applyCollapse(h);
+    }
+
     // The user's section order applies to the ordinary and custom sections.
     struct Entry {
         Kind                        kind;
@@ -1099,19 +1203,52 @@ void Sidebar::rebuild() {
         std::string                 title;
         const std::vector<ConvRef> *rows;
         std::string                 id;
-        size_t                      customIndex = 0;
+        size_t                      customIndex = size_t(-1);
     };
     std::vector<Entry> entries;
-    for (int s = 0; s < 4; ++s) {
-        if (s == Channels)
-            for (size_t i = 0; i < custom.size(); ++i)
-                entries.push_back({Custom, Icon::List, secs[i].name, &custom[i], secs[i].id, i});
-        // Starred and Agents & apps are hidden while they have no rows.
-        if (!lists[s].empty() || (s != Starred && s != Apps))
-            entries.push_back({Kind(s), defs[s].icon, defs[s].title, &lists[s], {}});
-        // Default placement: Channels, Direct messages, then External connections.
-        if (s == Direct && !external.empty())
-            entries.push_back({External, Icon::Building, tr("External connections"), &external, {}});
+    const auto addEntry = [&](Kind kind, Icon icon, const char *title,
+                              const std::vector<ConvRef> &rows, std::string id = {},
+                              size_t customIndex = size_t(-1)) {
+        entries.push_back({kind, icon, title, &rows, std::move(id), customIndex});
+    };
+    const auto addCustom = [&] {
+        for (size_t i = 0; i < custom.size(); ++i)
+            addEntry(Custom, Icon::List, secs[i].name.c_str(), custom[i], secs[i].id, i);
+    };
+    const auto addStarred = [&] {
+        if (!lists[Starred].empty())
+            addEntry(Starred, defs[Starred].icon, defs[Starred].title, lists[Starred]);
+    };
+    const auto addChannels = [&] {
+        addEntry(Channels, defs[Channels].icon, defs[Channels].title, lists[Channels]);
+    };
+    const auto addDirect = [&] {
+        addEntry(Direct, defs[Direct].icon, defs[Direct].title, lists[Direct]);
+    };
+    const auto addExternal = [&] {
+        if (!external.empty())
+            addEntry(External, Icon::Building, tr("External connections"), external);
+    };
+    const auto addApps = [&] {
+        if (!lists[Apps].empty())
+            addEntry(Apps, defs[Apps].icon, defs[Apps].title, lists[Apps]);
+    };
+    // A manual order always wins; the DMs-first setting only changes the
+    // default order when the workspace has no order of its own.
+    if (_filters.directAndExternalFirst && _sectionOrder.empty()) {
+        addDirect();
+        addExternal();
+        addStarred();
+        addCustom();
+        addChannels();
+        addApps();
+    } else {
+        addStarred();
+        addCustom();
+        addChannels();
+        addDirect();
+        addExternal();
+        addApps();
     }
     if (!_sectionOrder.empty()) {
         std::unordered_map<std::string, size_t> ranks;
@@ -1127,12 +1264,10 @@ void Sidebar::rebuild() {
     }
     for (const Entry &e : entries) {
         auto *h = section(e.kind, e.icon, e.title, *e.rows, e.id);
-        if (e.kind == Custom) {
+        if (e.kind == Custom && e.customIndex != size_t(-1)) {
             const auto &sec = secs[e.customIndex];
             if (!sec.emoji.empty())
-                h->setEmoji(store.emojiFor(sec.emoji).unicode);
-            const auto was = _collapsedCustom.find(sec.id);
-            h->collapsed   = was != _collapsedCustom.end() && was->second;
+                h->setEmoji(store.emojiFor(sec.emoji));
         }
         if (e.kind == Channels && _hiddenChannels > 0) {
             auto *more = _items->add<ActionRow>(
@@ -1159,6 +1294,45 @@ void Sidebar::rebuild() {
     _sectionsRev = store.sectionsRevision();
     ++_rebuilds;
     invalidateLayout();
+    if (win)
+        if (ConvRow *r = rowFor(focusConv); r && r->visible() && !win->focusView())
+            win->setFocus(r, focusRing);
+    forgetDeletedSections();
+}
+
+// Once the open workspace's Store has its whole list of custom sections,
+// a custom key not in it (and not redacted) is gone: its collapsed state,
+// sort, collapsed-unreads scope and manual order entry go with it. Before
+// that nothing is pruned: the list may simply not have come yet.
+void Sidebar::forgetDeletedSections() {
+    const model::Store &store = _ctx.store();
+    if (&store != _collapsedOf || !store.sectionsComplete() ||
+        store.sectionsConfirmedRevision() == 0)
+        return;
+    if (_prunedOf == &store &&
+        _prunedConfirmedRev == store.sectionsConfirmedRevision())
+        return; // this confirmed list was already pruned
+    _prunedOf           = &store;
+    _prunedConfirmedRev = store.sectionsConfirmedRevision();
+    const auto gone = [&store](const std::string &key) {
+        return !key.empty() && key[0] != '#' && !store.findSection(key) &&
+               !store.sectionRedacted(key);
+    };
+    std::erase_if(_openedUp, gone);
+    const bool collapsed = std::erase_if(_collapsedCustom, [&](const auto &e) {
+                               return gone(e.first);
+                           }) > 0;
+    const bool unreads = std::erase_if(_collapsedUnreads, gone) > 0;
+    const bool sorts   = std::erase_if(_sorts, [&](const auto &e) { return gone(e.first); }) > 0;
+    const bool order = std::erase_if(_sectionOrder, gone) > 0;
+    if (collapsed && onCollapsedChanged)
+        onCollapsedChanged();
+    if (unreads && onCollapsedUnreadsChanged)
+        onCollapsedUnreadsChanged();
+    if (sorts && onSortsChanged)
+        onSortsChanged();
+    if (order && onSectionOrderChanged)
+        onSectionOrderChanged();
 }
 
 // Everything rebuild() reads from the users: which DMs are dead or apps (they
@@ -1293,14 +1467,16 @@ std::vector<size_t> Sidebar::sortedOrder(SectionSort sort, const std::vector<Con
         return order;
     const auto &store = _ctx.store();
     struct Key {
-        bool        unread = false;
-        model::Ts   recent = 0;
+        bool        mention = false;
+        bool        unread  = false;
+        model::Ts   recent  = 0;
         std::string name; // case-folded
     };
     std::vector<Key> keys(rows.size());
     for (size_t i = 0; i < rows.size(); ++i) {
-        const auto &cv = store.conversation(rows[i]);
-        keys[i].unread = sort.unreadsFirst && paintsUnread(cv);
+        const auto &cv  = store.conversation(rows[i]);
+        keys[i].mention = sort.mentionsFirst && redCount(cv) > 0;
+        keys[i].unread  = sort.unreadsFirst && paintsUnread(cv);
         if (sort.by == SectionSort::By::Recent)
             keys[i].recent = std::max(cv.latest, cv.lastRead);
         else if (sort.by == SectionSort::By::Alpha)
@@ -1308,6 +1484,8 @@ std::vector<size_t> Sidebar::sortedOrder(SectionSort sort, const std::vector<Con
     }
     std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
         const Key &x = keys[a], &y = keys[b];
+        if (x.mention != y.mention)
+            return x.mention;
         if (x.unread != y.unread)
             return x.unread;
         switch (sort.by) {
@@ -1329,6 +1507,8 @@ std::string SectionSort::encode() const {
     std::string out = by == By::Alpha ? "alpha" : by == By::Recent ? "recent" : "";
     if (unreadsFirst)
         out += out.empty() ? "unreads" : ",unreads";
+    if (mentionsFirst)
+        out += out.empty() ? "mentions" : ",mentions";
     return out;
 }
 
@@ -1341,6 +1521,8 @@ SectionSort SectionSort::decode(std::string_view s) {
             sort.by = By::Recent;
         else if (part == "unreads")
             sort.unreadsFirst = true;
+        else if (part == "mentions")
+            sort.mentionsFirst = true;
     return sort;
 }
 
@@ -1361,6 +1543,9 @@ std::string Sidebar::sectionKey(int kind, const std::string &id) {
     case Vip:
         return "#vip";
     case Team:
+        return "#team";
+    case Drafts:
+        return "#drafts";
     case KindCount:
         break;
     }
@@ -1419,13 +1604,66 @@ void Sidebar::toggleCollapsedUnreads(const std::string &key) {
         onCollapsedUnreadsChanged();
 }
 
+// A switch: the workspace's own, applied to the headers there are (no
+// rebuild); what was opened up for the last one's chats closes again. VIP
+// unreads never collapses (an edited settings file may still say so).
+void Sidebar::setCollapsed(Collapsed collapsed) {
+    std::erase_if(collapsed, [](const auto &e) {
+        return e.first.empty() || !e.second || e.first == "#vip";
+    });
+    for (bool &on : _collapsed)
+        on = false;
+    _collapsedCustom.clear();
+    _openedUp.clear();
+    for (const auto &[key, on] : collapsed) {
+        if (!on)
+            continue;
+        if (key[0] == '#') {
+            for (int k = Starred; k < KindCount; ++k)
+                if (k != Vip && sectionKey(k, {}) == key) {
+                    _collapsed[k] = true;
+                    break;
+                }
+        } else {
+            _collapsedCustom[key] = true;
+        }
+    }
+    _collapsedOf = &_ctx.store();
+    for (SectionHeader *h : _sections) {
+        const bool was = h->collapsed;
+        restoreCollapse(h);
+        if (h->collapsed != was)
+            applyCollapse(h);
+    }
+    forgetDeletedSections();
+}
+
+void Sidebar::forgetStore() {
+    _collapsedOf = _prunedOf = nullptr; // no other Store at its address stands in for it
+}
+
+Sidebar::Collapsed Sidebar::collapsed() const {
+    Collapsed out;
+    for (int k = Starred; k < KindCount; ++k) {
+        if (k == Vip || !_collapsed[k])
+            continue;
+        const std::string key = sectionKey(k, {});
+        if (!key.empty())
+            out[key] = true;
+    }
+    for (const auto &[id, on] : _collapsedCustom)
+        if (on)
+            out[id] = true;
+    return out;
+}
+
 void Sidebar::sectionMenu(SectionHeader *h, PointF at) {
     if (!_menus)
         return;
     const std::string key = sectionKey(h->kind, h->sectionId);
     std::vector<SectionHeader *> reorderable;
     for (SectionHeader *section : _sections)
-        if (section->kind != Vip)
+        if (section->kind != Vip && section->kind != Drafts)
             reorderable.push_back(section);
     const auto it = std::find(reorderable.begin(), reorderable.end(), h);
     const size_t position = size_t(it - reorderable.begin());
@@ -1436,23 +1674,37 @@ void Sidebar::sectionMenu(SectionHeader *h, PointF at) {
          it != reorderable.end() && position + 1 < reorderable.size()},
         [this, key](int step) { moveSection(key, step); },
         showUnreadWhenCollapsed(key),
-        [this, key] { toggleCollapsedUnreads(key); }
+        [this, key] { toggleCollapsedUnreads(key); },
+        !_sectionOrder.empty(),
+        [this] { resetSectionOrder(); }
     );
 }
 
 void Sidebar::setSectionOrder(std::vector<std::string> order) {
+    // Drafts is pinned under VIP unreads: never part of the user's own order.
+    std::erase_if(order, [](const std::string &k) { return k.empty() || k == "#drafts"; });
     if (_sectionOrder == order)
         return;
     _sectionOrder = std::move(order);
     rebuild();
 }
 
+bool Sidebar::resetSectionOrder() {
+    if (_sectionOrder.empty())
+        return false;
+    _sectionOrder.clear();
+    rebuildSoon(false); // the menu's clicked header may still be on the stack
+    if (onSectionOrderChanged)
+        onSectionOrderChanged();
+    return true;
+}
+
 bool Sidebar::moveSection(const std::string &key, int step) {
-    if (key == "#vip" || (step != -1 && step != 1))
+    if (key.empty() || key == "#vip" || key == "#drafts" || (step != -1 && step != 1))
         return false;
     std::vector<SectionHeader *> reorderable;
     for (SectionHeader *h : _sections)
-        if (h->kind != Vip)
+        if (h->kind != Vip && h->kind != Drafts)
             reorderable.push_back(h);
     std::vector<std::string> order;
     for (const SectionHeader *h : reorderable)
@@ -1485,6 +1737,56 @@ bool Sidebar::moveSection(const std::string &key, int step) {
     if (onSectionOrderChanged)
         onSectionOrderChanged();
     return true;
+}
+
+// A header's state from its stored collapse flag and the opened-up set.
+void Sidebar::restoreCollapse(SectionHeader *h) {
+    const std::string key = sectionKey(h->kind, h->sectionId);
+    bool              on  = false;
+    if (h->kind == Custom) {
+        const auto it = _collapsedCustom.find(h->sectionId);
+        on            = it != _collapsedCustom.end() && it->second;
+    } else {
+        on = _collapsed[h->kind];
+    }
+    h->collapsed = h->kind != Vip && !key.empty() && on && !_openedUp.count(key);
+}
+
+// The user's choice: kept, and told to the shell to store.
+void Sidebar::toggleCollapse(SectionHeader *h) {
+    h->collapsed = !h->collapsed;
+    applyCollapse(h);
+    const std::string key = sectionKey(h->kind, h->sectionId);
+    if (key.empty())
+        return;
+    _openedUp.erase(key);
+    bool changed = false;
+    if (h->kind == Custom) {
+        const bool was = _collapsedCustom.count(h->sectionId) != 0;
+        if (h->collapsed && !was) {
+            _collapsedCustom[h->sectionId] = true;
+            changed                        = true;
+        } else if (!h->collapsed && was) {
+            _collapsedCustom.erase(h->sectionId);
+            changed = true;
+        }
+    } else {
+        changed           = _collapsed[h->kind] != h->collapsed;
+        _collapsed[h->kind] = h->collapsed;
+    }
+    if (changed && onCollapsedChanged)
+        onCollapsedChanged();
+}
+
+// Not the user's choice: the section stays collapsed in the stored state (and
+// in the settings), open until the workspace is set again.
+void Sidebar::openUp(SectionHeader *h) {
+    if (!h->collapsed)
+        return;
+    h->collapsed = false;
+    applyCollapse(h);
+    if (const std::string key = sectionKey(h->kind, h->sectionId); !key.empty())
+        _openedUp.insert(key);
 }
 
 // A collapsed section may show its unread rows, but never its action rows.
@@ -1524,6 +1826,11 @@ SectionHeader *Sidebar::sectionAt(PointF windowPos) const {
 // Starred, or out of its custom section / Starred via the other built-ins.
 static bool accepts(const SectionHeader *to, const SectionHeader *from, bool external) {
     if (!to || to == from || to->kind == Sidebar::Vip || to->kind == Sidebar::Team)
+        return false;
+    // Drafts is where a draft puts a conversation, not a place to move one:
+    // dropped there it would only lose its star or section, and taken out
+    // it would stay listed there until the draft goes.
+    if (to->kind == Sidebar::Drafts || from->kind == Sidebar::Drafts)
         return false;
     if (to->kind == Sidebar::Custom || to->kind == Sidebar::Starred)
         return true;
@@ -1607,9 +1914,8 @@ void Sidebar::rebuildSoon(bool reveal) {
             return;
         _rebuildTimer = 0;
         rebuild();
-        if (ConvRow *r = rowFor(_selected); r && std::exchange(_revealOnRebuild, false))
-            _scroll->ensureVisible(r, 8);
-        _revealOnRebuild = false;
+        if (std::exchange(_revealOnRebuild, false))
+            revealSelectedAfterLayout();
     });
 }
 
@@ -1741,15 +2047,16 @@ void Sidebar::select(ConvRef conv) {
     // lists it (relevance, unreads-only, apps) and
     // expands its section. Rebuilt after the click that got here.
     ConvRow *r = rowFor(conv);
-    if (r && r->section->collapsed && !r->visible()) {
-        r->section->collapsed = false;
-        applyCollapse(r->section);
-    }
+    if (r && !r->visible())
+        openUp(r->section);
     if ((conv != kNoConv && !r) || (_filters.unreadsOnly && old != kNoConv && old != conv))
         rebuildSoon(); // the one left may drop out of unreads-only
     if (r) {
         r->refresh();
-        _scroll->ensureVisible(r, 8);
+        if (r->height() > 0)
+            _scroll->ensureVisible(r, 8); // laid out: reveal at once
+        else
+            revealSelectedAfterLayout(); // rebuilt just now: no frame yet
     }
     refreshSections();
 }
@@ -1818,6 +2125,8 @@ Sidebar::RowState Sidebar::rowState(ConvRef conv) const {
     s.badge    = r->count;
     s.selected = r->checked();
     s.huddle   = r->huddleCount;
+    s.section  = r->section->title;
+    s.draft    = r->draft && r->draft->visible();
     return s;
 }
 

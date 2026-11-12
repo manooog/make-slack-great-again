@@ -19,6 +19,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -128,22 +129,11 @@ public:
     void                       notifyReminderDue(
         const std::string &key, model::Store &store, model::ConvRef conv, model::Ts ts
     );
-    // "Session expired", when the window is hidden.
+    // "Session expired": the visible banner, or a notification when hidden.
     void notifySessionExpired(const std::string &workspace);
     // Workspace `key`'s slash commands changed (Backend::onCommandsChanged):
     // a "/" list open in its composers follows.
     void commandsChanged(const std::string &key);
-    // A message workspace `key` never sent (Backend::onUnsent): back in the
-    // composer showing (conv, thread) — in front of what's typed there since,
-    // its files attached again — or else in front of that draft.
-    void giveBackUnsent(
-        const std::string              &key,
-        const model::Store             &store,
-        model::ConvRef                  conv,
-        model::Ts                       thread,
-        const std::string              &text,
-        const std::vector<std::string> &files
-    );
     // The error banner: a backend failure no call waits for, shown for a few seconds.
     void               showError(const std::string &message);
     ui::Label         *errorBanner() const { return _errorBanner; } // tests
@@ -165,6 +155,9 @@ public:
     void           leaveWorkspace();
     // A signed-out workspace: its history entries go.
     void           purgeHistory(const std::string &key);
+    // ...and its sidebar sections' sorts and collapsed state (signing in
+    // again starts afresh).
+    void           forgetSidebarPrefs(const std::string &key);
     model::ConvRef current() const { return _current; }
     bool           threadOpen() const;
     void           showQuickSwitcher(bool currentConversation = false);
@@ -368,6 +361,10 @@ private:
     // `n` with the first of `pics` there is, timed out and silent (the
     // chosen sound is played here), its click opening `where`.
     void postNotification(plat::Notification n, std::vector<std::string> pics, Notified where);
+    // A Meta (the read cursor) or ThreadRead from workspace `key`'s Store:
+    // the message notifications it read up to leave the OS's notification
+    // centre (issue #151).
+    void withdrawRead(const model::Store &st, const std::string &key, const model::Change &ch);
 
     struct Running; // an attached workspace
     Running   *findRunning(const std::string &key);
@@ -424,11 +421,13 @@ private:
     void applyUpdate(); // the update bar's button
 #endif
     void storeVisited(); // the sidebar's visit stamps into _settings
-    // The open workspace's section sorts: from _settings into the sidebar,
-    // and back when the section menu changed one.
+    // The open workspace's section sorts and collapsed sections: from
+    // _settings into the sidebar, and back when the section menu or a header
+    // click changed them.
     void loadSorts();
     void storeSorts();
-    void applyComposerAccess();
+    void loadCollapsed();
+    void storeCollapsed();
     void runCommand(
         model::ConvRef conv, model::Ts thread, const std::string &name, const std::string &args
     );
@@ -468,6 +467,10 @@ private:
     bool                   _haveWorkspaces = false; // setWorkspaces was called
     ui::View              *_listHandle = nullptr, *_signedOut = nullptr, *_addBtn = nullptr;
     bool                   _signedIn = true;
+    // The workspace whose collapsed sections the sidebar holds: they are
+    // stored under it, and loaded again only for another one.
+    std::optional<std::string> _collapsedFor;
+
     ui::Button    *_pinBtn = nullptr, *_closeBtn = nullptr;
     ui::Clickable *_prefsBtn                = nullptr;
     ConvHeader    *_header                  = nullptr;
@@ -511,6 +514,7 @@ private:
         model::Ts   root = 0, ts = 0; // a reply's thread; ts: scroll to it (reminders)
         std::string join;             // a huddle's link (its "Join" action)
         int64_t     postedAt = 0;     // base::nowSecs(), set by postNotification -- pruning
+        bool        onRead   = false; // a new message's: taken back once read (withdrawRead)
     };
     // Notification id -> where it opens. Persisted to _notifyPath: macOS
     // and Windows keep delivered notifications around across launches, so
@@ -546,8 +550,7 @@ private:
     ScheduledPage                     *_scheduledPage = nullptr;
     std::vector<int>                   _shortcutIds; // Window shortcuts owned by this Shell
     std::shared_ptr<int>               _alive = std::make_shared<int>(0);
-    // The error banner (5 s), and what the composer was last given
-    // (applyComposerAccess hands changes on only).
+    // The error banner (5 s).
     ui::Label                 *_errorBanner      = nullptr;
     bool                       _ownsBackendError = false; // set ctx.backend.onError
     plat::TimerId              _errorTimer       = 0;
@@ -557,7 +560,6 @@ private:
     void                       noteActivity();
     bool                       _windowVisible = true;
     void                       syncWindowVisible(); // after a hide, show or state change
-    std::string                _composerLock, _composerSuggestion;
 
     // The visit stamps' save (coalesced), the update bar and checker,
     // Settings' sample notification and where its outcome goes.

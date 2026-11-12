@@ -58,7 +58,11 @@ bool shell::Settings::*const kAppearanceBools[] = {
     &shell::Settings::spellCheck,
     &shell::Settings::markdownFormatting,
     &shell::Settings::showAgentsApps,
+    &shell::Settings::externalSection,
     &shell::Settings::unreadsOnly,
+    &shell::Settings::unreadsOnlyAppliesToCustomSections,
+    &shell::Settings::unreadsOnlyAppliesToStarred,
+    &shell::Settings::directAndExternalFirst,
     &shell::Settings::animateEmoji,
     &shell::Settings::animateMedia,
 };
@@ -441,31 +445,34 @@ void SettingsDialog::buildAppearance() {
     }
     buildCustomEditor();
 
-    heading(_content, tr("Font family"));
-    {
+    auto fontFamilyField = [this](const char *title, std::string &value) {
+        heading(_content, title);
         auto *g = group(_content, 4);
         auto *field = g->add<TextField>(tr("Default"));
         field->style().width(340);
-        field->setText(_draft.fontFamily);
+        field->setText(value);
 
         // One editable value, no separate search/select step. The font index
         // uses ASCII-lowercase keys; never rewrite the name the user typed.
         const auto families = text::uiFontFamilies();
         auto *warning = caption(g, {});
         warning->setVisible(false);
-        auto update = [this, field, warning, families] {
-            _draft.fontFamily = field->text();
-            const std::string key = str::asciiLower(str::trim(_draft.fontFamily));
+        auto update = [&value, field, warning, families] {
+            value = field->text();
+            const std::string key = str::asciiLower(str::trim(value));
             const bool available = key.empty() ||
                                    std::binary_search(families.begin(), families.end(), key);
             warning->setText(available ? std::string{}
-                                       : str::concat({tr("Unavailable: "), _draft.fontFamily}));
+                                       : str::concat({tr("Unavailable: "), value}));
             warning->setVisible(!available);
         };
         field->edit().onChange = update;
         update();
         caption(g, tr("Font changes apply after restarting MSGA."));
-    }
+    };
+
+    fontFamilyField(tr("Font family"), _draft.fontFamily);
+    fontFamilyField(tr("Code font family"), _draft.monoFamily);
 
     heading(_content, tr("Font size"));
     {
@@ -649,18 +656,42 @@ void SettingsDialog::buildAppearance() {
                "under an \"N more...\" row at the bottom of each section.")
         );
         check(g, tr("Show the Agents & apps section"), &d.showAgentsApps, true);
+        check(g, tr("Show the External connections section"), &d.externalSection, true);
+        check(
+            g,
+            tr("Show direct messages and External connections at the top"),
+            &d.directAndExternalFirst,
+            true
+        );
+        caption(
+            g,
+            tr("External connections moves up only while its section is shown.\n"
+               "A workspace with its own section order keeps that order.")
+        );
         auto *unread = check(g, tr("Show only unread conversations"), &d.unreadsOnly, true);
         caption(
             g,
             tr("The conversation you are reading stays listed until you move on.\n"
-               "Starred conversations are always shown.")
+               "Drafts are always shown, and so are starred conversations and your\n"
+               "sections unless you hide their read ones below.")
+        );
+        auto *applyCustom = check(
+            g,
+            tr("Hide read conversations in your sections too"),
+            &d.unreadsOnlyAppliesToCustomSections,
+            true
+        );
+        auto *applyStarred = check(
+            g, tr("Hide read starred conversations too"), &d.unreadsOnlyAppliesToStarred, true
         );
         // The activity window has nothing to decide while only unread chats
         // are listed: grey it out so the two don't read as competing.
-        auto sync = [this](bool unreadsOnly) {
+        auto sync = [this, applyCustom, applyStarred](bool unreadsOnly) {
             _p->days->setEnabled(!unreadsOnly);
             _p->daysLabel->setColor(unreadsOnly ? C::FormTextFaint : C::FormText);
             _p->daysDesc->setColor(unreadsOnly ? C::FormTextFaint : C::FormTextMuted);
+            applyCustom->setEnabled(unreadsOnly);
+            applyStarred->setEnabled(unreadsOnly);
         };
         sync(d.unreadsOnly);
         unread->onChange = [this, sync](bool on) {
@@ -823,6 +854,7 @@ void SettingsDialog::saveAppearance() {
     for (int shell::Settings::*f : kAppearanceInts)
         _s.*f = _draft.*f;
     _s.fontFamily         = _draft.fontFamily;
+    _s.monoFamily         = _draft.monoFamily;
     _s.language           = _draft.language;
     _s.spellLanguages     = _draft.spellLanguages;
     _s.quickReactionNames = _draft.quickReactionNames;

@@ -360,7 +360,7 @@ msgstr "再生"
 msgid "Downloading %1"
 msgstr "%1をダウンロード中"
 
-#: src/app/screens/messages/audio_card.cpp
+#: src/app/screens/messages/audio_card.cpp src/app/screens/messages/message_list.cpp
 msgid "Download failed"
 msgstr "ダウンロードに失敗しました"
 
@@ -464,6 +464,10 @@ msgstr "このファイルは空です"
 msgid "Showing the first %1 of %2 rows"
 msgstr "全%2行のうち最初の%1行を表示しています"
 
+#: src/app/screens/messages/message_list.cpp src/app/update/updater.cpp
+msgid "Download failed: %1"
+msgstr "ダウンロードに失敗しました: %1"
+
 #: src/app/screens/messages/message_list.cpp src/app/screens/messages/rows.cpp
 msgid "Loading image…"
 msgstr "画像を読み込み中…"
@@ -491,6 +495,10 @@ msgstr "閉じる"
 #: src/app/screens/messages/message_list.cpp
 msgid "No messages yet"
 msgstr "まだメッセージはありません"
+
+#: src/app/screens/messages/message_list.cpp
+msgid "Couldn't load messages"
+msgstr ""
 
 #: src/app/screens/messages/message_list.cpp
 msgid "Oh my gosh, I really apologize, but your company is a reaaaly active Slack user. Still loading..."
@@ -532,6 +540,10 @@ msgstr "共有"
 msgid "file"
 msgstr "ファイル"
 
+#: src/app/screens/messages/message_list.cpp
+msgid "Couldn't load messages: %1"
+msgstr ""
+
 #: src/app/screens/messages/message_list.cpp src/app/screens/shell/typing_indicator.cpp
 msgid "%1 is typing…"
 msgstr "%1が入力中…"
@@ -547,6 +559,10 @@ msgstr "%1と%2"
 #: src/app/screens/messages/message_list.cpp
 msgid "Several people are typing…"
 msgstr "複数の人が入力中…"
+
+#: src/app/screens/messages/message_list.cpp src/app/screens/messages/rows.cpp
+msgid "View thread"
+msgstr "スレッドを表示"
 
 #: src/app/screens/messages/message_list.cpp
 msgid "Open thread"
@@ -593,8 +609,8 @@ msgid "Copy message"
 msgstr "メッセージをコピー"
 
 #: src/app/screens/messages/message_list.cpp
-msgid "Mark unread from here"
-msgstr ""
+msgid "Mark unread"
+msgstr "未読にする"
 
 #: src/app/screens/messages/message_list.cpp
 msgid "Pin to channel"
@@ -720,7 +736,7 @@ msgstr "メールアプリがないため、アドレスをコピーしました
 msgid "%1m"
 msgstr "%1分"
 
-#: src/app/screens/messages/rows.cpp src/app/screens/shell/typing_indicator.cpp
+#: src/app/screens/messages/rows.cpp
 msgid "%1h %2m"
 msgstr "%1時間%2分"
 
@@ -794,12 +810,12 @@ msgid "Close thread"
 msgstr "スレッドを閉じる"
 
 #: src/app/screens/messages/rows.cpp
-msgid "View thread"
-msgstr "スレッドを表示"
-
-#: src/app/screens/messages/rows.cpp
 msgid "%1 joined."
 msgstr "%1 が参加しました。"
+
+#: src/app/screens/messages/rows.cpp
+msgid "%1 replied to a thread:"
+msgstr ""
 
 #: src/app/screens/messages/rows.cpp src/app/slack/slack_json.cpp
 msgid "A huddle happened"
@@ -808,6 +824,10 @@ msgstr "ハドルが行われました"
 #: src/app/screens/messages/rows.cpp src/app/slack/slack_json.cpp
 msgid "A huddle started"
 msgstr "ハドルが開始されました"
+
+#: src/app/screens/messages/rows.cpp
+msgid "Also sent to channel"
+msgstr ""
 
 #: src/app/screens/messages/rows.cpp
 msgid "Pinned by %1"
@@ -959,7 +979,7 @@ msgstr "ストレージ"
 
 #: src/app/screens/settings/settings_dialog.cpp
 msgid "General"
-msgstr "一般"
+msgstr ""
 
 #: src/app/screens/settings/settings_dialog.cpp
 msgid "About"
@@ -1021,10 +1041,6 @@ msgstr "システム"
 msgid "Color theme"
 msgstr "カラーテーマ"
 
-#: src/app/screens/settings/settings_dialog.cpp
-msgid "Font family"
-msgstr ""
-
 #: src/app/screens/settings/settings_dialog.cpp src/app/screens/shell/context_menus.cpp
 msgid "Default"
 msgstr "デフォルト"
@@ -1035,6 +1051,14 @@ msgstr ""
 
 #: src/app/screens/settings/settings_dialog.cpp
 msgid "Font changes apply after restarting MSGA."
+msgstr ""
+
+#: src/app/screens/settings/settings_dialog.cpp
+msgid "Font family"
+msgstr ""
+
+#: src/app/screens/settings/settings_dialog.cpp
+msgid "Code font family"
 msgstr ""
 
 #: src/app/screens/settings/settings_dialog.cpp
@@ -1206,16 +1230,40 @@ msgid "Show the Agents & apps section"
 msgstr "「エージェントとアプリ」セクションを表示"
 
 #: src/app/screens/settings/settings_dialog.cpp
+msgid "Show the External connections section"
+msgstr "「外部との接続」セクションを表示"
+
+#: src/app/screens/settings/settings_dialog.cpp
+msgid "Show direct messages and External connections at the top"
+msgstr "ダイレクトメッセージと「外部との接続」を一番上に表示"
+
+#: src/app/screens/settings/settings_dialog.cpp
+msgid ""
+"External connections moves up only while its section is shown.\n"
+"A workspace with its own section order keeps that order."
+msgstr ""
+
+#: src/app/screens/settings/settings_dialog.cpp
 msgid "Show only unread conversations"
 msgstr "未読の会話のみ表示"
 
 #: src/app/screens/settings/settings_dialog.cpp
 msgid ""
 "The conversation you are reading stays listed until you move on.\n"
-"Starred conversations are always shown."
+"Drafts are always shown, and so are starred conversations and your\n"
+"sections unless you hide their read ones below."
 msgstr ""
 "閲覧中の会話は、別の会話に移るまで表示されたままになります。\n"
-"スター付きの会話は常に表示されます。"
+"下書きは常に表示されます。スター付きの会話とセクションも、下で既読のものを\n"
+"非表示にしない限り表示されます。"
+
+#: src/app/screens/settings/settings_dialog.cpp
+msgid "Hide read conversations in your sections too"
+msgstr "セクション内の既読の会話も非表示"
+
+#: src/app/screens/settings/settings_dialog.cpp
+msgid "Hide read starred conversations too"
+msgstr "スター付きの既読の会話も非表示"
 
 #: src/app/screens/settings/settings_dialog.cpp
 msgid "Visual effects"
@@ -1769,11 +1817,11 @@ msgstr "キーを保存しました。"
 
 #: src/app/screens/settings/settings_pages.cpp
 msgid "App memory: %1"
-msgstr "アプリのメモリ: %1"
+msgstr ""
 
 #: src/app/screens/settings/settings_pages.cpp
 msgid "Version & Updates"
-msgstr "バージョンとアップデート"
+msgstr ""
 
 #: src/app/screens/settings/settings_pages.cpp
 msgid "Version %1, built %2"
@@ -1833,7 +1881,7 @@ msgstr "確認に失敗しました: %1"
 
 #: src/app/screens/settings/settings_pages.cpp
 msgid "Diagnostics"
-msgstr "診断"
+msgstr ""
 
 #: src/app/screens/settings/settings_pages.cpp
 msgid "License"
@@ -1972,6 +2020,10 @@ msgid "Go ahead, start writing!"
 msgstr "さあ、書き始めましょう！"
 
 #: src/app/screens/shell/canvas_page.cpp
+msgid "Couldn't load the canvas: %1"
+msgstr ""
+
+#: src/app/screens/shell/canvas_page.cpp
 msgid "Could not create canvas: %1"
 msgstr "canvasを作成できませんでした: %1"
 
@@ -1986,6 +2038,10 @@ msgstr "このキャンバスは Slack の組み込みエディタで作成さ�
 #: src/app/screens/shell/canvas_page.cpp
 msgid "You don't have access to this canvas."
 msgstr "このキャンバスにアクセスする権限がありません。"
+
+#: src/app/screens/shell/canvas_page.cpp
+msgid "Couldn't load this canvas. Close and reopen it to try again."
+msgstr ""
 
 #: src/app/screens/shell/canvas_page.cpp
 msgid "Delete canvas"
@@ -2249,9 +2305,6 @@ msgid ""
 "\n"
 "Create a free one — it takes a minute — then paste it below. You can change it later in Settings → General."
 msgstr ""
-"GIFの検索にはGIPHYのAPIキーが必要です。\n"
-"\n"
-"無料で取得できます — 1分ほどで済みます — 取得したら下に貼り付けてください。後から設定 → 一般で変更できます。"
 
 #: src/app/screens/shell/composer_popups.cpp
 msgid "Get a free GIPHY key…"
@@ -2268,14 +2321,6 @@ msgstr "GIFが見つかりませんでした。"
 #: src/app/screens/shell/composer_popups.cpp
 msgid "Paste a key first."
 msgstr "先にキーを貼り付けてください。"
-
-#: src/app/screens/shell/composer_popups.cpp
-msgid "No earlier prompt matches"
-msgstr "一致する以前のプロンプトはありません"
-
-#: src/app/screens/shell/composer_popups.cpp src/app/screens/shell/shortcuts.cpp
-msgid "Search earlier prompts"
-msgstr "以前のプロンプトを検索"
 
 #: src/app/screens/shell/context_menus.cpp
 msgid "Star channel"
@@ -2374,8 +2419,16 @@ msgid "Unreads on top"
 msgstr "未読を上に表示"
 
 #: src/app/screens/shell/context_menus.cpp
+msgid "Mentions on top"
+msgstr "メンションを上に表示"
+
+#: src/app/screens/shell/context_menus.cpp
 msgid "Show unread when collapsed"
-msgstr "折りたたみ時も未読を表示"
+msgstr ""
+
+#: src/app/screens/shell/context_menus.cpp
+msgid "Reset section order"
+msgstr ""
 
 #: src/app/screens/shell/context_menus.cpp
 msgid "Notify you about…"
@@ -2635,6 +2688,14 @@ msgid "The macOS notification service is unavailable."
 msgstr "macOS の通知サービスを利用できません。"
 
 #: src/app/screens/shell/shell.cpp
+msgid "Your session has expired. Sign in again."
+msgstr ""
+
+#: src/app/screens/shell/shell.cpp
+msgid "Your %1 session has expired. Sign in again."
+msgstr ""
+
+#: src/app/screens/shell/shell.cpp
 msgid "Session expired"
 msgstr "セッションの期限が切れました"
 
@@ -2844,6 +2905,10 @@ msgid "you"
 msgstr "自分"
 
 #: src/app/screens/shell/sidebar.cpp
+msgid "Draft"
+msgstr "下書き"
+
+#: src/app/screens/shell/sidebar.cpp
 msgid "Starred"
 msgstr "スター付き"
 
@@ -2858,6 +2923,10 @@ msgstr "エージェントとアプリ"
 #: src/app/screens/shell/sidebar.cpp
 msgid "VIP unreads"
 msgstr "VIPの未読"
+
+#: src/app/screens/shell/sidebar.cpp
+msgid "Drafts"
+msgstr "下書き"
 
 #: src/app/screens/shell/sidebar.cpp
 msgid "External connections"
@@ -2898,7 +2967,7 @@ msgstr "非表示 — 全員に離席中と表示されます。クリックす�
 
 #: src/app/screens/shell/sidebar_footer.cpp
 msgid "Away — you haven't used MSGA for a while. Any click or keystroke makes you active again (Settings → General → Presence)."
-msgstr "離席中 — しばらくMSGAを使っていません。クリックやキー入力でまたアクティブになります（設定 → 一般 → プレゼンス）。"
+msgstr ""
 
 #: src/app/screens/shell/sidebar_footer.cpp
 msgid "Visible — connecting so you appear active without the official Slack app…"
@@ -2910,7 +2979,7 @@ msgstr "表示中 — ただし公式Slackアプリが接続されていない�
 
 #: src/app/screens/shell/sidebar_footer.cpp
 msgid "Visible — but you appear away while no official Slack app is connected. MSGA can keep you active: Settings → General → Presence."
-msgstr "表示中 — ただし公式Slackアプリが接続されていない間は離席中と表示されます。MSGAでアクティブに保てます：設定 → 一般 → プレゼンス。"
+msgstr ""
 
 #: src/app/screens/shell/sidebar_footer.cpp
 msgid "Visible — MSGA keeps you active. Click to appear hidden."
@@ -3239,24 +3308,8 @@ msgid "Threads you're following will appear here."
 msgstr "フォロー中のスレッドがここに表示されます。"
 
 #: src/app/screens/shell/typing_indicator.cpp
-msgid "%1s"
-msgstr "%1秒"
-
-#: src/app/screens/shell/typing_indicator.cpp
-msgid "%1m %2s"
-msgstr "%1分%2秒"
-
-#: src/app/screens/shell/typing_indicator.cpp
 msgid "<b>You</b> are typing on another device…"
 msgstr "<b>あなた</b>が別のデバイスで入力中…"
-
-#: src/app/screens/shell/typing_indicator.cpp
-msgid "%1 is thinking (%2)…"
-msgstr "%1が考え中（%2）…"
-
-#: src/app/screens/shell/typing_indicator.cpp
-msgid "%1 are thinking…"
-msgstr "%1が考え中…"
 
 #: src/app/screens/shell/update_bar.cpp
 msgid "A new version of msga is ready to install."
@@ -3296,9 +3349,6 @@ msgid ""
 "\n"
 "Open Settings → General, choose “Slack app keys”, and paste your client ID, client secret and app token. Building msga yourself? Put them in credentials.cmake instead and rebuild."
 msgstr ""
-"Slackアプリキーがまだ設定されていません。\n"
-"\n"
-"設定 → 一般を開いて「Slackアプリキー」を選び、クライアントID、クライアントシークレット、アプリトークンを貼り付けてください。msgaを自分でビルドしている場合は、代わりに credentials.cmake に記入して再ビルドしてください。"
 
 #: src/app/slack/slack_actions.cpp
 msgid "You can't reply to this message."
@@ -3343,6 +3393,10 @@ msgstr "アップロードに失敗しました: %1"
 #: src/app/slack/slack_actions.cpp
 msgid "Couldn't send message: %1"
 msgstr "メッセージを送信できませんでした: %1"
+
+#: src/app/slack/slack_actions.cpp
+msgid "Couldn't delete the message: %1"
+msgstr ""
 
 #: src/app/slack/slack_actions.cpp
 msgid "Couldn't set the reminder: %1"
@@ -3474,216 +3528,8 @@ msgid "Could not parse version manifest."
 msgstr "バージョンマニフェストを解析できませんでした。"
 
 #: src/app/update/updater.cpp
-msgid "Download failed: %1"
-msgstr "ダウンロードに失敗しました: %1"
-
-#: src/app/update/updater.cpp
 msgid "Downloaded update is corrupt (checksum mismatch)."
 msgstr "ダウンロードした更新ファイルが破損しています（チェックサム不一致）。"
-
-#~ msgid "Version"
-#~ msgstr "バージョン"
-
-#~ msgid "%1 to move · %2 to switch workspace · %3 to open"
-#~ msgstr "%1 で移動 · %2 でワークスペースを切り替え · %3 で開く"
-
-#~ msgid "%1 to move · %2 to open"
-#~ msgstr "%1 で移動 · %2 で開く"
-
-#~ msgid "%1 does not support speech-to-text — connect an OpenAI-compatible provider in Settings → AI assistance"
-#~ msgstr "%1は音声の文字起こしに対応していません — 設定→「AIアシスタンス」でOpenAI互換のプロバイダーを接続してください"
-
-#~ msgid "%1 does not support speech-to-text"
-#~ msgstr "%1は音声の文字起こしに対応していません"
-
-#~ msgid "Voice input needs a speech-to-text provider. Connect OpenAI or an OpenAI-compatible server in Settings → AI assistance."
-#~ msgstr "音声入力には文字起こしに対応したプロバイダーが必要です。設定 → AIアシスタンスでOpenAIまたはOpenAI互換のサーバーを接続してください。"
-
-#~ msgid "No microphone recording is available on this system"
-#~ msgstr "このシステムではマイクで録音できません"
-
-#~ msgid "Couldn't record: %1"
-#~ msgstr "録音できませんでした: %1"
-
-#~ msgid "No speech was recorded"
-#~ msgstr "音声が録音されませんでした"
-
-#~ msgid "Voice input needs a speech-to-text provider"
-#~ msgstr "音声入力には文字起こしに対応したプロバイダーが必要です"
-
-#~ msgid "Couldn't transcribe: %1"
-#~ msgstr "文字起こしできませんでした: %1"
-
-#~ msgid "No speech was recognised"
-#~ msgstr "音声を認識できませんでした"
-
-#~ msgid "This server has no speech-to-text endpoint (HTTP 404)"
-#~ msgstr "このサーバーには音声文字起こしのエンドポイントがありません（HTTP 404）"
-
-#~ msgid "Unexpected response from server (no text)"
-#~ msgstr "サーバーから予期しない応答が返されました（textがありません）"
-
-#~ msgid "%1 · transcribed by %2"
-#~ msgstr "%1 · %2による文字起こし"
-
-#~ msgid "Transcribe with AI"
-#~ msgstr "AIで文字起こし"
-
-#~ msgid "%1 does not support speech-to-text. Pick an OpenAI-compatible provider in Settings → AI assistance."
-#~ msgstr "%1は音声の文字起こしに対応していません。設定 → AIアシスタンスでOpenAI互換のプロバイダーを選んでください。"
-
-#~ msgid "Transcription needs an AI provider. Connect one in Settings → AI assistance."
-#~ msgstr "文字起こしにはAIプロバイダーが必要です。設定 → AIアシスタンスで接続してください。"
-
-#~ msgid "Could not read the file"
-#~ msgstr "ファイルを読み込めませんでした"
-
-#~ msgid "Ask agent"
-#~ msgstr "エージェントに質問"
-
-#~ msgid "Open agent thread"
-#~ msgstr "エージェントのスレッドを開く"
-
-#~ msgid "Allow %1 to ask agent"
-#~ msgstr "%1 がエージェントに質問できるようにする"
-
-#~ msgid "Unlink agent"
-#~ msgstr "エージェントのリンクを解除"
-
-#~ msgid "Open as session"
-#~ msgstr "セッションとして開く"
-
-#~ msgid "Open the Slack thread: %1"
-#~ msgstr "Slack のスレッドを開く: %1"
-
-#~ msgid "Speech model"
-#~ msgstr "音声モデル"
-
-#~ msgid "Speech-to-text model for voice input and audio transcripts. Leave empty for the default."
-#~ msgstr "音声入力と音声の文字起こしに使うモデルです。空欄の場合は既定のモデルを使います。"
-
-#~ msgid "Voice input"
-#~ msgstr "音声入力"
-
-#~ msgid ""
-#~ "Dictate messages with the microphone button in the message box. When you dictate, the recording and the conversation's recent messages are sent to your AI provider.\n"
-#~ "The speech-to-text model is set in each provider's settings above."
-#~ msgstr ""
-#~ "メッセージ欄のマイクボタンで、メッセージを音声で入力できます。音声入力を使うと、録音と会話の最近のメッセージがAIプロバイダーに送信されます。\n"
-#~ "文字起こしのモデルは、上の各プロバイダーの設定で指定します。"
-
-#~ msgid "Voice input needs an OpenAI or OpenAI-compatible provider with speech-to-text."
-#~ msgstr "音声入力には、文字起こしに対応したOpenAIまたはOpenAI互換のプロバイダーが必要です。"
-
-#~ msgid "Glossary"
-#~ msgstr "用語集"
-
-#~ msgid "Names, product terms and jargon to spell correctly, one per line."
-#~ msgstr "正しく表記したい名前、製品名、専門用語を1行に1つずつ入力します。"
-
-#~ msgid "Clean up with AI"
-#~ msgstr "AIで整える"
-
-#~ msgid "Removes filler words and false starts using your AI provider."
-#~ msgstr "AIプロバイダーを使って、「えー」などのつなぎ言葉や言い直しを取り除きます。"
-
-#~ msgid "Stop and transcribe"
-#~ msgstr "停止して文字起こし"
-
-#~ msgid "Stop"
-#~ msgstr "停止"
-
-#~ msgid "Find a session"
-#~ msgstr "セッションを探す"
-
-#~ msgid "Create a session"
-#~ msgstr "セッションを作成"
-
-#~ msgid "Create an unsafe session"
-#~ msgstr "安全でないセッションを作成"
-
-#~ msgid "Edit teammate…"
-#~ msgstr "チームメイトを編集…"
-
-#~ msgid "Restore default"
-#~ msgstr "デフォルトに戻す"
-
-#~ msgid "Remove teammate…"
-#~ msgstr "チームメイトを外す…"
-
-#~ msgid "Rename session…"
-#~ msgstr "セッション名を変更…"
-
-#~ msgid "Remove from msga"
-#~ msgstr "msgaから削除"
-
-#~ msgid "Couldn't open the chat."
-#~ msgstr "チャットを開けませんでした。"
-
-#~ msgid "Rename session"
-#~ msgstr "セッション名を変更"
-
-#~ msgid "Only msga shows this name; Claude Code keeps its own. Leave it empty to use Claude Code's name again."
-#~ msgstr "この名前はmsgaにだけ表示され、Claude Codeは独自の名前を保持します。空欄にするとClaude Codeの名前に戻ります。"
-
-#~ msgid "The session is gone."
-#~ msgstr "セッションはもうありません。"
-
-#~ msgid "Add teammate"
-#~ msgstr "チームメイトを追加"
-
-#~ msgid "Add sessions"
-#~ msgstr "セッションを追加"
-
-#~ msgid "Sessions"
-#~ msgstr "セッション"
-
-#~ msgid "Team"
-#~ msgstr "チーム"
-
-#~ msgid "Zen mode is on: tool calls are hidden. Click to show everything."
-#~ msgstr "禅モードはオンです：ツール呼び出しは非表示です。クリックするとすべて表示します。"
-
-#~ msgid "Zen mode is off. Click to hide tool calls for easier reading."
-#~ msgstr "禅モードはオフです。クリックするとツール呼び出しを隠して読みやすくします。"
-
-#~ msgid "No sessions yet. Write below to start one."
-#~ msgstr "まだセッションはありません。下に書き込むと始まります。"
-
-#~ msgid "Change folder"
-#~ msgstr "フォルダーを変更"
-
-#~ msgid "%n new"
-#~ msgid_plural "%n new"
-#~ msgstr[0] "%n 件の新着"
-
-#~ msgid "Start new session in %1"
-#~ msgstr "%1 で新しいセッションを開始"
-
-#~ msgid "%n session"
-#~ msgid_plural "%n sessions"
-#~ msgstr[0] "%n 件のセッション"
-
-#~ msgid "Browse…"
-#~ msgstr "参照…"
-
-#~ msgid "Folder for new sessions with the %1"
-#~ msgstr "%1 との新しいセッションのフォルダー"
-
-#~ msgid "Cancel voice input (Esc)"
-#~ msgstr "音声入力をキャンセル（Esc）"
-
-#~ msgid "Dismiss"
-#~ msgstr "閉じる"
-
-#~ msgid "Esc to cancel"
-#~ msgstr "Escでキャンセル"
-
-#~ msgid "Transcribing…"
-#~ msgstr "文字起こし中…"
-
-#~ msgid "Cleaning up…"
-#~ msgstr "整えています…"
 
 #~ msgid "Yes, and don't ask again for %1 commands in %2"
 #~ msgstr "はい、%2 での %1 コマンドは今後確認しない"
@@ -3792,6 +3638,9 @@ msgstr "ダウンロードした更新ファイルが破損しています（チ
 
 #~ msgid "Start a new session in the same folder; this one stays as it is"
 #~ msgstr "同じフォルダーで新しいセッションを開始します。このセッションはそのまま残ります"
+
+#~ msgid "Version"
+#~ msgstr "バージョン"
 
 #~ msgid "Session name"
 #~ msgstr "セッション名"
@@ -3975,6 +3824,182 @@ msgstr "ダウンロードした更新ファイルが破損しています（チ
 #~ msgid "That teammate is gone."
 #~ msgstr "そのチームメイトはもういません。"
 
+#~ msgid "%1 does not support speech-to-text — connect an OpenAI-compatible provider in Settings → AI assistance"
+#~ msgstr "%1は音声の文字起こしに対応していません — 設定→「AIアシスタンス」でOpenAI互換のプロバイダーを接続してください"
+
+#~ msgid "%1 does not support speech-to-text"
+#~ msgstr "%1は音声の文字起こしに対応していません"
+
+#~ msgid "Voice input needs a speech-to-text provider. Connect OpenAI or an OpenAI-compatible server in Settings → AI assistance."
+#~ msgstr "音声入力には文字起こしに対応したプロバイダーが必要です。設定 → AIアシスタンスでOpenAIまたはOpenAI互換のサーバーを接続してください。"
+
+#~ msgid "No microphone recording is available on this system"
+#~ msgstr "このシステムではマイクで録音できません"
+
+#~ msgid "Couldn't record: %1"
+#~ msgstr "録音できませんでした: %1"
+
+#~ msgid "No speech was recorded"
+#~ msgstr "音声が録音されませんでした"
+
+#~ msgid "Voice input needs a speech-to-text provider"
+#~ msgstr "音声入力には文字起こしに対応したプロバイダーが必要です"
+
+#~ msgid "Couldn't transcribe: %1"
+#~ msgstr "文字起こしできませんでした: %1"
+
+#~ msgid "No speech was recognised"
+#~ msgstr "音声を認識できませんでした"
+
+#~ msgid "This server has no speech-to-text endpoint (HTTP 404)"
+#~ msgstr "このサーバーには音声文字起こしのエンドポイントがありません（HTTP 404）"
+
+#~ msgid "Unexpected response from server (no text)"
+#~ msgstr "サーバーから予期しない応答が返されました（textがありません）"
+
+#~ msgid "%1 · transcribed by %2"
+#~ msgstr "%1 · %2による文字起こし"
+
+#~ msgid "Transcribe with AI"
+#~ msgstr "AIで文字起こし"
+
+#~ msgid "%1 does not support speech-to-text. Pick an OpenAI-compatible provider in Settings → AI assistance."
+#~ msgstr "%1は音声の文字起こしに対応していません。設定 → AIアシスタンスでOpenAI互換のプロバイダーを選んでください。"
+
+#~ msgid "Transcription needs an AI provider. Connect one in Settings → AI assistance."
+#~ msgstr "文字起こしにはAIプロバイダーが必要です。設定 → AIアシスタンスで接続してください。"
+
+#~ msgid "Could not read the file"
+#~ msgstr "ファイルを読み込めませんでした"
+
+#~ msgid "Ask agent"
+#~ msgstr "エージェントに質問"
+
+#~ msgid "Open agent thread"
+#~ msgstr "エージェントのスレッドを開く"
+
+#~ msgid "Allow %1 to ask agent"
+#~ msgstr "%1 がエージェントに質問できるようにする"
+
+#~ msgid "Unlink agent"
+#~ msgstr "エージェントのリンクを解除"
+
+#~ msgid "Open as session"
+#~ msgstr "セッションとして開く"
+
+#~ msgid "Open the Slack thread: %1"
+#~ msgstr "Slack のスレッドを開く: %1"
+
+#~ msgid ""
+#~ "External connections moves up only while its section is shown.\n"
+#~ "In a Claude Code workspace, Sessions moves up."
+#~ msgstr ""
+#~ "「外部との接続」は、そのセクションを表示している間だけ上に移ります。\n"
+#~ "Claude Codeのワークスペースでは「セッション」が上に移ります。"
+
+#~ msgid "Speech model"
+#~ msgstr "音声モデル"
+
+#~ msgid "Speech-to-text model for voice input and audio transcripts. Leave empty for the default."
+#~ msgstr "音声入力と音声の文字起こしに使うモデルです。空欄の場合は既定のモデルを使います。"
+
+#~ msgid "Voice input"
+#~ msgstr "音声入力"
+
+#~ msgid ""
+#~ "Dictate messages with the microphone button in the message box. When you dictate, the recording and the conversation's recent messages are sent to your AI provider.\n"
+#~ "The speech-to-text model is set in each provider's settings above."
+#~ msgstr ""
+#~ "メッセージ欄のマイクボタンで、メッセージを音声で入力できます。音声入力を使うと、録音と会話の最近のメッセージがAIプロバイダーに送信されます。\n"
+#~ "文字起こしのモデルは、上の各プロバイダーの設定で指定します。"
+
+#~ msgid "Voice input needs an OpenAI or OpenAI-compatible provider with speech-to-text."
+#~ msgstr "音声入力には、文字起こしに対応したOpenAIまたはOpenAI互換のプロバイダーが必要です。"
+
+#~ msgid "Glossary"
+#~ msgstr "用語集"
+
+#~ msgid "Names, product terms and jargon to spell correctly, one per line."
+#~ msgstr "正しく表記したい名前、製品名、専門用語を1行に1つずつ入力します。"
+
+#~ msgid "Clean up with AI"
+#~ msgstr "AIで整える"
+
+#~ msgid "Removes filler words and false starts using your AI provider."
+#~ msgstr "AIプロバイダーを使って、「えー」などのつなぎ言葉や言い直しを取り除きます。"
+
+#~ msgid "Memory"
+#~ msgstr "メモリ"
+
+#~ msgid "RAM used: %1"
+#~ msgstr "RAM使用量: %1"
+
+#~ msgid "Stop and transcribe"
+#~ msgstr "停止して文字起こし"
+
+#~ msgid ""
+#~ "Searching GIFs needs a GIPHY API key.\n"
+#~ "\n"
+#~ "Create a free one — it takes a minute — then paste it below. You can change it later in Settings → System."
+#~ msgstr ""
+#~ "GIFの検索にはGIPHYのAPIキーが必要です。\n"
+#~ "\n"
+#~ "無料で取得できます — 1分ほどで済みます — 取得したら下に貼り付けてください。後から設定 → システムで変更できます。"
+
+#~ msgid "No earlier prompt matches"
+#~ msgstr "一致する以前のプロンプトはありません"
+
+#~ msgid "Search earlier prompts"
+#~ msgstr "以前のプロンプトを検索"
+
+#~ msgid "Stop"
+#~ msgstr "停止"
+
+#~ msgid "Find a session"
+#~ msgstr "セッションを探す"
+
+#~ msgid "Create a session"
+#~ msgstr "セッションを作成"
+
+#~ msgid "Create an unsafe session"
+#~ msgstr "安全でないセッションを作成"
+
+#~ msgid "Edit teammate…"
+#~ msgstr "チームメイトを編集…"
+
+#~ msgid "Restore default"
+#~ msgstr "デフォルトに戻す"
+
+#~ msgid "Remove teammate…"
+#~ msgstr "チームメイトを外す…"
+
+#~ msgid "Rename session…"
+#~ msgstr "セッション名を変更…"
+
+#~ msgid "Remove from msga"
+#~ msgstr "msgaから削除"
+
+#~ msgid "Search messages…"
+#~ msgstr "メッセージを検索…"
+
+#~ msgid "Close search"
+#~ msgstr "検索を閉じる"
+
+#~ msgid "Jump to a conversation…"
+#~ msgstr "会話にジャンプ…"
+
+#~ msgid "No conversations match."
+#~ msgstr "一致する会話がありません。"
+
+#~ msgid "%1 to move · %2 to switch workspace · %3 to open"
+#~ msgstr "%1 で移動 · %2 でワークスペースを切り替え · %3 で開く"
+
+#~ msgid "%1 to move · %2 to open"
+#~ msgstr "%1 で移動 · %2 で開く"
+
+#~ msgid "No matches in %1. Other workspaces have some."
+#~ msgstr "%1 には一致する会話がありません。他のワークスペースにはあります。"
+
 #~ msgid "Search for sessions"
 #~ msgstr "セッションを検索"
 
@@ -4017,6 +4042,9 @@ msgstr "ダウンロードした更新ファイルが破損しています（チ
 #~ msgid "Sessions already started keep the instructions they began with; new sessions get these."
 #~ msgstr "すでに始まったセッションは開始時の指示のままで、新しいセッションにこの指示が使われます。"
 
+#~ msgid "Add teammate"
+#~ msgstr "チームメイトを追加"
+
 #~ msgid "In the list"
 #~ msgstr "リストにあり"
 
@@ -4029,6 +4057,12 @@ msgstr "ダウンロードした更新ファイルが破損しています（チ
 #~ msgid "Session status"
 #~ msgstr "セッションの状態"
 
+#~ msgid "Minimize"
+#~ msgstr "最小化"
+
+#~ msgid "Maximize"
+#~ msgstr "最大化"
+
 #~ msgid "That session is gone: Claude Code no longer has it."
 #~ msgstr "このセッションはもうありません。Claude Code から削除されています。"
 
@@ -4038,32 +4072,110 @@ msgstr "ダウンロードした更新ファイルが破損しています（チ
 #~ msgid "Start session in a directory…"
 #~ msgstr "フォルダーでセッションを開始…"
 
-#~ msgid "Search messages…"
-#~ msgstr "メッセージを検索…"
+#~ msgid "Couldn't open the chat."
+#~ msgstr "チャットを開けませんでした。"
 
-#~ msgid "Close search"
-#~ msgstr "検索を閉じる"
+#~ msgid "Rename session"
+#~ msgstr "セッション名を変更"
 
-#~ msgid "Minimize"
-#~ msgstr "最小化"
+#~ msgid "Only msga shows this name; Claude Code keeps its own. Leave it empty to use Claude Code's name again."
+#~ msgstr "この名前はmsgaにだけ表示され、Claude Codeは独自の名前を保持します。空欄にするとClaude Codeの名前に戻ります。"
 
-#~ msgid "Maximize"
-#~ msgstr "最大化"
-
-#~ msgid "Jump to a conversation…"
-#~ msgstr "会話にジャンプ…"
-
-#~ msgid "No conversations match."
-#~ msgstr "一致する会話がありません。"
-
-#~ msgid "No matches in %1. Other workspaces have some."
-#~ msgstr "%1 には一致する会話がありません。他のワークスペースにはあります。"
+#~ msgid "The session is gone."
+#~ msgstr "セッションはもうありません。"
 
 #~ msgid "Jump to a conversation"
 #~ msgstr "会話にジャンプ"
 
 #~ msgid "Remove idle session from msga"
 #~ msgstr "待機中のセッションをmsgaから削除"
+
+#~ msgid "Add sessions"
+#~ msgstr "セッションを追加"
+
+#~ msgid "Sessions"
+#~ msgstr "セッション"
+
+#~ msgid "Team"
+#~ msgstr "チーム"
+
+#~ msgid "Zen mode is on: tool calls are hidden. Click to show everything."
+#~ msgstr "禅モードはオンです：ツール呼び出しは非表示です。クリックするとすべて表示します。"
+
+#~ msgid "Zen mode is off. Click to hide tool calls for easier reading."
+#~ msgstr "禅モードはオフです。クリックするとツール呼び出しを隠して読みやすくします。"
+
+#~ msgid "Away — you haven't used MSGA for a while. Any click or keystroke makes you active again (Settings → System → Presence)."
+#~ msgstr "離席中 — しばらくMSGAを使っていません。クリックやキー入力でまたアクティブになります（設定 → システム → プレゼンス）。"
+
+#~ msgid "Visible — but you appear away while no official Slack app is connected. MSGA can keep you active: Settings → System → Presence."
+#~ msgstr "表示中 — ただし公式Slackアプリが接続されていない間は離席中と表示されます。MSGAでアクティブに保てます：設定 → システム → プレゼンス。"
+
+#~ msgid "No sessions yet. Write below to start one."
+#~ msgstr "まだセッションはありません。下に書き込むと始まります。"
+
+#~ msgid "Change folder"
+#~ msgstr "フォルダーを変更"
+
+#~ msgid "%n new"
+#~ msgid_plural "%n new"
+#~ msgstr[0] "%n 件の新着"
+
+#~ msgid "Start new session in %1"
+#~ msgstr "%1 で新しいセッションを開始"
+
+#~ msgid "%n session"
+#~ msgid_plural "%n sessions"
+#~ msgstr[0] "%n 件のセッション"
+
+#~ msgid "Browse…"
+#~ msgstr "参照…"
+
+#~ msgid "Folder for new sessions with the %1"
+#~ msgstr "%1 との新しいセッションのフォルダー"
+
+#~ msgid "%1s"
+#~ msgstr "%1秒"
+
+#~ msgid "%1m %2s"
+#~ msgstr "%1分%2秒"
+
+#~ msgid "%1 is thinking (%2)…"
+#~ msgstr "%1が考え中（%2）…"
+
+#~ msgid "%1 are thinking…"
+#~ msgstr "%1が考え中…"
+
+#~ msgid "Cancel voice input (Esc)"
+#~ msgstr "音声入力をキャンセル（Esc）"
+
+#~ msgid "Dismiss"
+#~ msgstr "閉じる"
+
+#~ msgid "Esc to cancel"
+#~ msgstr "Escでキャンセル"
+
+#~ msgid "Transcribing…"
+#~ msgstr "文字起こし中…"
+
+#~ msgid "Cleaning up…"
+#~ msgstr "整えています…"
+
+#~ msgid ""
+#~ "No Slack app keys are set up yet.\n"
+#~ "\n"
+#~ "Open Settings → System, choose “Slack app keys”, and paste your client ID, client secret and app token. Building msga yourself? Put them in credentials.cmake instead and rebuild."
+#~ msgstr ""
+#~ "Slackアプリキーがまだ設定されていません。\n"
+#~ "\n"
+#~ "設定 → システムを開いて「Slackアプリキー」を選び、クライアントID、クライアントシークレット、アプリトークンを貼り付けてください。msgaを自分でビルドしている場合は、代わりに credentials.cmake に記入して再ビルドしてください。"
+
+#~ msgid ""
+#~ "The conversation you are reading stays listed until you move on.\n"
+#~ "Starred conversations are always shown."
+#~ msgstr ""
+#~ "閲覧中の会話は、別の会話に移るまで表示されたままになります。\n"
+#~ "スター付きの会話は常に表示されます。"
 
 #~ msgid "Just now"
 #~ msgstr "たった今"
@@ -4396,8 +4508,8 @@ msgstr "ダウンロードした更新ファイルが破損しています（チ
 #~ msgid ""
 #~ "No Microsoft Teams app is set up yet.\n"
 #~ "\n"
-#~ "Open Settings → General, find “Microsoft Teams”, and paste your Entra app's client ID. Building msga yourself? Put it in credentials.cmake as MSGA_TEAMS_CLIENT_ID instead and rebuild."
+#~ "Open Settings → System, find “Microsoft Teams”, and paste your Entra app's client ID. Building msga yourself? Put it in credentials.cmake as MSGA_TEAMS_CLIENT_ID instead and rebuild."
 #~ msgstr ""
 #~ "Microsoft Teamsアプリがまだ設定されていません。\n"
 #~ "\n"
-#~ "設定 → 一般を開いて「Microsoft Teams」を探し、EntraアプリのクライアントIDを貼り付けてください。msgaを自分でビルドしている場合は、代わりに credentials.cmake に MSGA_TEAMS_CLIENT_ID として記入して再ビルドしてください。"
+#~ "設定 → システムを開いて「Microsoft Teams」を探し、EntraアプリのクライアントIDを貼り付けてください。msgaを自分でビルドしている場合は、代わりに credentials.cmake に MSGA_TEAMS_CLIENT_ID として記入して再ビルドしてください。"

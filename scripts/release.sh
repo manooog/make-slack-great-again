@@ -35,9 +35,10 @@ if [[ -d "$BUILD_DIR" && ! -f "${BUILD_DIR}/build.ninja" ]]; then
     rm -rf "$BUILD_DIR"
 fi
 
-# Reconfigure every time: MSGA_DEMO / MSGA_BUILD_TESTS are cached options, so a
-# hand-run `cmake -DMSGA_DEMO=ON build-release` would otherwise stick.
-# Explicit compilers: CMake starts the cache over when they change.
+# Reconfigure every time: MSGA_DEMO / MSGA_BUILD_TESTS / MSGA_SELF_UPDATE are
+# cached options, so a hand-run `cmake -DMSGA_DEMO=ON build-release` would
+# otherwise stick. Explicit compilers: CMake starts the cache over when they
+# change.
 COMPILERS=()
 if [[ -z "${CC:-}${CXX:-}" ]] && command -v clang >/dev/null 2>&1 && command -v clang++ >/dev/null 2>&1; then
     COMPILERS=(-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++)
@@ -46,6 +47,7 @@ cmake -S "$PROJECT_ROOT" -B "$BUILD_DIR" -G Ninja "${COMPILERS[@]+"${COMPILERS[@
     -DCMAKE_BUILD_TYPE=MinSizeRel \
     -DMSGA_DEMO=OFF \
     -DMSGA_BUILD_TESTS=OFF \
+    -DMSGA_SELF_UPDATE=OFF \
     -DMSGA_SIZE_MAP=ON
 
 cmake --build "$BUILD_DIR" --target msga --parallel "$NPROC"

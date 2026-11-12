@@ -38,7 +38,11 @@ const struct {
     {"spellCheck", &Settings::spellCheck},
     {"markdownFormatting", &Settings::markdownFormatting},
     {"showAgentsApps", &Settings::showAgentsApps},
+    {"externalSection", &Settings::externalSection},
     {"unreadsOnly", &Settings::unreadsOnly},
+    {"directAndExternalFirst", &Settings::directAndExternalFirst},
+    {"unreadsOnlyAppliesToCustomSections", &Settings::unreadsOnlyAppliesToCustomSections},
+    {"unreadsOnlyAppliesToStarred", &Settings::unreadsOnlyAppliesToStarred},
     {"animateEmoji", &Settings::animateEmoji},
     {"animateMedia", &Settings::animateMedia},
     {"customTrayIcon", &Settings::customTrayIcon},
@@ -81,6 +85,7 @@ const struct {
     const char            *secret = nullptr;
 } kStrings[] = {
     {"fontFamily", &Settings::fontFamily},
+    {"monoFamily", &Settings::monoFamily},
     {"language", &Settings::language},
     {"trayIconPath", &Settings::trayIconPath},
     {"soundId", &Settings::soundId},
@@ -287,6 +292,11 @@ void fromJson(const json::Value r, Settings &s) {
             s.sidebarCollapsedUnreads.push_back(
                 {std::string(e["workspace"].str()), std::string(e["section"].str())}
             );
+    for (const json::Value e : r["sidebarCollapsed"])
+        if (!e["section"].str().empty())
+            s.sidebarCollapsed.push_back(
+                {std::string(e["workspace"].str()), std::string(e["section"].str())}
+            );
     for (const json::Value p : r["ai"]) {
         AiProvider a;
         for (const auto &f : kAiFields)
@@ -375,6 +385,17 @@ std::string Settings::toFile() const {
                 w.value(id);
             w.endArray().endObject();
         }
+        w.endArray();
+    }
+    if (!sidebarCollapsed.empty()) {
+        w.key("sidebarCollapsed").beginArray();
+        for (const SectionCollapsedPref &p : sidebarCollapsed)
+            w.beginObject()
+                .key("workspace")
+                .value(p.workspace)
+                .key("section")
+                .value(p.section)
+                .endObject();
         w.endArray();
     }
     if (!sidebarCollapsedUnreads.empty()) {

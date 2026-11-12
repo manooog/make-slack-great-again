@@ -137,15 +137,57 @@ TEST("slack write: a broadcast reply carries thread_ts and reply_broadcast") {
     Env    e;
     Result r;
     e.be->sendBroadcast(e.general, "also here", e.old, r.cb());
+    const model::Message *pending = e.last(e.general);
+    REQUIRE(pending && pending->pending);
+    CHECK(pending->isBroadcast() && pending->threadTs == e.old);
+    CHECK(e.store.replies(e.general, e.old) == nullptr);
+
     REQUIRE(pumpUntil([&] { return r.called; }));
     CHECK(r.ok);
     Log         log;
     json::Value req = log.get("chat.postMessage");
     CHECK(req["form"]["thread_ts"].str() == model::formatTs(e.old));
     CHECK_STR(req["form"]["reply_broadcast"].str(), "true");
-    const auto *replies = e.store.replies(e.general, e.old);
-    REQUIRE(replies && replies->size() == 1);
-    CHECK(!replies->front().pending && replies->front().threadTs == e.old);
+    // The fake's chat.postMessage answer omits the thread_broadcast subtype
+    // and the reply broadcast intent must still survive confirmation.
+    const model::Message *m = e.last(e.general);
+    REQUIRE(m != nullptr);
+    CHECK(!m->pending && m->isBroadcast() && m->threadTs == e.old);
+    CHECK_STR(m->text, "also here");
+    CHECK(e.store.conversation(e.general).messages.size() == 2);
+    CHECK(e.store.findMessage(e.general, e.old)->replyCount == 1);
+    CHECK(
+        e.store.replies(e.general, e.old) == nullptr || e.store.replies(e.general, e.old)->empty()
+    );
+    const auto timeline = e.store.threadTimeline(e.general, e.old);
+    REQUIRE(timeline.size() == 1);
+    CHECK(timeline[0]->ts == m->ts && timeline[0]->isBroadcast());
+}
+
+TEST("slack write: a reconciled broadcast keeps its broadcast identity") {
+    if (!haveServer())
+        return;
+    Env e;
+    // The post lands, but its answer is lost. The scan returns Slack's
+    // stored message, which also lacks the thread_broadcast subtype.
+    script("chat.postMessage", R"([{"__partial":true,"__deliver":true}])");
+    Result r;
+    e.be->sendBroadcast(e.general, "also recovered", e.old, r.cb());
+    REQUIRE(pumpUntil([&] { return r.called; }, 8000));
+    CHECK(r.ok);
+    Log log;
+    CHECK_STR(log.order(), "chat.postMessage,conversations.replies");
+    const model::Message *m = e.last(e.general);
+    REQUIRE(m != nullptr);
+    CHECK(!m->pending && m->isBroadcast() && m->threadTs == e.old);
+    CHECK_STR(m->text, "also recovered");
+    CHECK(e.store.findMessage(e.general, e.old)->replyCount == 1);
+    CHECK(
+        e.store.replies(e.general, e.old) == nullptr || e.store.replies(e.general, e.old)->empty()
+    );
+    const auto timeline = e.store.threadTimeline(e.general, e.old);
+    REQUIRE(timeline.size() == 1);
+    CHECK(timeline[0]->ts == m->ts && timeline[0]->isBroadcast());
 }
 
 TEST("slack write: replying in a thread follows it") {
@@ -303,12 +345,16 @@ TEST("slack write: edit, delete and react update the Store and send the right pa
         const model::Message *m = e.store.findMessage(e.general, e.old);
         return m->text == "second" && m->reactions.size() == 1;
     }));
-    // Delete: gone at once; refused, it comes back.
+    // Delete: gone at once; refused, it comes back and the banner says why.
+    std::vector<std::string> errors;
+    e.be->onError = [&](const std::string &m) { errors.push_back(m); };
     script("chat.delete", R"([{"ok":false,"error":"cant_delete_message"}])");
     e.be->remove(e.general, e.old);
     CHECK(!e.store.findMessage(e.general, e.old));
     REQUIRE(pumpUntil([&] { return e.store.findMessage(e.general, e.old) != nullptr; }));
     CHECK(e.store.conversation(e.general).unread == 0);
+    REQUIRE(errors.size() == 1);
+    CHECK_STR(errors.front(), "Couldn't delete the message: cant_delete_message");
     e.be->remove(e.general, e.old);
     REQUIRE(pumpUntil([&] { return Log().count("chat.delete") == 2; }));
     pumpFor(100);
@@ -404,6 +450,46 @@ TEST("slack write: read cursors — conversations.mark, thread marks, mark unrea
     json::Value tm = log.get("subscriptions.thread.mark")["form"];
     CHECK(tm["thread_ts"].str() == model::formatTs(e.old));
     CHECK(tm["ts"].str() == model::formatTs(e.old + 50));
+}
+
+TEST("slack write: Mark unread on a reply — subscriptions.thread.mark read=0, after the read") {
+    if (!haveServer())
+        return;
+    Env                         e;
+    std::vector<model::Message> page;
+    for (Ts d : {50, 80}) {
+        model::Message reply;
+        reply.ts       = e.old + d;
+        reply.threadTs = e.old;
+        reply.user     = e.mira;
+        page.push_back(std::move(reply));
+    }
+    e.store.addPage(e.general, std::move(page));
+    // My thread (I started it): its cursor is mine to move; an unknown one's isn't.
+    CHECK(e.be->canMarkThreadUnread(e.general, e.old));
+    CHECK_FALSE(e.be->canMarkThreadUnread(e.general, e.old + 999));
+    e.be->markThreadRead(e.general, e.old, e.old + 80);
+    CHECK(e.store.unreadThreads() == 0);
+    e.be->markThreadUnread(e.general, e.old, e.old + 50);
+    CHECK(e.store.unreadThreads() == 1);                  // the Threads entry
+    CHECK(e.store.conversation(e.general).lastRead == 0); // the channel's cursor stays
+    REQUIRE(pumpUntil([&] { return Log().count("subscriptions.thread.mark") == 2; }));
+    pumpFor(100);
+    Log log;
+    CHECK(log.count("subscriptions.thread.mark") == 2);
+    CHECK(log.count("conversations.mark") == 0);
+    // One at a time, in the order asked: the read, then the unread.
+    json::Value rd = log.get("subscriptions.thread.mark")["form"];
+    CHECK(rd["ts"].str() == model::formatTs(e.old + 80));
+    CHECK(rd["read"].str().empty());
+    json::Value un = log.get("subscriptions.thread.mark", 1)["form"];
+    CHECK(un["channel"].str() == "C1");
+    CHECK(un["thread_ts"].str() == model::formatTs(e.old));
+    CHECK(un["ts"].str() == model::formatTs(e.old + 49));
+    CHECK(un["read"].str() == "0");
+    // Read again up to its newest: the entry goes.
+    e.be->markThreadRead(e.general, e.old, e.old + 80);
+    CHECK(e.store.unreadThreads() == 0);
 }
 
 TEST("slack write: an upload goes URL, bytes, complete, then replaces the pending copy") {
@@ -1095,6 +1181,9 @@ TEST("slack: on Grid the org's methods go with the org token and the workspace's
     slack::apiCall(client, a, "client.counts", {}, count);
     slack::apiCall(client, a, "subscriptions.thread.getView", "limit=10&team_id=T9", count);
     slack::apiCall(client, a, "conversations.history", "channel=C1", count);
+    // Answered first: concurrent calls reach the log in any order, and the
+    // two client.counts entries below are told apart by position.
+    REQUIRE(pumpUntil([&] { return done == 3; }));
     slack::Auth plain{"xoxc-ws", "xoxd-c"}; // off Grid: no org token
     slack::apiCall(client, plain, "client.counts", {}, count);
     REQUIRE(pumpUntil([&] { return done == 4; }));

@@ -1006,6 +1006,7 @@ Shell::Shell(
         });
     };
     loadSorts();
+    loadCollapsed();
     _sidebar->onSortsChanged = [this] {
         storeSorts();
         saveSettingsSoon();
@@ -1039,6 +1040,10 @@ Shell::Shell(
                 return a.workspace < b.workspace;
             }
         );
+        saveSettingsSoon();
+    };
+    _sidebar->onCollapsedChanged = [this] {
+        storeCollapsed();
         saveSettingsSoon();
     };
     _listHandle = body->add<ListHandle>(*_sidebar, [this](float width) {
@@ -1191,7 +1196,6 @@ Shell::Shell(
     _thread->composer->onCommand = [this](const std::string &name, const std::string &args) {
         runCommand(_thread->composer->conv(), _thread->composer->thread(), name, args);
     };
-    _thread->composer->setPopupArea(_thread->panel);
 #endif
 
     _observer = ctx.store.observe(model::Store::kAnyConv, [this](const model::Change &ch) {
@@ -1278,27 +1282,6 @@ void Shell::runCommand(ConvRef conv, Ts thread, const std::string &name, const s
         showError(result.error);
     if (result.open != kNoConv)
         open(result.open);
-}
-
-// A conversation nobody can post to from here
-// (Conversation::readOnly, e.g. a session a terminal drives) locks the
-// composer and says why; re-run on every change, since it flips while the
-// chat is open. The suggested reply is handed on only when it changes: a
-// send drops it, and the service may still report it until the next turn.
-void Shell::applyComposerAccess() {
-    if (_current == kNoConv || _current >= _ctx.store().conversationCount())
-        return;
-    const std::string suggestion = _ctx.backend.promptSuggestion(_current);
-    if (suggestion != _composerSuggestion) {
-        _composerSuggestion = suggestion;
-        _composer->setSuggestion(suggestion);
-    }
-    // Unlocked, the placeholder names the chat: a rename goes in too.
-    const std::string &reason = _ctx.store().conversation(_current).readOnly;
-    if (reason == _composerLock && !reason.empty())
-        return;
-    _composerLock = reason;
-    _composer->setLockReason(reason);
 }
 
 Shell::~Shell() {
@@ -1997,27 +1980,6 @@ void Shell::commandsChanged(const std::string &key) {
                 c->commandsChanged();
 }
 
-void Shell::giveBackUnsent(
-    const std::string              &key,
-    const model::Store             &store,
-    ConvRef                         conv,
-    Ts                              thread,
-    const std::string              &text,
-    const std::vector<std::string> &files
-) {
-    // The composer holding that conversation's input, shown or not, takes it:
-    // its draft is what it holds.
-    if (key == _drafts.scope())
-        for (Composer *c : {_composer, threadComposer()})
-            if (c && c->conv() == conv && c->thread() == thread) {
-                c->giveBack(text, files);
-                return;
-            }
-    TextEdit edit;
-    loadMrkdwn(edit, store, text);
-    _drafts.putBack(key, {conv, thread}, edit.empty() ? std::string() : edit.html(), files);
-}
-
 // Only when the signed-out page that follows is
 // out of sight (hidden to the tray; plat cannot tell "minimized" on every
 // OS, so a minimized window is not nudged) — the app telling the user
@@ -2098,7 +2060,15 @@ void Shell::sampleNotificationReady(const plat::Notification &n) {
 
 void Shell::notifySessionExpired(const std::string &workspace) {
     plat::App &pa = _ctx.app.platform();
-    if (!_hidden || !pa.notificationsAvailable())
+    if (!_hidden) {
+        showError(
+            workspace.empty()
+                ? std::string(tr("Your session has expired. Sign in again."))
+                : i18n::arg(tr("Your %1 session has expired. Sign in again."), workspace)
+        );
+        return;
+    }
+    if (!pa.notificationsAvailable())
         return;
     plat::Notification n;
     n.title = tr("Session expired");
@@ -2128,6 +2098,7 @@ void Shell::workspaceChanged() {
     rebuildTrayMenu();
     updateHeader();
     loadSorts();
+    loadCollapsed();
 }
 
 void Shell::open(ConvRef conv) {
@@ -2135,6 +2106,8 @@ void Shell::open(ConvRef conv) {
         return;
     if (onNavigation)
         onNavigation();
+    // Opened again: one marked unread is read like any other now.
+    _ctx.releaseUnread(conv, 0);
     leavePages();
     showMessageArea();
     if (conv != _current && threadOpen())
@@ -2147,9 +2120,6 @@ void Shell::open(ConvRef conv) {
     updateHuddleBanner();
     _composer->setTarget(conv, 0);
     _composer->setEnabled(conv != model::kNoConv); // disabled until one is open
-    _composerLock.clear();
-    _composerSuggestion = _ctx.backend.promptSuggestion(conv); // setTarget gave it
-    applyComposerAccess();
     _typing->setTarget(conv, 0);
     _sidebar->select(conv);
     showCanvas(false);
@@ -2178,6 +2148,7 @@ void Shell::open(ConvRef conv) {
 
 void Shell::leaveWorkspace() {
     leavePages();
+    _ctx.unreadHolds.clear(); // they name the old workspace's conversations
     if (_activityPage)
         _activityPage->clear(); // its items point into the old workspace
     if (_threadsPage)
@@ -2195,8 +2166,6 @@ void Shell::leaveWorkspace() {
         _pendingNav = {}; // a manual switch cancels a jump
     _composer->setTarget(kNoConv, 0);
     _composer->setEnabled(false);
-    _composerLock.clear();
-    _composerSuggestion.clear();
     _typing->setTarget(kNoConv, 0);
     _sidebar->select(kNoConv);
     showCanvas(false);
@@ -2220,6 +2189,31 @@ void Shell::purgeHistory(const std::string &key) {
     _nav.purge(key);
     if (_pendingNav.key == key)
         _pendingNav = {};
+}
+
+void Shell::forgetSidebarPrefs(const std::string &key) {
+    const auto sorts =
+        std::erase_if(_settings.sidebarSorts, [&key](const Settings::SectionSortPref &p) {
+            return p.workspace == key;
+        });
+    const auto collapsed =
+        std::erase_if(_settings.sidebarCollapsed, [&key](const Settings::SectionCollapsedPref &p) {
+            return p.workspace == key;
+        });
+    const auto order =
+        std::erase_if(_settings.sidebarSectionOrders, [&key](const Settings::SectionOrderPref &p) {
+            return p.workspace == key;
+        });
+    const auto unreads = std::erase_if(
+        _settings.sidebarCollapsedUnreads,
+        [&key](const Settings::CollapsedUnreadPref &p) { return p.workspace == key; }
+    );
+    if (sorts + collapsed + order + unreads > 0)
+        saveSettingsSoon();
+    if (_collapsedFor == key) { // nothing of it stored back, the next one loads
+        _collapsedFor.reset();
+        _sidebar->setCollapsed({});
+    }
 }
 
 NavLocation Shell::here(ConvRef conv) const {
@@ -2438,6 +2432,7 @@ void Shell::openThread(ConvRef conv, Ts root, Ts jumpTarget) {
         open(conv);
     else if (onNavigation)
         onNavigation();
+    _ctx.releaseUnread(conv, root); // opened again (see open)
     _thread->show(conv, root, jumpTarget); // stashes the previous thread's draft
 #ifdef MSGA_HAVE_MESSAGES
     // Its reply bar in the list says "Close thread".
@@ -2829,13 +2824,17 @@ void Shell::onChange(const model::Change &ch) {
     // budget in check; attached Stores are handled by onWorkspaceChange().
     if (!attached && ch.kind != K::Typing)
         maybeTrimHistoryBudget();
+    // Read here or elsewhere: its notifications go (an attached
+    // workspace's own observer does that).
+    if ((ch.kind == K::Meta || ch.kind == K::ThreadRead) && !attached)
+        withdrawRead(_ctx.store(), {}, ch);
     if (ch.kind == K::Meta || ch.kind == K::Roster) {
         if (ch.kind == K::Meta && !attached && _live)
             huddleChanged(_ctx.store(), {}, ch.conv);
         if (ch.conv == _current)
             updateHeader();
         if (ch.conv == _current || ch.kind == K::Roster)
-            applyComposerAccess(); // the lock flips while the chat is open
+            _composer->refreshPlaceholder(); // a rename follows while the chat is open
         // A poll or a roster reload brings a burst of Meta: count once after
         // it (each count walks every conversation of every workspace). A
         // Roster was counted already (refreshWorkspaceIcon → refreshRail).
@@ -2850,7 +2849,8 @@ void Shell::onChange(const model::Change &ch) {
     model::Store &st = _ctx.store();
     if (const std::vector<model::Message> *list =
             ch.thread ? st.replies(ch.conv, ch.thread) : &st.conversation(ch.conv).messages;
-        ch.kind == K::Append && ch.live && list && reading() && ch.conv == _current && !ch.thread)
+        ch.kind == K::Append && ch.live && list && reading() && ch.conv == _current && !ch.thread &&
+        !_ctx.unreadHeld(ch.conv, 0)) // marked unread: it stays so until opened again
         for (size_t i = list->size() - std::min<size_t>(ch.count, list->size()); i < list->size();
              ++i)
             if (const model::Message &m = (*list)[i]; m.user != st.me && !m.pending)
@@ -3546,6 +3546,11 @@ void Shell::detachWorkspace(const std::string &key) {
         return;
     (*it)->store->unobserve((*it)->observer);
     _running.erase(it);
+    // A Store attached again for it is new: its collapsed sections load anew.
+    if (_collapsedFor == key) {
+        _collapsedFor.reset();
+        _sidebar->forgetStore();
+    }
     std::erase_if(_notified, [&](const auto &n) { return n.second.key == key; });
     // Dialogs that reach every workspace let it go.
     if (_forward)
@@ -3609,6 +3614,8 @@ void Shell::onWorkspaceChange(const std::string &key, const model::Change &ch) {
     Running *r = findRunning(key);
     if (!r)
         return;
+    if (ch.kind == K::Meta || ch.kind == K::ThreadRead)
+        withdrawRead(*r->store, key, ch);
     if (ch.kind == K::Meta || ch.kind == K::Roster) {
         r->dirty = true;
         if (r->store != &_ctx.store())
@@ -3938,14 +3945,20 @@ void Shell::applySettings() {
                 _thread->show(_thread->conv, _thread->root, 0);
         }
     }
-    // Settings → Appearance (relevant days, Agents & apps, unreads only) and
-    // Notifications (the default level, "Highlight mentions-only channels").
+    // Settings → Appearance (relevant days, Agents & apps, External
+    // connections, DMs and external conversations first, unreads only and
+    // its scopes) and Notifications (the default level, "Highlight
+    // mentions-only channels").
     Sidebar::Filters f;
-    f.relevantDays          = _settings.relevantDays;
-    f.showAgentsApps        = _settings.showAgentsApps;
-    f.unreadsOnly           = _settings.unreadsOnly;
-    f.highlightMentionsOnly = _settings.boldMentionsOnly;
-    f.defaultLevel          = defaultLevel();
+    f.relevantDays                       = _settings.relevantDays;
+    f.showAgentsApps                     = _settings.showAgentsApps;
+    f.externalSection                    = _settings.externalSection;
+    f.unreadsOnly                        = _settings.unreadsOnly;
+    f.unreadsOnlyAppliesToCustomSections = _settings.unreadsOnlyAppliesToCustomSections;
+    f.unreadsOnlyAppliesToStarred        = _settings.unreadsOnlyAppliesToStarred;
+    f.directAndExternalFirst             = _settings.directAndExternalFirst;
+    f.highlightMentionsOnly              = _settings.boldMentionsOnly;
+    f.defaultLevel                       = defaultLevel();
     _sidebar->setFilters(f);
     for (const auto &r : _running)
         r->dirty = true; // the default level decides what counts
@@ -4125,6 +4138,39 @@ void Shell::storeSorts() {
         _settings.sidebarSorts.begin(),
         _settings.sidebarSorts.end(),
         [](const Settings::SectionSortPref &a, const Settings::SectionSortPref &b) {
+            return std::tie(a.workspace, a.section) < std::tie(b.workspace, b.section);
+        }
+    );
+}
+
+// workspaceChanged also runs for the open one (connected, its icon): the
+// sidebar's state is already what the settings have for it then, and the
+// sections opened up for its chats stay open.
+void Shell::loadCollapsed() {
+    if (_collapsedFor == _activeKey)
+        return;
+    Sidebar::Collapsed collapsed;
+    for (const Settings::SectionCollapsedPref &p : _settings.sidebarCollapsed)
+        if (p.workspace == _activeKey && !p.section.empty())
+            collapsed[p.section] = true;
+    _collapsedFor = _activeKey;
+    _sidebar->setCollapsed(std::move(collapsed));
+}
+
+void Shell::storeCollapsed() {
+    if (!_collapsedFor)
+        return;
+    const std::string &key = *_collapsedFor;
+    std::erase_if(_settings.sidebarCollapsed, [&key](const Settings::SectionCollapsedPref &p) {
+        return p.workspace == key;
+    });
+    for (const auto &[section, on] : _sidebar->collapsed())
+        if (on && !section.empty())
+            _settings.sidebarCollapsed.push_back({key, section});
+    std::sort(
+        _settings.sidebarCollapsed.begin(),
+        _settings.sidebarCollapsed.end(),
+        [](const Settings::SectionCollapsedPref &a, const Settings::SectionCollapsedPref &b) {
             return std::tie(a.workspace, a.section) < std::tie(b.workspace, b.section);
         }
     );

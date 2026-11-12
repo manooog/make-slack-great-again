@@ -8,7 +8,7 @@ not an aspirational rewrite.
 
 The CMake dependency direction is intentionally narrow:
 
-- `prim/`: small string, UTF-8 and hash primitives shared by platform and app.
+- `prim/`: small string, UTF-8 and hash primitives shared by `plat` and `base`.
 - `plat/`: OS boundary — windows, input, timers, event loop and platform services.
 - `base/`: files, JSON, logging, time, crypto, secrets and common utilities.
 - `net/`: cancellable HTTP requests and WebSockets.
@@ -32,16 +32,17 @@ wires workspace actions and starts saved workspaces.
 | --- | --- | --- |
 | Saved credentials, order and active key | `auth::WorkspaceStore` | Account records, not conversation data. |
 | Running workspace | `Accounts::Running` | Owns its `model::Store` and `model::Backend`; Store outlives backend. |
-| Conversations, users, messages, unread counts, drafts and thread state | `model::Store` | One per workspace; mutations and observers run on UI thread. |
+| Conversations, users, messages, unread counts, drafts and loaded thread replies | `model::Store` | One per workspace; mutations and observers run on UI thread. |
+| Thread baselines, followed threads and per-thread read floors | `slack::SlackBackend` (`Read`) | Store keeps only the aggregate unread-thread count and the replies it has loaded. |
 | Slack API and live events | `slack::SlackBackend` | Read, write and live parts mutate Store; no parallel UI copy. |
 | Active workspace routing | `BackendProxy` + `StoreSlot` | Proxy targets active backend; slot targets active Store. |
 | Cross-workspace attention and notifications | `Shell` | Accounts attaches all running Stores, including background workspaces. |
 | Pages, selection, threads, navigation and notification policy | `Shell` | Owns view state, not message data. |
 | Back/forward history | `NavHistory` | Bounded locations, validated on replay and purged on workspace removal. |
-| Quick-switch recency | `Settings::visitedAt` + `QuickSwitcher` | Local ranking input, not a second conversation store. |
+| Quick-switch recency | `Sidebar::_visited` + `Settings::visitedAt` | Runtime visit stamps, delayed to settings for the next start; not a second conversation store. |
 | Preferences | `shell::Settings` | settings.json; secrets delegated to secret store. |
 | Workspace cache | `cache::WorkspaceCache` | Roster, users, metadata and conversation records. |
-| Discussion summaries | `llm::Service` + `DiscussionSummary` | Provider transport and prompt construction are separate from Slack model. |
+| Discussion summaries | `llm::Service` + `llm::summaryRequest` | Provider transport and prompt construction are separate from Slack model. |
 
 ## Important flows
 
@@ -61,9 +62,11 @@ wires workspace actions and starts saved workspaces.
   and live events. Socket Mode is shared across app-key workspaces.
 - Backend parsers normalize Slack responses into model types. Store is the
   single source of truth for conversations and messages.
-- History/cache restoration uses page/restore mutations. Live events use
-  `Store::addMessage`; `Change::isArrival()` distinguishes new arrivals from
-  history, cache restoration and backfills.
+- History and cache restoration use `Store::addPage`. Live events use
+  `Store::addMessage` for loaded conversations and threads; a reply whose
+  thread is not loaded updates the root with `Store::updateMessage` and is
+  announced with `Store::announceReply`. `Change::isArrival()` distinguishes
+  new arrivals from history, cache restoration and backfills.
 
 ### Notifications
 
@@ -75,8 +78,9 @@ wires workspace actions and starts saved workspaces.
 
 ### Search and navigation
 
-- Conversation quick switcher ranks names locally from active Store using fuzzy
-  matching and visit recency.
+- Conversation quick switcher ranks names locally in every live workspace's
+  Store using fuzzy matching and visit recency; each workspace is a tab, and
+  switching only changes the backend and Store targets.
 - Message search is a backend capability (`Backend::searchPage`) and returns
   one page of server results with Slack's cursor; it is not a second local
   message database.
@@ -146,12 +150,12 @@ removing Slack-native functionality with similar terminology:
   in the workspace store. This is data compatibility, not an active integration.
 - The upstream self-updater remains optional for compatibility, but
   `MSGA_SELF_UPDATE` is OFF by default and in CI/release/Nix builds.
-- Some generic UI/model extension points still exist: composer history and
-  suggestions, read-only reasons, and elapsed typing status. No production
-  Slack backend supplies the former agent runtime. Removing these interfaces
-  is a separate contract reduction, not required to remove its processes,
-  credentials, assets or dependencies; they must not be mistaken for a working
-  Claude Code integration. The obsolete Claude cache-import declaration is gone.
+- The orphaned agent-only UI and model hooks are removed: prompt-history
+  search and reply suggestions, read-only composer reasons, elapsed "thinking"
+  typing state, unreachable-user presence, and the unsent-message hand-back.
+  No production Slack backend supplied them; keeping the interfaces would
+  preserve dead UI branches and model state. The obsolete Claude cache-import
+  declaration is also gone.
 
 Regression coverage lives in `tests/app/core/test_slack*`,
 `tests/app/core/test_audio.cpp`, `tests/app/llm/test_llm.cpp` and
@@ -187,10 +191,11 @@ Regression coverage lives in `tests/app/core/test_slack*`,
   threshold until a stable runner baseline has been established.
 - `MSGA_ASAN` selects the allocator, leak-check and graceful-shutdown diagnostic
   paths for both GCC and Clang; GCC-specific compiler macros must not gate them.
-- Idle-worker tests track the actual worker thread IDs, not equality with a
-  process-wide count: Linux can briefly list a joined thread in `/proc/self/task`.
-  An unrelated thread retiring must neither cause a false failure nor hide a
-  worker that is still alive. Production Worker Pool retirement is unchanged.
+- Tests that assert a worker has retired track the actual worker thread IDs
+  where they can, rather than a process-wide count: Linux can briefly list a
+  joined thread in `/proc/self/task`. An unrelated thread retiring must neither
+  cause a false failure nor hide a worker that is still alive. Production
+  Worker Pool retirement is unchanged.
 
 ## Audit decisions
 
@@ -221,6 +226,22 @@ Regression coverage lives in `tests/app/core/test_slack*`,
   name alone is not identity. Only a completed successful run supplies the named
   production artifacts; waiting, download or checksum failures block publication.
 - Release dispatches share a non-cancelling concurrency group. Preview artifacts
-  are never used as production artifacts. Upstream synchronization pushes only
-  a proposal branch with a lease, opens a PR, and explicitly dispatches CI;
-  it never merges into dev or publishes a release.
+  are never used as production artifacts. No automated upstream-sync workflow is
+  active; upstream updates use the normal branch-and-PR path.
+
+## Dependency and license policy
+
+- Third-party sources built by CMake are fetched as release tarballs pinned by
+  URL and SHA-256: Mbed TLS 3.6.7, FreeType 2.14.3 and HarfBuzz 12.2.0. The
+  Nix package reuses the Mbed TLS pin and locks its nixpkgs revision. GitHub
+  Actions are pinned by commit SHA.
+- The Linux release remains dynamically linked to the Ubuntu 24.04 runtime;
+  `DEPENDENCIES.txt` records the resolved libraries, which are supplied by the
+  distribution and not redistributed. The Windows release statically links its
+  MinGW runtime and is checked for runtime DLL imports.
+- `LICENSE` and `THIRD_PARTY_LICENSES` are published with every release and
+  installed by the Nix package. `tests/workflows/test_dependency_licenses.py`
+  guards version, hash and notice consistency.
+- No production dependency was found unused. Optional system libwebp remains
+  off by default; bundled audio, spell, text and TLS libraries back retained
+  features.

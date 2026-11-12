@@ -16,6 +16,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace model {
@@ -35,6 +36,9 @@ enum class ChangeKind : uint8_t {
     // (no list holds it), yet new — Store::arrived() is the message while
     // the observers run. thread = its root, ts = its ts.
     Arrived,
+    // A thread read up to `ts` (thread = its root), here or on another
+    // client; the backend keeps the cursor, nothing in the Store changes.
+    ThreadRead,
 };
 
 struct Change {
@@ -172,12 +176,17 @@ public:
     void setThreadRoot(ConvRef c, Message root);
     // Replies of a loaded thread (null if never loaded).
     const std::vector<Message> *replies(ConvRef c, Ts root) const;
+    // Everything a thread views: its loaded replies plus the replies that
+    // were broadcast into the channel timeline, oldest first. Pointers stay
+    // valid until the Store changes.
+    std::vector<const Message *> threadTimeline(ConvRef c, Ts root) const;
     // Position of ts in the top-level list (thread == 0) or in a thread;
     // SIZE_MAX if absent. Binary search: the lists are sorted by ts.
     size_t                      indexOf(ConvRef c, Ts ts, Ts thread = 0) const;
 
-    // A page of history or thread replies (any order, all in the same list:
-    // top-level messages, or replies with the same threadTs). Existing ts are
+    // A page of history or thread replies, any order: top-level messages,
+    // thread replies, or a history page mixing both (a broadcast reply keeps
+    // its channel row). Each message goes to its list. Existing ts are
     // replaced (Update); older ones Prepend, newer ones Append, others
     // Insert. Does not touch unread counts or roots' reply counters — a page
     // is what the server already counted.
@@ -208,6 +217,8 @@ public:
     // Moves the read cursor and recomputes unread/mentions from the loaded
     // messages after it. Fires Meta.
     void                     markRead(ConvRef c, Ts ts);
+    // A thread's read cursor moved (backends call it): fires ThreadRead.
+    void                     threadRead(ConvRef c, Ts root, Ts ts);
     // Muted threads get no notifications ("Mute thread"; app-local).
     bool                     threadMuted(ConvRef c, Ts root) const;
     void                     setThreadMuted(ConvRef c, Ts root, bool on); // fires Meta
@@ -341,14 +352,26 @@ public:
     // The one holding conversation `convId` (null: none).
     const Section              *sectionOf(std::string_view convId) const;
     const Section              *findSection(std::string_view id) const;
-    // Replaces the list; fires Meta with conv = kNoConv when it changed.
+    // A local optimistic edit: replaces the list and fires Meta when it
+    // changed. It never changes the completeness or the redacted ids.
     void                        setSections(std::vector<Section> sections);
-    // Grows with every change of the list.
-    uint64_t                    sectionsRevision() const { return _sectionsRev; }
+    // A confirmed complete server snapshot: the whole section list and the
+    // ids Slack marked redacted. Fires Meta when either changed.
+    void setSectionsSnapshot(
+        std::vector<Section> sections, std::unordered_set<std::string> redacted
+    );
+    bool     sectionsComplete() const { return _sectionsComplete; }
+    // Grows only when a confirmed server snapshot is accepted. Local
+    // optimistic edits leave it alone, so pruning waits for confirmation.
+    uint64_t sectionsConfirmedRevision() const { return _sectionsConfirmedRev; }
+    bool     sectionRedacted(std::string_view id) const {
+        return _redactedSections.count(std::string(id)) != 0;
+    }
+    // Grows with every change of the list, its completeness or redaction.
+    uint64_t sectionsRevision() const { return _sectionsRev; }
 
     // ── Typing ──────────────────────────────────────────────────────────────
-    // sinceMs: an agent "thinking" since then (Typing::sinceMs); 0 = typing.
-    void setTyping(ConvRef c, UserRef u, Ts thread, bool on, int64_t sinceMs = 0);
+    void setTyping(ConvRef c, UserRef u, Ts thread, bool on);
     const std::vector<Typing> &typing(ConvRef c) const;
 
     // ── Custom emoji ────────────────────────────────────────────────────────
@@ -425,7 +448,11 @@ private:
     std::vector<SavedItem>                       _saved;
     std::vector<ScheduledItem>                   _scheduled;
     std::vector<Section>                         _sections;
-    uint64_t                                     _sectionsRev = 0;
+    std::unordered_set<std::string>              _redactedSections;
+    uint64_t                                     _sectionsRev           = 0;
+    uint64_t                                     _sectionsConfirmedRev  = 0;
+    bool                                         _sectionsComplete      = false;
+    bool                                         _sectionsDirty         = false; // local edit after a snapshot
     std::vector<Usergroup>                       _usergroups;
     std::unordered_map<std::string, std::string> _channelNames;
     std::unordered_map<std::string, UserRef>     _linkedAuthors; // "conv/ts"

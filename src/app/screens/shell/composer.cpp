@@ -288,24 +288,6 @@ void DraftStash::erase(Key k) {
         s->setDraft(k.conv, k.thread, {}, {});
 }
 
-void DraftStash::appendText(const std::string &scope, Key k, std::string_view add) {
-    model::Store              *s   = storeOf(scope);
-    const model::Store::Draft *old = s ? s->draft(k.conv, k.thread) : nullptr;
-    if (!s || k.conv == model::kNoConv || add.empty())
-        return; // its workspace is closed, or nothing to add
-    std::vector<std::string> files = old ? old->files : std::vector<std::string>();
-    std::string              text;
-    std::vector<uint16_t>    fmt;
-    std::vector<std::string> links;
-    rich::fromHtml(old ? old->html : std::string(), &text, &fmt, &links);
-    if (size_t last = utf8::prevBoundary(text, text.size());
-        !text.empty() && !utf8::isSpace(utf8::decode(text, last)))
-        text += ' ';
-    text += add;
-    fmt.resize(text.size(), 0); // the dictation is plain text
-    s->setDraft(k.conv, k.thread, rich::toHtml(text, fmt.data(), links), std::move(files));
-}
-
 // ── Undo send ───────────────────────────────────────────────────────────────
 // The undo-send pill: "Message sent · Undo
 // Ctrl+Z" on the tooltip chip, right-aligned 6 px above the composer box, for
@@ -694,17 +676,13 @@ void Composer::refreshLook() {
         static_cast<SendGroup *>(_sendGroup)->on = active;
         _sendGroup->update();
     }
-    // The placeholder: the suggestion (with its key hint) while there is one.
-    std::string ph =
-        _suggestion.empty() ? _placeholder : str::concat({_suggestion, "  \xE2\x86\x92"});
-    if (ph != _shownPlaceholder) {
-        _shownPlaceholder = ph;
-        _edit->setPlaceholder(std::move(ph));
+    if (_placeholder != _shownPlaceholder) {
+        _shownPlaceholder = _placeholder;
+        _edit->setPlaceholder(_placeholder);
     }
 }
 
-// The composer's key handler. Optional prompt history shortcuts let
-// unmatched keys pass through to the editor.
+// The composer's key handler; unmatched keys pass through to the editor.
 bool Composer::keyDown(const Event &e) {
     using shortcuts::Id;
     using shortcuts::matches;
@@ -713,9 +691,6 @@ bool Composer::keyDown(const Event &e) {
     const uint32_t mods = e.mods & ui::kModMask;
     // The pick list takes its navigation keys first.
     if (_pick && _pick->handleKey(e))
-        return true;
-    // A suggested reply is taken with → or Tab from the empty editor.
-    if ((e.key == plat::Key::Right || e.key == plat::Key::Tab) && !mods && acceptSuggestion())
         return true;
     // Pills are atomic: deleting into one removes the whole of it (a partly
     // edited pill would lose its token).
@@ -740,11 +715,6 @@ bool Composer::keyDown(const Event &e) {
         return true;
     }
     if (matches(Id::UndoSend, e) && _edit->empty() && undoSend())
-        return true;
-    if (matches(Id::SearchPromptHistory, e) && openPromptSearch())
-        return true;
-    if (!mods && (e.key == plat::Key::Up || e.key == plat::Key::Down) &&
-        stepPromptHistory(e.key == plat::Key::Up))
         return true;
     if (matches(Id::EditLastMessage, e) && _edit->empty()) {
         editLast();
@@ -819,10 +789,10 @@ void Composer::editLast() {
         return m.user == st.me && st.me != model::kNoUser && m.subtype().empty() && !m.pending;
     };
     if (_key.thread) {
-        if (const auto *r = st.replies(_key.conv, _key.thread))
-            for (auto it = r->rbegin(); it != r->rend(); ++it)
-                if (mine(*it))
-                    return beginEdit(it->ts);
+        const auto r = st.threadTimeline(_key.conv, _key.thread);
+        for (auto it = r.rbegin(); it != r.rend(); ++it)
+            if (mine(**it))
+                return beginEdit((*it)->ts);
         const model::Message *root = st.findMessage(_key.conv, _key.thread);
         if (root && mine(*root))
             beginEdit(root->ts);
@@ -834,148 +804,14 @@ void Composer::editLast() {
             return beginEdit(it->ts);
 }
 
-void DraftStash::putBack(
-    const std::string &scope, Key k, std::string_view html, std::vector<std::string> files
-) {
-    model::Store              *s   = storeOf(scope);
-    const model::Store::Draft *old = s ? s->draft(k.conv, k.thread) : nullptr;
-    if (!s || k.conv == model::kNoConv || (html.empty() && files.empty()))
-        return;
-    std::string merged = old ? old->html : std::string();
-    if (merged.empty()) {
-        merged = html;
-    } else if (!html.empty()) {
-        TextEdit edit;
-        edit.insertHtml(html);
-        edit.insertText("\n");
-        edit.insertHtml(merged);
-        merged = edit.html();
-    }
-    std::vector<std::string> all = old ? old->files : std::vector<std::string>();
-    for (std::string &f : files)
-        if (std::find(all.begin(), all.end(), f) == all.end())
-            all.push_back(std::move(f));
-    s->setDraft(k.conv, k.thread, std::move(merged), std::move(all));
-}
-
-// ↑ from an empty editor shows the newest prompt,
-// then older ones; ↓ goes back, past the newest to an empty editor again.
-bool Composer::stepPromptHistory(bool older) {
-    if (_editTs)
-        return false;
-    // Inside a multi-line prompt the arrows move between its lines first.
-    if (!_edit->caretOnEdgeLine(older))
-        return false;
-    if (_historyIndex < 0) {
-        // Only from an empty editor: a draft is never replaced by ↑.
-        if (!older || !historySource || !_edit->empty())
-            return false;
-        _history = historySource();
-        if (_history.empty())
-            return false;
-    }
-    const int next = _historyIndex + (older ? 1 : -1);
-    if (next >= int(_history.size()))
-        return true; // the oldest is shown already
-    if (next < 0) {
-        resetPromptHistory();
-        _edit->clear();
-        return true;
-    }
-    _historyIndex = next;
-    // Where the next press in the same direction goes on at once: going back
-    // from the first line, forward from the last.
-    setHistoryText(_history[size_t(next)], older);
-    return true;
-}
-
-void Composer::resetPromptHistory() {
-    _history.clear();
-    _historyIndex = -1;
-}
-
-void Composer::setHistoryText(const std::string &text, bool caretAtStart) {
-    loadMrkdwn(*_edit, _ctx.store, text); // the editor's mrkdwn
-    if (caretAtStart)
-        _edit->setSelection(0, 0);
-    refreshLook();
-}
-
-// Ctrl+R: the prompt search over the composer box.
-bool Composer::openPromptSearch() {
-    Window *w = window();
-    if (_editTs || !historySource || !w)
-        return false;
-    std::vector<std::string> history = historySource();
-    if (history.empty())
-        return false;
-    if (_historySearch)
-        _historySearch->dismiss();
-    // What's typed so far is where the search starts; picking replaces it.
-    const std::string typed = str::simplified(_edit->text());
-    View             *area  = _popupArea ? _popupArea : parent();
-    auto             *hs    = HistorySearch::open(
-        *w, std::move(history), typed, _box->windowRect(), area ? area->windowRect() : RectF{}
-    );
-    _historySearch           = hs;
-    std::weak_ptr<int> alive = _alive;
-    hs->onPicked             = [this, alive](const std::string &text) {
-        if (alive.expired())
-            return;
-        resetPromptHistory();
-        setHistoryText(text, false);
-        _edit->focus();
-    };
-    hs->onCancelled = [this, alive] {
-        if (!alive.expired())
-            _edit->focus();
-    };
-    hs->onClosed = [this, alive, hs] {
-        if (!alive.expired() && _historySearch == hs)
-            _historySearch = nullptr;
-    };
-    return true;
-}
-
-void Composer::setSuggestion(std::string text) {
-    _suggestion = str::simplified(text); // whitespace runs as one space, trimmed
-    refreshLook();
-}
-
-void Composer::setLockReason(std::string reason) {
-    // Unlocked, "Message <name>" follows a rename of the session.
-    if (reason == _lock && !_lock.empty())
-        return;
-    const bool changed = reason != _lock;
-    _lock              = std::move(reason);
-    if (changed)
-        setEnabled(_lock.empty());
-    if (!_lock.empty()) {
-        _placeholder = _lock;
-        refreshLook();
-        return;
-    }
-    const std::string was = _placeholder;
-    refreshPlaceholder();
-    if (changed && _placeholder == was)
-        refreshLook(); // refreshPlaceholder repaints only on a new text
-}
-
 void Composer::refreshPlaceholder() {
     const std::string was = _placeholder;
-    if (_lock.empty() && _fixedPlaceholder.empty() && _key.conv != model::kNoConv && !_key.thread &&
+    if (_fixedPlaceholder.empty() && _key.conv != model::kNoConv && !_key.thread &&
         _key.conv < _ctx.store().conversationCount()) {
         _placeholder = i18n::arg(tr("Message %1"), convTitle(_ctx.store(), _key.conv));
     }
     if (_placeholder != was)
         refreshLook();
-}
-
-bool Composer::acceptSuggestion() {
-    if (_suggestion.empty() || _editTs || !_edit->empty())
-        return false;
-    _edit->insertText(_suggestion);
-    return true;
 }
 
 void Composer::stashNow() {
@@ -1032,11 +868,6 @@ void Composer::setTarget(model::ConvRef conv, model::Ts thread) {
     stashNow();
     if (_pick)
         _pick->close();
-    resetPromptHistory();
-    if (_historySearch)
-        _historySearch->dismiss();
-    _lock.clear();       // the shell re-applies the new conversation's (applyComposerAccess)
-    _suggestion.clear(); // it answered the conversation being left
     _key = next;
     _edit->clear();
     if (const std::string html = _drafts.get(next); !html.empty())
@@ -1047,12 +878,9 @@ void Composer::setTarget(model::ConvRef conv, model::Ts thread) {
                    : thread                   ? std::string(tr("Reply in thread\xE2\x80\xA6"))
                                               : std::string();
     refreshPlaceholder(); // "Message #name"
-    if (conv != model::kNoConv) {
-        setSuggestion(_ctx.backend.promptSuggestion(conv)); // simplified
-        // Asked for now, so the "/" list is there by the time "/" is typed.
-        if (_ctx.backend.capabilities().slashCommands)
-            _ctx.backend.commandsRevision(conv);
-    }
+    // Asked for now, so the "/" list is there by the time "/" is typed.
+    if (conv != model::kNoConv && _ctx.backend.capabilities().slashCommands)
+        _ctx.backend.commandsRevision(conv);
     refreshLook();
     compositionChanged();
 }
@@ -1107,7 +935,6 @@ bool Composer::send() {
     }
     if ((text.empty() && _files.empty()) || _key.conv == model::kNoConv)
         return false;
-    resetPromptHistory(); // the next ↑ starts from the newest again
     // "/command [args]" runs a known local command in msga. An unknown
     // slash command is sent to Slack unchanged.
     if (_files.empty() && text.size() > 1 && text[0] == '/' && onCommand &&
@@ -1147,7 +974,6 @@ bool Composer::send() {
     _files.clear();
     rebuildChips();
     _edit->clear();
-    _suggestion.clear();
     _drafts.erase(_key);
     refreshLook();
     compositionChanged();
@@ -1163,13 +989,19 @@ void Composer::offerUndo(const std::string &html, const std::vector<std::string>
     if (!window())
         return;
     // The ghost: my newest pending message in this list.
-    const auto *list = _key.thread ? _ctx.store().replies(_key.conv, _key.thread)
-                                   : &_ctx.store().conversation(_key.conv).messages;
-    _undoTs          = 0;
-    if (list)
-        for (auto it = list->rbegin(); it != list->rend() && !_undoTs; ++it)
-            if (it->user == _ctx.store().me && it->pending)
+    const model::Store &st = _ctx.store();
+    _undoTs                = 0;
+    if (_key.thread) {
+        const auto list = st.threadTimeline(_key.conv, _key.thread);
+        for (auto it = list.rbegin(); it != list.rend() && !_undoTs; ++it)
+            if ((*it)->user == st.me && (*it)->pending)
+                _undoTs = (*it)->ts;
+    } else {
+        const auto &list = st.conversation(_key.conv).messages;
+        for (auto it = list.rbegin(); it != list.rend() && !_undoTs; ++it)
+            if (it->user == st.me && it->pending)
                 _undoTs = it->ts;
+    }
     if (!_undoTs)
         return;
     _undoHtml        = html;

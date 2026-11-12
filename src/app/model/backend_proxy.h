@@ -83,11 +83,12 @@ public:
     void        loadMembers(ConvRef c, MembersDone done) override;
     bool        gifSearchAvailable() const override;
     void        searchGifs(std::string query, std::function<void(std::vector<Gif>)> done) override;
-    std::string promptSuggestion(ConvRef c) const override;
     void searchPage(std::string query, std::string cursor, SearchPageDone done) override;
     void loadMessage(ConvRef c, Ts ts, MessageDone done) override;
     void loadThreadsView(std::string cursor, ThreadsViewDone done) override;
     void markThreadRead(ConvRef c, Ts root, Ts ts) override;
+    bool canMarkThreadUnread(ConvRef c, Ts root) const override;
+    void markThreadUnread(ConvRef c, Ts root, Ts ts) override;
     void
     loadActivity(ActivityFilter f, bool unreadOnly, std::string cursor, ActivityDone done) override;
     void    setActivityRead(const ActivityItem &item, bool read) override;

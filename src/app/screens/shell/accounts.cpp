@@ -725,7 +725,7 @@ void Accounts::connect(uint64_t serial) {
             return;
         }
         // Offline or Slack unreachable: keep the workspace, try again.
-        LOG_INFO("accounts", "%s: connect failed (%s), retrying", r->key.c_str(), error.c_str());
+        LOG_WARN("accounts", "%s: connect failed (%s), retrying", r->key.c_str(), error.c_str());
         r->retryTimer = _ctx.app.platform().addTimer(kRetryMs, false, [this, serial] {
             if (Running *x = bySerial(serial)) {
                 x->retryTimer = 0;
@@ -997,6 +997,7 @@ void Accounts::signOut(const std::string &key) {
     drop(find(k), false);
     cache::WorkspaceCache::remove(_ctx.app.platform(), k); // its drafts go with it
     _shell.purgeHistory(k);
+    _shell.forgetSidebarPrefs(k);
     _store.remove(k);
     std::erase(_pending, k);
     if (open) {

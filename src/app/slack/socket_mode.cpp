@@ -140,6 +140,8 @@ void SocketMode::connectWs(const std::string &url) {
     sock->onClosed       = [this, sock](int code, std::string reason) {
         if (code)
             LOG_INFO("slack", "Socket Mode: closed — code %d %s", code, reason.c_str());
+        else if (!reason.empty())
+            LOG_WARN("slack", "Socket Mode: connect failed — %s", reason.c_str());
         onClosed(sock, code);
     };
     sock->open(url);

@@ -95,7 +95,12 @@ public:
         const float s = aw > 0 && aw < _dw ? aw / _dw : 1.f;
         return {std::floor(_dw * s), std::floor(_dh * s)};
     }
-    void setTs(Ts ts) { _ts = ts; }
+    ~Thumb() override { _list.fileGone(this); }
+    void setTs(Ts ts) {
+        if (ts != _ts)
+            _list.fileGone(this); // its file bar named the old message
+        _ts = ts;
+    }
     // A gallery tile: the placeholder is clipped to the rounded tile
     // and has no "Loading image…" (a tile is too narrow for it).
     void setTile() {
@@ -217,6 +222,10 @@ public:
         _sub = f.prettyType;
         if (const std::string sz = str::byteSize(f.size, str::ByteSize::File); !sz.empty())
             _sub = _sub.empty() ? sz : _sub + " \xC2\xB7 " + sz;
+    }
+    ~FileChip() override {
+        if (_list)
+            _list->fileGone(this);
     }
     bool onEvent(ui::Event &e) override {
         if (_list &&
@@ -1007,34 +1016,183 @@ void paintCardFrame(gfx::Painter &p, ui::RectF r, float radius, ui::C border) {
     p.strokeRoundRect(r, radius, 1, ui::color(border));
 }
 
-std::vector<std::string> selectableTexts(Context &ctx, const model::Message &m) {
+std::vector<std::string> selectableTexts(
+    Context &ctx, const model::Message &m, const MessageList &list
+) {
     // What MessageRow registers, in the same order (buildBlocks / buildBody).
-    if (!m.extra || m.extra->blocks.empty()) {
+    std::vector<std::string> out;
+    auto addBody = [&](std::string_view text, const RichOptions &o, bool *truncated) {
+        for (std::string &t : bodyTexts(ctx, text, o, truncated))
+            out.push_back(std::move(t));
+    };
+    auto addBlocks = [&](
+                        const std::vector<model::Block> &blocks, int *cutChars, int *cutLines
+                    ) {
+        for (const model::Block &b : blocks) {
+            if (b.kind == model::Block::Kind::Table) {
+                out.push_back(tableText(ctx, b.rows));
+                continue;
+            }
+            if (b.kind != model::Block::Kind::Text && b.kind != model::Block::Kind::Header)
+                continue;
+            RichOptions o;
+            o.cutChars = cutChars;
+            o.cutLines = cutLines;
+            if (b.kind == model::Block::Kind::Header) {
+                o.font  = Font::BodyBold;
+                o.scale = 1.1f;
+            }
+            bool truncated = false;
+            addBody(b.text, o, &truncated);
+            if (truncated && cutChars)
+                break; // buildUnfurl stops after the first cut block
+        }
+    };
+
+    if (m.extra && !m.extra->blocks.empty()) {
+        addBlocks(m.extra->blocks, nullptr, nullptr);
+        if (m.edited) {
+            RichOptions o;
+            o.edited = true;
+            addBody({}, o, nullptr);
+        }
+    } else {
         RichOptions o;
         o.edited = m.edited;
-        return bodyTexts(ctx, m.text, o);
+        addBody(m.text, o, nullptr);
     }
-    std::vector<std::string> out;
-    for (const model::Block &b : m.extra->blocks) {
-        if (b.kind == model::Block::Kind::Table) {
-            out.push_back(tableText(ctx, b.rows));
+
+    // Attachments follow the message body in buildContent. The list is needed
+    // for the same hidden/expanded state and preview cut as the visible row.
+    for (size_t i = 0; i < m.attachments().size(); ++i) {
+        if (list.attachmentHidden(m, i))
+            continue;
+        const model::Attachment &a = m.attachments()[i];
+        if (a.msgUnfurl) {
+            int chars = 400, lines = 6;
+            if (list.unfurlExpanded(m.ts, int(i)))
+                chars = lines = INT32_MAX;
+            if (!a.blocks.empty()) {
+                addBlocks(a.blocks, &chars, &lines);
+            } else if (!a.text.empty()) {
+                RichOptions o;
+                o.cutChars = &chars;
+                o.cutLines = &lines;
+                addBody(a.text, o, nullptr);
+            }
             continue;
         }
-        if (b.kind != model::Block::Kind::Text && b.kind != model::Block::Kind::Header)
-            continue;
-        RichOptions o;
-        if (b.kind == model::Block::Kind::Header) {
-            o.font  = Font::BodyBold;
-            o.scale = 1.1f;
+
+        if (!a.pretext.empty()) {
+            RichOptions o;
+            addBody(a.pretext, o, nullptr);
         }
-        for (std::string &t : bodyTexts(ctx, b.text, o))
-            out.push_back(std::move(t));
+        if (!a.title.empty()) {
+            if (a.link.empty()) {
+                RichOptions o;
+                o.font = Font::BodyBold;
+                addBody(a.title, o, nullptr);
+            } else {
+                // Linked titles are plain styled text, not parsed mrkdwn.
+                out.push_back(a.title);
+            }
+        }
+        if (!a.text.empty()) {
+            RichOptions o;
+            o.maxLines = a.linkPreview ? 3 : 0;
+            int chars = 700, lines = 5;
+            const bool expanded = list.unfurlExpanded(m.ts, int(i));
+            if (!a.linkPreview && !expanded) {
+                o.cutChars = &chars;
+                o.cutLines = &lines;
+            }
+            addBody(a.text, o, nullptr);
+        }
+        for (const model::AttachmentField &fl : a.fields) {
+            if (!fl.title.empty())
+                out.push_back(fl.title);
+            RichOptions o;
+            addBody(fl.value, o, nullptr);
+        }
+        // As in buildAttachment, structural blocks are a fallback when the
+        // legacy attachment has no other body content.
+        if (a.title.empty() && a.text.empty() && a.fields.empty() && a.author.empty() &&
+            !a.blocks.empty())
+            addBlocks(a.blocks, nullptr, nullptr);
     }
-    if (m.edited) {
-        RichOptions o;
-        o.edited = true;
-        for (std::string &t : bodyTexts(ctx, {}, o))
-            out.push_back(std::move(t));
+    return out;
+}
+
+std::string copyableMessageText(
+    Context &ctx, const model::Message &m, const MessageList &list
+) {
+    std::vector<std::string> parts;
+    auto addPlain = [&](std::string_view text) {
+        if (text.empty())
+            return;
+        std::string plain = plainText(ctx.store, text, true);
+        if (!plain.empty())
+            parts.push_back(std::move(plain));
+    };
+    auto addBlocks = [&](const std::vector<model::Block> &blocks) {
+        for (const model::Block &b : blocks) {
+            if (b.kind == model::Block::Kind::Text || b.kind == model::Block::Kind::Header) {
+                addPlain(b.text);
+            } else if (b.kind == model::Block::Kind::Table && !b.rows.empty()) {
+                std::string table;
+                for (size_t r = 0; r < b.rows.size(); ++r) {
+                    if (r)
+                        table += '\n';
+                    for (size_t c = 0; c < b.rows[r].size(); ++c) {
+                        if (c)
+                            table += '\t';
+                        table += plainText(ctx.store, b.rows[r][c], true);
+                    }
+                }
+                parts.push_back(std::move(table));
+            }
+        }
+    };
+
+    if (m.extra && !m.extra->blocks.empty())
+        addBlocks(m.extra->blocks);
+    else
+        addPlain(m.text);
+
+    for (size_t i = 0; i < m.attachments().size(); ++i) {
+        if (list.attachmentHidden(m, i))
+            continue;
+        const model::Attachment &a = m.attachments()[i];
+        if (a.msgUnfurl) {
+            if (!a.blocks.empty())
+                addBlocks(a.blocks);
+            else
+                addPlain(a.text);
+            continue;
+        }
+        addPlain(a.pretext);
+        if (!a.title.empty()) {
+            if (a.link.empty())
+                addPlain(a.title);
+            else
+                parts.push_back(a.title);
+        }
+        addPlain(a.text);
+        for (const model::AttachmentField &fl : a.fields) {
+            if (!fl.title.empty())
+                parts.push_back(fl.title);
+            addPlain(fl.value);
+        }
+        if (a.title.empty() && a.text.empty() && a.fields.empty() && a.author.empty() &&
+            !a.blocks.empty())
+            addBlocks(a.blocks);
+    }
+
+    std::string out;
+    for (size_t i = 0; i < parts.size(); ++i) {
+        if (i)
+            out += '\n';
+        out += parts[i];
     }
     return out;
 }
@@ -1203,7 +1361,43 @@ void MessageRow::buildSystem(const model::Message &m) {
     l->style().flex(1);
 }
 
-void MessageRow::buildHeader(ui::View *col, const model::Message &m, bool tight) {
+void MessageRow::buildBroadcastContext(ui::View *col, const model::Message &m) {
+    Context       &ctx = _list.ctx();
+    const Store   &st  = ctx.store;
+    std::string    preview;
+    model::UserRef author = model::kNoUser;
+    if (const model::Message *root = st.findMessage(_list.conversation(), m.threadTs);
+        root && root->ts == m.threadTs) {
+        preview = plainText(st, root->text);
+        author  = root->user;
+    } else if (m.extra) {
+        preview = plainText(st, m.extra->threadParentText);
+        author  = m.extra->threadParentUser;
+    }
+    if (author != model::kNoUser && !preview.empty())
+        preview = str::concat({st.user(author).label(), ": ", preview});
+    auto *line = col->add<ui::Clickable>();
+    line->setLook({C::None, C::RowHover, C::RowHover, C::None, 4});
+    line->style().row().height(20).spacing(5).items(Align::Center).margins(0, 0, 0, 1);
+    line->setTooltip(tr("View thread"));
+    line->setRole(ui::Role::Button);
+    line->add<ui::IconView>(gfx::Icon::MessageSquareReply, 12, C::TextFaint);
+    auto *lead = line->add<ui::Label>(
+        arg(tr("%1 replied to a thread:"), authorName(st, m)), Font::Small, C::TextMuted
+    );
+    lead->setMaxLines(1);
+    lead->style().noShrink();
+    if (!preview.empty()) {
+        auto *text = line->add<ui::Label>(std::move(preview), Font::Small, C::TextFaint);
+        text->setMaxLines(1);
+    }
+    const Ts root = m.threadTs, reply = m.ts;
+    line->onClick = [this, root, reply] { _list.viewThread(root, reply); };
+}
+
+void MessageRow::buildHeader(
+    ui::View *col, const model::Message &m, bool tight, bool threadContext
+) {
     Context     &ctx = _list.ctx();
     const Store &st  = ctx.store;
     const bool   bot = isBot(st, m);
@@ -1234,6 +1428,13 @@ void MessageRow::buildHeader(ui::View *col, const model::Message &m, bool tight)
     hdr->add<ui::Label>(base::formatTime(model::tsSecs(m.ts)), Font::Small, C::TextFaint)
         ->style()
         .margins(8, 0, 0, 0);
+    if (threadContext && m.isBroadcast()) {
+        auto *sent = hdr->add<ui::View>();
+        sent->style().row().spacing(3).items(Align::Center).margins(8, 0, 0, 0).noShrink();
+        sent->add<ui::IconView>(gfx::Icon::Hash, 10, C::TextMuted);
+        auto *label = sent->add<ui::Label>(tr("Also sent to channel"), Font::Small, C::TextMuted);
+        label->setMaxLines(1);
+    }
 }
 
 void MessageRow::applyBanners(const model::Message &m, bool grouped) {
@@ -1286,8 +1487,10 @@ void MessageRow::buildMessage(const model::Message &m, bool grouped) {
     }
     auto *col = add<ui::View>();
     col->style().flex(1).spacing(0);
+    if (m.isBroadcast() && !_list.threadMode())
+        buildBroadcastContext(col, m);
     if (!grouped)
-        buildHeader(col, m, false);
+        buildHeader(col, m, false, _list.threadMode());
     buildContent(col, m, true);
     _col = col;
     rememberBody(m);
@@ -1297,7 +1500,8 @@ void MessageRow::buildMessage(const model::Message &m, bool grouped) {
 void MessageRow::buildTail(ui::View *col, const model::Message &m) {
     if (!m.reactions.empty())
         buildReactions(col, m);
-    if (m.replyCount > 0 && !(_list.threadMode() && m.ts == _list.threadRoot())) {
+    if (m.replyCount > 0 && !m.isBroadcast() &&
+        !(_list.threadMode() && m.ts == _list.threadRoot())) {
         buildThreadSummary(col, m);
         if (_list.inlineOpen(m.ts))
             buildInlineThread(col, m);
@@ -1336,7 +1540,7 @@ void MessageRow::buildContent(ui::View *col, const model::Message &m, bool root)
     buildFilesSection(col, m.files(), root ? m.ts : 0);
     for (size_t i = 0; i < m.attachments().size(); ++i)
         if (!_list.attachmentHidden(m, i))
-            buildAttachment(col, m, i, root);
+            buildAttachment(col, m, i, root, labels);
     if (root) { // the row's tail (buildTail) follows
         _tailAt = col->childCount();
         return;
@@ -1570,18 +1774,23 @@ bool MessageRow::dismissable(int index) const {
     return (a.linkPreview || a.msgUnfurl) && !onlyBlocks(a, model::Block::Kind::Table);
 }
 
-void MessageRow::buildAttachment(ui::View *col, const model::Message &m, size_t index, bool root) {
+void MessageRow::buildAttachment(
+    ui::View *col, const model::Message &m, size_t index, bool root,
+    std::vector<SelectableText *> *labels
+) {
     Context                 &ctx = _list.ctx();
     const model::Attachment &a   = m.attachments()[index];
     if (a.msgUnfurl) {
-        buildUnfurl(col, m, root ? index : SIZE_MAX);
+        buildUnfurl(col, m, root ? index : SIZE_MAX, labels);
         buildButtons(col, m, int32_t(index + 1));
         return;
     }
     if (!a.pretext.empty()) {
         auto *pre = col->add<ui::View>();
         pre->style().margins(0, 4, 0, 0);
-        buildBody(ctx, pre, a.pretext, {}, this);
+        RichOptions o;
+        o.labels = labels;
+        buildBody(ctx, pre, a.pretext, o, this);
     }
     auto *card = col->add<AttachCard>(this, root ? int(index) : -1);
     card->style().row().spacing(10).margins(0, 6, 0, 2).alignSelf(Align::Start);
@@ -1609,7 +1818,8 @@ void MessageRow::buildAttachment(ui::View *col, const model::Message &m, size_t 
         // A title without its own link is mrkdwn (dates, links), as Slack
         // draws it: Outlook Calendar's "<!date^…> - <!date^…> <url|Event>".
         RichOptions o;
-        o.font = Font::BodyBold;
+        o.font   = Font::BodyBold;
+        o.labels = labels;
         buildBody(ctx, c, a.title, o, this);
     } else if (!a.title.empty()) {
         auto                          *t = c->add<RichLabel>(ctx, this);
@@ -1624,10 +1834,15 @@ void MessageRow::buildAttachment(ui::View *col, const model::Message &m, size_t 
             std::move(tg),
             {}
         );
+        if (labels) {
+            t->setSelectable(true);
+            labels->push_back(t);
+        }
     }
     if (!a.text.empty()) {
         // A bot card's text: 5 lines / 700 characters until "Show more".
         RichOptions o;
+        o.labels            = labels;
         o.maxLines          = a.linkPreview ? 3 : 0;
         const int  key      = int(index);
         const bool expanded = root && _list.unfurlExpanded(m.ts, key);
@@ -1645,13 +1860,23 @@ void MessageRow::buildAttachment(ui::View *col, const model::Message &m, size_t 
         }
     }
     for (const model::AttachmentField &fl : a.fields) {
-        c->add<ui::Label>(fl.title, Font::SmallBold, C::Text)->style().margins(0, 4, 0, 0);
-        buildBody(ctx, c, fl.value, {}, this);
+        if (!fl.title.empty()) {
+            auto *title = c->add<RichLabel>(ctx, this);
+            title->setContent(styled(fl.title, Font::SmallBold, C::Text), {}, {});
+            title->style().margins(0, 4, 0, 0);
+            if (labels) {
+                title->setSelectable(true);
+                labels->push_back(title);
+            }
+        }
+        RichOptions o;
+        o.labels = labels;
+        buildBody(ctx, c, fl.value, o, this);
     }
     // An attachment's blocks are drawn when nothing above said anything.
     if (a.title.empty() && a.text.empty() && a.fields.empty() && a.author.empty() &&
         !a.blocks.empty())
-        buildBlocks(c, a.blocks.data(), a.blocks.size(), m.ts, int(index), false, nullptr);
+        buildBlocks(c, a.blocks.data(), a.blocks.size(), m.ts, int(index), false, labels);
     if (!a.image.empty())
         addThumb(c, a.image, a.imageWidth, a.imageHeight, int(kImgMax), 240);
     if (!a.footer.empty())
@@ -1659,7 +1884,10 @@ void MessageRow::buildAttachment(ui::View *col, const model::Message &m, size_t 
     buildButtons(c, m, int32_t(index + 1));
 }
 
-void MessageRow::buildUnfurl(ui::View *col, const model::Message &m, size_t index) {
+void MessageRow::buildUnfurl(
+    ui::View *col, const model::Message &m, size_t index,
+    std::vector<SelectableText *> *labels
+) {
     // The shared-message card: the
     // quoted author's avatar, name, APP tag and time, "Posted in #channel",
     // the quoted text (400 characters / 6 lines until "Show more"), its
@@ -1723,6 +1951,7 @@ void MessageRow::buildUnfurl(ui::View *col, const model::Message &m, size_t inde
         o.cutLines = &lineBudget;
         auto *w    = body->add<ui::View>();
         w->style().margins(0, 2, 0, 2);
+        o.labels = labels;
         truncated = buildBody(ctx, w, t, o, this) != UINT32_MAX || truncated;
     };
     if (!a.blocks.empty()) {
@@ -1735,7 +1964,7 @@ void MessageRow::buildUnfurl(ui::View *col, const model::Message &m, size_t inde
                     o.font = Font::BodyBold, o.scale = 1.1f;
                 addText(blk.text, o);
             } else {
-                buildBlocks(body, &blk, 1, m.ts, key, false, nullptr); // no copy of it
+                buildBlocks(body, &blk, 1, m.ts, key, false, labels);
             }
         }
     } else if (!a.text.empty()) {
@@ -1820,8 +2049,8 @@ void MessageRow::buildInlineThread(ui::View *col, const model::Message &root) {
     const Store &st  = ctx.store;
     auto        *box = col->add<ui::View>();
     box->style().spacing(0).margins(0, 8, 0, 0);
-    const std::vector<model::Message> *replies = st.replies(_list.conversation(), root.ts);
-    if (!replies || replies->empty()) {
+    const auto replies = st.threadTimeline(_list.conversation(), root.ts);
+    if (replies.empty()) {
         auto *l = ui::styledLabel(
             box,
             tr("Loading replies\xE2\x80\xA6"),
@@ -1830,10 +2059,10 @@ void MessageRow::buildInlineThread(ui::View *col, const model::Message &root) {
         l->style().height(28);
     } else {
         const model::Message *prev = nullptr;
-        for (const model::Message &r : *replies) {
+        for (const model::Message *r : replies) {
             // Collapsed as in the list: same author within five minutes.
-            const bool grouped = prev && groupable(*prev, r);
-            prev               = &r;
+            const bool grouped = prev && groupable(*prev, *r);
+            prev               = r;
             auto *rr           = box->add<ui::View>();
             rr->style()
                 .row()
@@ -1845,12 +2074,12 @@ void MessageRow::buildInlineThread(ui::View *col, const model::Message &root) {
             if (grouped)
                 rr->add<ui::View>()->style().size(kAvSize, 1).noShrink();
             else
-                addAvatar(rr, r)->style().size(kAvSize, kAvSize).margins(0, 2, 0, 0).noShrink();
+                addAvatar(rr, *r)->style().size(kAvSize, kAvSize).margins(0, 2, 0, 0).noShrink();
             auto *rc = rr->add<ui::View>();
             rc->style().flex(1).spacing(0);
             if (!grouped)
-                buildHeader(rc, r, false);
-            buildContent(rc, r, false);
+                buildHeader(rc, *r, false, true);
+            buildContent(rc, *r, false);
         }
     }
     auto    *foot = box->add<FooterLink>(tr("Reply to thread"));

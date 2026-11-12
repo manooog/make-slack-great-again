@@ -83,22 +83,18 @@ void FakeBackend::loadThreadsView(std::string, ThreadsViewDone done) {
         for (ConvRef c = 0; c < _store.conversationCount(); ++c)
             for (const model::Thread &t : _store.conversation(c).threads) {
                 const model::Message *root = _store.findMessage(c, t.root);
-                if (t.replies.empty() || !root)
-                    continue;
-                bool mine = root->user == _store.me;
-                for (const model::Message &r : t.replies)
-                    mine = mine || r.user == _store.me;
-                if (!mine)
+                const auto            all  = _store.threadTimeline(c, t.root);
+                if (all.empty() || !root || !follows(c, t.root))
                     continue;
                 FollowedThread f;
                 f.conv         = c;
                 f.root         = root->clone();
                 f.lastRead     = threadRead(c, t.root);
-                const size_t n = std::min<size_t>(t.replies.size(), 3);
-                for (size_t i = t.replies.size() - n; i < t.replies.size(); ++i)
-                    f.latestReplies.push_back(t.replies[i].clone());
-                for (const model::Message &r : t.replies)
-                    page.totalUnreadReplies += r.ts > f.lastRead;
+                const size_t n = std::min<size_t>(all.size(), 3);
+                for (size_t i = all.size() - n; i < all.size(); ++i)
+                    f.latestReplies.push_back(all[i]->clone());
+                for (const model::Message *r : all)
+                    page.totalUnreadReplies += r->ts > f.lastRead;
                 page.threads.push_back(std::move(f));
             }
         std::sort(page.threads.begin(), page.threads.end(), [](const auto &a, const auto &b) {
@@ -109,9 +105,44 @@ void FakeBackend::loadThreadsView(std::string, ThreadsViewDone done) {
     });
 }
 
+// The threads I started or replied in.
+bool FakeBackend::follows(ConvRef conv, Ts root) const {
+    const model::Message *r = _store.findMessage(conv, root);
+    if (!r)
+        return false;
+    bool mine = r->user == _store.me;
+    for (const model::Message *m : _store.threadTimeline(conv, root))
+        mine = mine || m->user == _store.me;
+    return mine;
+}
+
+// The Threads entry: followed threads with a reply past my cursor.
+void FakeBackend::publishUnreadThreads() {
+    int n = 0;
+    for (const ThreadRead &r : _threadRead) {
+        const auto replies = _store.threadTimeline(r.conv, r.root);
+        n += !replies.empty() && replies.back()->ts > r.read && follows(r.conv, r.root) &&
+                 !_store.threadMuted(r.conv, r.root);
+    }
+    _store.setUnreadThreads(n);
+}
+
 void FakeBackend::markThreadRead(ConvRef conv, Ts root, Ts ts) {
     Ts &cursor = threadRead(conv, root);
     cursor     = std::max(cursor, ts);
+    publishUnreadThreads();
+    _store.threadRead(conv, root, ts);
+}
+
+bool FakeBackend::canMarkThreadUnread(ConvRef conv, Ts root) const {
+    return root && follows(conv, root);
+}
+
+void FakeBackend::markThreadUnread(ConvRef conv, Ts root, Ts ts) {
+    if (!canMarkThreadUnread(conv, root) || ts <= root)
+        return;
+    threadRead(conv, root) = ts - 1;
+    publishUnreadThreads();
 }
 
 void FakeBackend::loadThread(ConvRef conv, Ts root, Done done) {

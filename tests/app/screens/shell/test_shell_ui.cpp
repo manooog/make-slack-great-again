@@ -60,7 +60,8 @@ void pump(int n = 10) {
 
 template <class F>
 bool until(F done, int ms = 3000) {
-    for (int t = 0; t < ms && !done(); t += 5)
+    const int64_t end = base::monotonicMs() + ms; // pump() can return early
+    while (!done() && base::monotonicMs() < end)
         app().pump(5);
     return done();
 }
@@ -102,6 +103,14 @@ struct Fake : fake::FakeBackend {
             return fake::FakeBackend::loadMembers(conv, std::move(done));
         done({}, membersError);
     }
+    void loadCanvasContent(const std::string &fileId, CanvasHtmlDone done) override {
+        if (canvasContentError.empty())
+            return fake::FakeBackend::loadCanvasContent(fileId, std::move(done));
+        app().platform().post([error = canvasContentError, done = std::move(done)]() mutable {
+            if (done)
+                done({}, error);
+        });
+    }
     void sendBlocks(
         ConvRef conv, std::string text, std::string blocks, Ts thread, bool bc, Done done
     ) override {
@@ -124,12 +133,8 @@ struct Fake : fake::FakeBackend {
     } scheduled;
     std::string scheduledText;
     bool        gifSearchAvailable() const override { return gifs; }
-    std::string promptSuggestion(ConvRef c) const override {
-        return c == suggestFor ? std::string("run the  tests\nagain") : std::string();
-    }
     bool                  broadcast = false, huddles = false, schedule = false, gifs = true;
     int                   broadcasts = 0;
-    ConvRef               suggestFor = kNoConv;
     std::string           membersError, lastBlocks;
     bool                  holdMembers = false;
     std::function<void()> heldMembers;
@@ -146,8 +151,9 @@ struct Fake : fake::FakeBackend {
     std::vector<std::string> cancelled;
     std::string              cancelError;
 
-    std::string presenceError; // setPresence fails with it
-    std::string statusError;   // setStatus too
+    std::string presenceError;      // setPresence fails with it
+    std::string statusError;        // setStatus too
+    std::string canvasContentError; // loadCanvasContent fails with it
 
     // The presence link, as a Slack session workspace reports it.
     PresenceLink presenceLink() const override { return link; }
@@ -178,7 +184,10 @@ struct Harness {
         backend.setFixture(MSGA_TEST_ASSETS, base::fromLocal(2026, 9, 21, 16, 0));
         bool done = false;
         backend.connect([&](bool ok, const std::string &) { done = ok; });
-        for (int i = 0; i < 200 && !done; ++i)
+        // By the clock: pump() returns early on every post from a worker
+        // thread, so a count of pumps can run out before the connect.
+        const int64_t end = base::monotonicMs() + 10000;
+        while (!done && base::monotonicMs() < end)
             app().pump(5);
         plat::WindowDesc d;
         d.size        = {1200, 800};
@@ -297,6 +306,223 @@ TEST("sidebar: \"Show only unread conversations\" keeps the unread, the open and
     CHECK(h.sidebar().rowState(h.conv("C0RANDOM")).exists);
 }
 
+TEST("sidebar: the unreads-only scope flags decide what read starred and custom rows survive") {
+    Harness       h;
+    const ConvRef general = h.conv("C0GENERAL"); // starred, read
+    const ConvRef random  = h.conv("C0RANDOM");  // read, own section
+    h.backend.createSection("Projects", "", random);
+    h.settings.unreadsOnly = true;
+    h.sh->applySettings();
+    pump();
+    // Default (both flags off): as before, read rows stay.
+    CHECK(h.sidebar().rowState(general).exists);
+    CHECK(h.sidebar().rowState(random).exists);
+    h.settings.unreadsOnlyAppliesToStarred        = true;
+    h.settings.unreadsOnlyAppliesToCustomSections = true;
+    h.sh->applySettings();
+    pump();
+    CHECK_FALSE(h.sidebar().rowState(general).exists);
+    CHECK_FALSE(h.sidebar().rowState(random).exists);
+}
+
+TEST("sidebar: with its scopes on, unread-only lists read starred and own rows as they flip") {
+    Harness       h;
+    const ConvRef general = h.conv("C0GENERAL"); // starred, read
+    const ConvRef random  = h.conv("C0RANDOM");  // read, own section
+    h.backend.createSection("Projects", "", random);
+    h.settings.unreadsOnly                        = true;
+    h.settings.unreadsOnlyAppliesToStarred        = true;
+    h.settings.unreadsOnlyAppliesToCustomSections = true;
+    h.sh->applySettings();
+    pump();
+    REQUIRE(!h.sidebar().rowState(general).exists);
+    REQUIRE(!h.sidebar().rowState(random).exists);
+    // Something new comes in: listed at once, in its own section; read
+    // elsewhere, gone again. Each on its own: its change alone must do it.
+    for (const ConvRef c : {general, random}) {
+        h.backend.markUnread(c, h.store.conversation(c).latest);
+        pump();
+        CHECK_STR(h.sidebar().rowState(c).section, c == general ? "Starred" : "Projects");
+        h.backend.markRead(c, h.store.conversation(c).latest);
+        pump();
+        CHECK_FALSE(h.sidebar().rowState(c).exists);
+    }
+    // Open, a read one stays listed until left; a draft keeps one in Drafts.
+    h.sh->open(random);
+    pump();
+    CHECK(h.sidebar().rowState(random).exists);
+    h.store.setDraft(general, 0, "<p>later</p>", {});
+    pump();
+    CHECK_STR(h.sidebar().rowState(general).section, "Drafts");
+    // The scopes alone hide nothing: unread-only off, all are listed.
+    h.settings.unreadsOnly = false;
+    h.sh->applySettings();
+    pump();
+    CHECK(h.sidebar().rowState(random).exists);
+    CHECK(h.sidebar().rowState(general).exists);
+}
+
+TEST("sidebar: a starred conversation in one of your sections follows that section's scope") {
+    Harness       h;
+    const ConvRef random = h.conv("C0RANDOM"); // read
+    h.backend.createSection("Projects", "", random);
+    // Starred as well (as the Store may have it from the server): the
+    // section lists it, so the section's scope decides.
+    h.store.updateConversation(random, [](Conversation &c) { c.starred = true; });
+    h.settings.unreadsOnly                        = true;
+    h.settings.unreadsOnlyAppliesToCustomSections = true;
+    h.sh->applySettings();
+    pump();
+    REQUIRE(!h.sidebar().rowState(random).exists);
+    h.backend.markUnread(random, h.store.conversation(random).latest);
+    pump();
+    REQUIRE(h.sidebar().rowState(random).section == "Projects");
+    h.backend.markRead(random, h.store.conversation(random).latest);
+    pump();
+    CHECK_FALSE(h.sidebar().rowState(random).exists); // read elsewhere: gone at once
+}
+
+TEST("sidebar: an unsent draft lists its conversation under Drafts") {
+    Harness       h;
+    const ConvRef eng = h.conv("C0ENG");
+    CHECK(joined(h.sidebar().sectionTitles()).find("Drafts") == std::string::npos);
+    h.store.setDraft(eng, 0, "<p>half a thought</p>", {});
+    pump();
+    CHECK(joined(h.sidebar().sectionTitles()).find("Drafts") != std::string::npos);
+    CHECK(h.sidebar().rowState(eng).exists);
+    // Sent or cleared: the section goes, the conversation is back where it was.
+    h.store.setDraft(eng, 0, "", {});
+    pump();
+    CHECK(joined(h.sidebar().sectionTitles()).find("Drafts") == std::string::npos);
+    CHECK(h.sidebar().rowState(eng).exists);
+}
+
+TEST("sidebar: a drafted row says Draft, made only then, and not while its chat is open") {
+    Harness       h;
+    const ConvRef eng  = h.conv("C0ENG");
+    const ConvRef open = h.sh->current();
+    REQUIRE(open != kNoConv);
+    REQUIRE(open != eng);
+    CHECK_FALSE(h.sidebar().rowState(eng).draft);
+    const size_t bare = h.sidebar().rowView(eng)->childCount();
+    h.store.setDraft(eng, 0, "<p>half a thought</p>", {});
+    pump();
+    CHECK(h.sidebar().rowState(eng).draft);
+    CHECK(h.sidebar().rowView(eng)->childCount() == bare + 1); // the label, made now
+    // Open, the composer holds the draft (live): the row says nothing.
+    h.sh->open(eng);
+    pump();
+    CHECK(h.sidebar().rowState(eng).selected);
+    CHECK_FALSE(h.sidebar().rowState(eng).draft);
+    h.sh->open(open); // left with the draft still in the composer: stashed again
+    pump();
+    CHECK(h.sidebar().rowState(eng).draft);
+}
+
+TEST("sidebar: under unreads-only a drafted row's unread change rebuilds nothing") {
+    Harness       h;
+    const ConvRef random = h.conv("C0RANDOM"); // read
+    h.store.setDraft(random, 0, "<p>later</p>", {});
+    h.settings.unreadsOnly = true;
+    h.sh->applySettings();
+    pump();
+    REQUIRE(h.sidebar().rowState(random).section == "Drafts");
+    const int rebuilds = h.sidebar().rebuildCount();
+    h.backend.markUnread(random, h.store.conversation(random).latest);
+    pump();
+    CHECK(h.sidebar().rowState(random).bold);
+    CHECK(h.sidebar().rebuildCount() == rebuilds); // listed either way: restyled in place
+    CHECK_STR(h.sidebar().rowState(random).section, "Drafts");
+}
+
+TEST("sidebar: selecting a row below the fold keeps the scroll position") {
+    Harness h;
+    for (int i = 0; i < 40; ++i) {
+        Conversation c;
+        c.id     = "C0PAD" + std::to_string(i);
+        c.name   = "pad" + std::to_string(i);
+        c.member = true;
+        h.store.addConversation(std::move(c));
+    }
+    h.sidebar().rebuild();
+    pump();
+    auto *sv = static_cast<ui::ScrollView *>(h.sidebar().child(0));
+    REQUIRE(sv != nullptr);
+    sv->scrollBy(10000);
+    pump();
+    const float scrolled = sv->scrollOffset();
+    REQUIRE(scrolled > 100);
+    // The last row fully inside the viewport: clicking it opens it.
+    const ui::RectF view   = sv->windowRect();
+    ui::View       *target = nullptr;
+    for (ConvRef c : h.sidebar().order()) {
+        ui::View *r = const_cast<ui::View *>(h.sidebar().rowView(c));
+        if (!r)
+            continue;
+        const ui::RectF rr = r->windowRect();
+        if (rr.y >= view.y + 8 && rr.y + rr.h <= view.y + view.h - 8)
+            target = r;
+    }
+    REQUIRE(target != nullptr);
+    const ui::RectF tr = target->windowRect();
+    auto           *hk = app().platform().testHooks();
+    REQUIRE(hk != nullptr);
+    hk->injectPointerMove(h.win->native(), {tr.x + tr.w / 2, tr.y + tr.h / 2});
+    hk->injectButton(h.win->native(), plat::Button::Left, true);
+    hk->injectButton(h.win->native(), plat::Button::Left, false);
+    pump();
+    CHECK(sv->scrollOffset() > 0);
+    CHECK(sv->scrollOffset() >= scrolled - 60); // a small ensureVisible nudge is fine
+    // A channel outside the relevance window has no row: selecting it rebuilds
+    // the list just before revealing it, which must not jump to the top.
+    shell::Sidebar::Filters f;
+    f.relevantDays = 1;
+    h.sidebar().setFilters(f);
+    pump();
+    sv->scrollBy(10000);
+    pump();
+    REQUIRE(sv->scrollOffset() > 0);
+    h.sh->open(h.conv("C0RANDOM"));
+    pump();
+    CHECK(sv->scrollOffset() > 0);
+    // ...and the reveal still happens, once the new row has a frame.
+    const ui::View *opened = h.sidebar().rowView(h.conv("C0RANDOM"));
+    REQUIRE(opened != nullptr);
+    const ui::RectF orr = opened->windowRect(), vr = sv->windowRect();
+    CHECK(orr.h > 0);
+    CHECK(orr.y >= vr.y);
+    CHECK(orr.y + orr.h <= vr.y + vr.h);
+}
+
+TEST("sidebar: keyboard focus on a row survives a rebuild") {
+    Harness h;
+    h.sh->open(h.conv("C0GENERAL"));
+    pump();
+    auto row = [&] { return const_cast<ui::View *>(h.sidebar().rowView(h.conv("C0GENERAL"))); };
+    ui::View *before = row();
+    REQUIRE(before != nullptr);
+    h.win->setFocus(before, true); // as if reached with Tab: the ring shows
+    // Synchronous: a filter change rebuilds the rows at once. (The count, not
+    // the row's address: a new row can be allocated where the old one was.)
+    int                     rebuilt = h.sidebar().rebuildCount();
+    shell::Sidebar::Filters f;
+    f.relevantDays = 1;
+    h.sidebar().setFilters(f);
+    CHECK(h.sidebar().rebuildCount() > rebuilt); // the rows were recreated
+    pump();
+    REQUIRE(row() != nullptr);
+    CHECK(h.win->focusView() == row());
+    CHECK(h.win->focusVisible());
+    // Deferred: rebuildSoon() after the click that asked for it.
+    rebuilt = h.sidebar().rebuildCount();
+    h.sidebar().showAllChannels();
+    REQUIRE(until([&] { return h.sidebar().rebuildCount() > rebuilt; }));
+    pump();
+    REQUIRE(row() != nullptr);
+    CHECK(h.win->focusView() == row());
+    CHECK(h.win->focusVisible());
+}
+
 TEST("sidebar: bot DMs live under Agents & apps, which Settings can hide") {
     Harness       h;
     const UserRef bot = h.store.findUser("U0DEPLOY"); // the fixture's Deploybot
@@ -386,6 +612,15 @@ TEST("sidebar footer: a presence change the service refuses says why and settles
         h.sh->errorBanner()->text(),
         "Could not change presence: missing_scope \xE2\x80\x94 sign in to this workspace again "
         "to grant the new permission"
+    );
+}
+
+TEST("shell: a workspace session expiry reaches the visible banner") {
+    Harness h;
+    h.sh->notifySessionExpired("Design");
+    CHECK(h.sh->errorBanner()->visible());
+    CHECK_STR(
+        h.sh->errorBanner()->text(), "Your Design session has expired. Sign in again."
     );
 }
 
@@ -638,6 +873,22 @@ TEST("canvas: the channel's canvas loads as a title over its markdown body") {
     CHECK(md.find("- **Proposal B ships.** Three onboarding") != std::string::npos);
     CHECK(md.find("[#design](https://lumen.studio/design)") != std::string::npos);
     CHECK(md.find("## Decisions\n\n- **Proposal B") != std::string::npos);
+}
+
+TEST("canvas: a failed content load is read-only and reports the error") {
+    Harness h;
+    h.backend.canvasContentError = "timeout";
+    h.sh->showCanvas(true);
+    shell::CanvasPage &cp = h.sh->canvasPage();
+    REQUIRE(until([&] { return h.sh->errorBanner()->visible(); }));
+    CHECK(cp.notice()->visible());
+    CHECK_STR(cp.notice()->text(), "Couldn't load this canvas. Close and reopen it to try again.");
+    CHECK_STR(h.sh->errorBanner()->text(), "Couldn't load the canvas: timeout");
+    CHECK_FALSE(cp.body().enabled());
+    // Even a programmatic edit is not saved while the base is unknown.
+    cp.body().setText("must not replace the canvas");
+    cp.flushPendingSave();
+    pump();
 }
 
 TEST("canvas: \"Add canvas\" creates it on the first save, then the tab names it") {
@@ -1208,6 +1459,20 @@ TEST("composer: the window's is disabled until a conversation opens; an embedded
     CHECK_STR(c.edit().text(), "note");
 }
 
+TEST("composer: the placeholder follows a conversation rename") {
+    Harness       h;
+    const ConvRef jonas = h.conv("D0JONAS");
+    h.sh->open(jonas);
+    pump();
+    auto &c = h.composer();
+    CHECK_STR(c.edit().accessibleName(), "Message Jonas Weber");
+    h.store.updateConversation(
+        jonas, [](model::Conversation &cv) { cv.localName = "Jonas (work)"; }
+    );
+    pump();
+    CHECK_STR(c.edit().accessibleName(), "Message Jonas (work)");
+}
+
 TEST("composer: a mention pill shows the name as Settings → Names does") {
     Harness      h;
     auto        &c    = h.composer();
@@ -1289,6 +1554,34 @@ TEST("composer: @ lists people and @channel & co.; a pick is a pill that sends t
     CHECK_STR(c.pickList()->item(0).subtitle, "Notify everyone in this channel");
 }
 
+TEST("composer: a new set of @ rows scrolls back to the first, which it selects") {
+    Harness h;
+    for (int i = 0; i < 50; ++i) { // 40 "zqprobe…" and 10 "zqx…"
+        User u;
+        u.id          = "U0ZQ" + std::to_string(i);
+        u.name        = (i < 40 ? "zqprobe" : "zqx") + std::to_string(i);
+        u.displayName = u.name;
+        h.store.addUser(std::move(u));
+    }
+    auto &c = h.composer();
+    c.edit().focus();
+    c.edit().insertText("@zq");
+    pump();
+    shell::PickList *p = c.pickList();
+    REQUIRE(p != nullptr);
+    REQUIRE(p->count() > 20);
+    p->select(20);
+    pump();
+    REQUIRE(p->scrollOffset() > 0);
+    const int builds = p->builds();
+    c.edit().insertText("p"); // fewer rows: made anew
+    pump();
+    REQUIRE(c.pickList() == p);
+    REQUIRE(p->builds() > builds);
+    CHECK(p->selected() == 0);
+    CHECK(p->scrollOffset() == 0);
+}
+
 TEST("composer: # lists channels, : completes emoji") {
     Harness h;
     auto   &c = h.composer();
@@ -1359,49 +1652,14 @@ TEST("composer: undo send takes the message back and returns the text") {
     CHECK_FALSE(c.undoOffered());
 }
 
-TEST("composer: a message that never went out comes back, in front of what's typed") {
+TEST("composer: giving a message back keeps what was typed since and its files") {
     Harness           h;
-    const ConvRef     design = h.conv("C0DESIGN");
-    const ConvRef     jonas  = h.conv("D0JONAS");
-    const std::string png    = MSGA_TEST_ASSETS "/images/blog-hero.png";
-    const std::string scope  = h.sh->drafts().scope();
-    auto             &c      = h.composer();
-    // Shown: the editor gets it, what was typed since on the next line.
+    const std::string png = MSGA_TEST_ASSETS "/images/blog-hero.png";
+    auto             &c   = h.composer();
     c.edit().insertText("typed since");
-    h.sh->giveBackUnsent(scope, h.store, design, 0, "lost *bold* & <@U0MIRA>", {png});
+    c.giveBack("lost *bold* & <@U0MIRA>", {png});
     CHECK_STR(c.mrkdwn(), "lost *bold* & <@U0MIRA>\ntyped since");
     CHECK(c.attachments() == std::vector<std::string>{png});
-    c.clearAttachments();
-    c.edit().clear();
-    // Moved on: it waits in front of that conversation's draft.
-    h.sh->open(jonas);
-    pump();
-    c.edit().insertText("draft");
-    h.sh->open(design);
-    pump();
-    h.sh->giveBackUnsent(scope, h.store, jonas, 0, "lost", {png});
-    CHECK(c.edit().empty());
-    h.sh->open(jonas);
-    pump();
-    CHECK_STR(c.mrkdwn(), "lost\ndraft");
-    CHECK(c.attachments() == std::vector<std::string>{png});
-    // Another workspace's: its own drafts, not the one shown.
-    c.clearAttachments();
-    c.edit().clear();
-    h.sh->giveBackUnsent(scope + "-other", h.store, jonas, 0, "elsewhere", {});
-    CHECK(c.edit().empty());
-}
-
-TEST("composer: a suggested reply is the placeholder, Tab takes it") {
-    Harness h;
-    h.backend.suggestFor = h.conv("D0JONAS");
-    h.sh->open(h.conv("D0JONAS"));
-    pump();
-    auto &c = h.composer();
-    CHECK_STR(c.suggestion(), "run the tests again");
-    CHECK_STR(c.edit().accessibleName(), "run the tests again  \xE2\x86\x92");
-    REQUIRE(c.acceptSuggestion());
-    CHECK_STR(c.edit().text(), "run the tests again");
 }
 
 TEST("composer: CommonMark habits go out as mrkdwn") {

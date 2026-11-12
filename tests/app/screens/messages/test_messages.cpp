@@ -739,6 +739,69 @@ TEST("actions: Copy message is the text as read, with full URLs, and asks the ba
     );
 }
 
+TEST("actions: Copy message includes visible attachment bodies and full URLs") {
+    Env           e(false);
+    const int64_t t0 = base::nowSecs() - 3600;
+    model::Message m = msg(0, t0, "");
+
+    model::Attachment legacy;
+    legacy.pretext = "*Lead in*";
+    legacy.title   = "Deployment";
+    legacy.link    = "https://example.com/deploy";
+    legacy.text    = "Details: <https://example.com/a/b/c/d|example.com/a/…/d>";
+    legacy.fields.push_back({"Owner", "<@U2>"});
+    m.extras().attachments.push_back(legacy);
+
+    using K = model::Block::Kind;
+    model::Attachment structured;
+    model::Block      text;
+    text.kind = K::Text;
+    text.text = "Block text";
+    structured.blocks.push_back(text);
+    model::Block table;
+    table.kind = K::Table;
+    table.rows = {{"*Metric*", "Value"}, {"Requests", "42"}};
+    structured.blocks.push_back(table);
+    m.extras().attachments.push_back(structured);
+
+    model::Attachment shared;
+    shared.msgUnfurl = true;
+    shared.text      = "Quoted message";
+    m.extras().attachments.push_back(shared);
+
+    model::Attachment hidden;
+    hidden.linkPreview = true;
+    hidden.title       = "Hidden preview";
+    hidden.text        = "Hidden preview body";
+    m.extras().attachments.push_back(hidden);
+
+    std::vector<model::Message> ms;
+    ms.push_back(std::move(m));
+    const ConvRef c = addConv(e.store, std::move(ms));
+    e.ctx.linkPreviews = false;
+    e.list->showConversation(c);
+    pump(8);
+    e.backend.resolved.clear();
+    const Ts ts = e.list->items().back().ts;
+    e.list->runMenuAction(ts, MessageList::kCopyText);
+
+    std::string got;
+    bool        done = false;
+    app().platform().requestClipboard(
+        "text/plain;charset=utf-8", [&](std::optional<std::string> s) {
+            got  = s.value_or("");
+            done = true;
+        }
+    );
+    REQUIRE(until([&] { return done; }));
+    CHECK_STR(
+        got,
+        "Lead in\nDeployment\nDetails: https://example.com/a/b/c/d\n"
+        "Owner\n@Mira\nBlock text\nMetric\tValue\nRequests\t42\nQuoted message"
+    );
+    CHECK(e.backend.resolved.empty());
+}
+
 TEST("rows: a mention shows the display name in either Names mode") {
     model::Store s;
     model::User  meg, tom;
@@ -1405,7 +1468,7 @@ TEST("actions: the message menu, item for item, acts through the backend") {
     CHECK_STR(
         menuLabels(e.list->menuItems(linked)),
         "Reply in thread|Add reaction|Forward message|-|Copy link|Copy message|"
-        "Copy link from message|Mark unread from here|-|Save for later|Remind me|"
+        "Copy link from message|Mark unread|-|Save for later|Remind me|"
         "Pin to channel|-|Summarize down"
     );
     const auto items = e.list->menuItems(linked);
@@ -1417,6 +1480,7 @@ TEST("actions: the message menu, item for item, acts through the backend") {
     CHECK_STR(items[11].hint, "P");
     CHECK(items[0].icon == uint16_t(gfx::Icon::MessageSquareReply));
     CHECK(items[1].icon == uint16_t(gfx::Icon::Smile));
+    CHECK(items[7].icon == uint16_t(gfx::Icon::Eye));
     CHECK(items[10].icon == uint16_t(gfx::Icon::AlarmClock));
     CHECK(!items[2].enabled && !items[13].enabled); // no forwarding hook / AI provider here
 
@@ -1469,7 +1533,7 @@ TEST("actions: the message menu, item for item, acts through the backend") {
     CHECK_STR(
         menuLabels(e.list->menuItems(mine)),
         "Reply in thread|Add reaction|Forward message|-|Copy link|Copy message|"
-        "Mark unread from here|-|Save for later|Remind me|Pin to channel|-|"
+        "Mark unread|-|Save for later|Remind me|Pin to channel|-|"
         "Edit message|Move to thread…|Summarize down|-|Delete message…"
     );
     e.list->runMenuAction(mine, M::kEdit);
@@ -1494,7 +1558,7 @@ TEST("actions: the message menu, item for item, acts through the backend") {
 }
 
 TEST("thread actions: replies and thread panel messages never offer nested Reply") {
-    Env e(true);
+    Env           e(true);
     const ConvRef design = e.conv("C0DESIGN");
     e.list->showConversation(design);
     pump(10);
@@ -1503,19 +1567,20 @@ TEST("thread actions: replies and thread panel messages never offer nested Reply
         if (m.replyCount > 0) { root = m.ts; break; }
     REQUIRE(root);
     CHECK(menuLabels(e.list->menuItems(root)).starts_with("Reply in thread|"));
-    // A reply broadcast into the main timeline should offer Open thread,
-    // not create a nested reply. The separate Open action doesn't focus edit.
-    model::Message broadcast = msg(e.store.me, model::tsSecs(root) + 9100, "broadcast reply");
-    const Ts broadcastTs = broadcast.ts;
+    // A reply broadcast into the main timeline should offer View thread,
+    // not create a nested reply. The separate action doesn't focus edit.
+    model::Message broadcast   = msg(e.store.me, model::tsSecs(root) + 9100, "broadcast reply");
+    broadcast.threadTs         = root;
+    broadcast.extras().subtype = "thread_broadcast";
+    broadcast.extras().threadParentText = "parent topic";
+    const Ts broadcastTs                = broadcast.ts;
     e.store.addMessage(design, std::move(broadcast));
-    e.store.updateMessage(design, broadcastTs, [root](model::Message &m) {
-        m.threadTs = root;
-    });
     pump();
-    CHECK(menuLabels(e.list->menuItems(broadcastTs)).starts_with("Open thread|"));
+    CHECK(menuLabels(e.list->menuItems(broadcastTs)).starts_with("View thread|"));
     e.list->runMenuAction(broadcastTs, MessageList::kOpenThread);
     REQUIRE(e.threads.size() == 1);
     CHECK(e.threads.back().first == design && e.threads.back().second == root);
+    CHECK(e.store.replies(design, broadcastTs) == nullptr); // never a new thread root
     e.threads.clear();
 
     e.list->showThread(design, root);
@@ -1528,6 +1593,115 @@ TEST("thread actions: replies and thread panel messages never offer nested Reply
     CHECK(menuLabels(e.list->menuItems(reply)).find("Add reaction") != std::string::npos);
     e.list->runMenuAction(reply, MessageList::kReply);
     CHECK(e.threads.empty()); // cannot initiate a nested thread via an old menu id
+}
+
+TEST("broadcast: channel rows keep their thread context and view the parent thread") {
+    Env            e(false);
+    const Ts       root                 = model::parseTs("1700000100.000000");
+    const Ts       insideTs             = model::parseTs("1700000200.000000");
+    const Ts       reply                = model::parseTs("1700000300.000000");
+    const Ts       normal               = model::parseTs("1700000400.000000");
+    model::Message rootMsg              = msgAt(1, root, "original topic");
+    rootMsg.replyCount                  = 2;
+    rootMsg.latestReply                 = reply;
+    model::Message inside               = msgAt(2, insideTs, "thread reply");
+    inside.threadTs                     = root;
+    model::Message broadcast            = msgAt(2, reply, "broadcast reply");
+    broadcast.threadTs                  = root;
+    broadcast.extras().subtype          = "thread_broadcast";
+    broadcast.extras().threadParentText = "original topic";
+    broadcast.extras().threadParentUser = 1;
+    model::Message              regular = msgAt(1, normal, "regular message");
+    std::vector<model::Message> msgs;
+    msgs.push_back(std::move(rootMsg));
+    msgs.push_back(std::move(inside));
+    msgs.push_back(std::move(broadcast));
+    msgs.push_back(std::move(regular));
+    const ConvRef c = addConv(e.store, std::move(msgs));
+    e.list->showConversation(c);
+    pump(10);
+    REQUIRE(e.row(reply) && e.row(normal));
+
+    // A regular channel message keeps Reply in thread; a broadcast opens the
+    // thread its reply already belongs to.
+    CHECK(menuLabels(e.list->menuItems(normal)).starts_with("Reply in thread|"));
+    CHECK(menuLabels(e.list->menuItems(reply)).starts_with("View thread|"));
+
+    // The row says it is a thread reply, with the parent's preview.
+    ui::View *context = findByTooltip(e.row(reply), "View thread");
+    REQUIRE(context != nullptr);
+    std::string                     text;
+    std::function<void(ui::View *)> collect = [&](ui::View *v) {
+        if (!v->accessibleName().empty())
+            text += v->accessibleName() + "\n";
+        for (size_t i = 0; i < v->childCount(); ++i)
+            collect(v->child(i));
+    };
+    collect(context);
+    CHECK(text.find("replied to a thread:") != std::string::npos);
+    CHECK(text.find("original topic") != std::string::npos);
+    CHECK(text.find("Also sent to channel") == std::string::npos);
+
+    // Clicking the context and the menu action both open the original root.
+    static_cast<ui::Clickable *>(context)->activate();
+    pump(2);
+    REQUIRE(e.threads.size() == 1);
+    CHECK(e.threads[0].first == c && e.threads[0].second == root);
+    e.threads.clear();
+    ConvRef openedConv = model::kNoConv;
+    Ts      openedTs = 0, openedThread = 0;
+    e.ctx.openMessage = [&](ConvRef conv, Ts ts, Ts thread) {
+        openedConv   = conv;
+        openedTs     = ts;
+        openedThread = thread;
+    };
+    e.list->runMenuAction(reply, MessageList::kOpenThread);
+    CHECK(openedConv == c && openedTs == reply && openedThread == root);
+    e.ctx.openMessage = nullptr;
+
+    // A regular message still starts its own thread, and the broadcast never
+    // becomes a thread root of its own.
+    e.list->runMenuAction(normal, MessageList::kReply);
+    REQUIRE(e.threads.size() == 1);
+    CHECK(e.threads.back().second == normal);
+    CHECK(e.store.replies(c, reply) == nullptr);
+
+    // The thread view shows the broadcast among its replies, once.
+    e.list->showThread(c, root);
+    pump(10);
+    size_t replyRows = 0;
+    for (const auto &it : e.list->items())
+        if (it.kind == Kind::Message && it.ts == reply)
+            ++replyRows;
+    CHECK(replyRows == 1);
+    REQUIRE(e.row(reply) && e.row(insideTs));
+    text.clear();
+    collect(e.row(reply));
+    CHECK(text.find("Also sent to channel") != std::string::npos);
+    CHECK(text.find("replied to a thread:") == std::string::npos);
+    text.clear();
+    collect(e.row(insideTs));
+    CHECK(text.find("Also sent to channel") == std::string::npos);
+
+    // A live broadcast behaves like one restored from history.
+    e.list->showConversation(c);
+    pump(6);
+    const Ts       liveTs          = model::parseTs("1700000500.000000");
+    model::Message live            = msgAt(2, liveTs, "live broadcast");
+    live.threadTs                  = root;
+    live.extras().subtype          = "thread_broadcast";
+    live.extras().threadParentText = "original topic";
+    e.store.addMessage(c, std::move(live));
+    pump(4);
+    REQUIRE(e.row(liveTs) != nullptr);
+    CHECK(menuLabels(e.list->menuItems(liveTs)).starts_with("View thread|"));
+    CHECK(e.store.findMessage(c, root)->replyCount == 3);
+    size_t liveRows = 0;
+    for (const auto &it : e.list->items())
+        if (it.kind == Kind::Message && it.ts == liveTs)
+            ++liveRows;
+    CHECK(liveRows == 1);
+    CHECK(e.store.replies(c, liveTs) == nullptr);
 }
 
 TEST("actions: Save for later and Remind me need messageReminders (session tokens)") {
@@ -1543,6 +1717,116 @@ TEST("actions: Save for later and Remind me need messageReminders (session token
     CHECK(labels.find("Save for later") == std::string::npos);
     CHECK(labels.find("Remind me") == std::string::npos);
     CHECK(labels.find("Pin to channel") != std::string::npos);
+}
+
+TEST("actions: Mark unread moves the cursor back and holds it while the chat is on screen") {
+    Env           e(true);
+    const ConvRef design = e.conv("C0DESIGN");
+    e.store.updateConversation(design, [](model::Conversation &c) { c.lastRead = 0; });
+    e.list->showConversation(design);
+    pump(10);
+    const auto &msgs = e.store.conversation(design).messages;
+    REQUIRE(until([&] { return e.store.conversation(design).lastRead == msgs.back().ts; }));
+    // Someone else's message a few from the end.
+    Ts             target = 0;
+    model::UserRef other  = model::kNoUser;
+    for (size_t i = msgs.size(); i-- > 0 && !target;)
+        if (msgs[i].user != e.store.me && !msgs[i].isReply() && i + 3 <= msgs.size()) {
+            target = msgs[i].ts;
+            other  = msgs[i].user;
+        }
+    REQUIRE(target != 0);
+    CHECK(
+        menuLabels(e.list->menuItems(target))
+            .find("Copy message|Mark unread|-|Save for later|Remind me|Pin to channel") !=
+        std::string::npos
+    );
+    e.list->runMenuAction(target, MessageList::kMarkUnread);
+    CHECK(e.store.conversation(design).lastRead == target - 1);
+    CHECK(e.store.conversation(design).unread > 0);
+    CHECK(e.ctx.unreadHeld(design, 0));
+    // The newest message is on screen, yet it stays unread...
+    pump(10);
+    CHECK(e.store.conversation(design).lastRead == target - 1);
+    // ...also when a new message comes in, or the list is shown again in
+    // place (a settings change rebuilds it).
+    model::Message m;
+    m.user = other;
+    m.ts   = msgs.back().ts + 1000000;
+    m.text = "one more";
+    e.store.addMessage(design, std::move(m));
+    pump(10);
+    e.list->showConversation(design);
+    pump(10);
+    CHECK(e.store.conversation(design).lastRead == target - 1);
+    // Opened again (the shell drops the hold): read as usual.
+    e.ctx.releaseUnread(design, 0);
+    e.list->showConversation(design);
+    e.list->list().scrollToBottom();
+    REQUIRE(until([&] { return e.store.conversation(design).lastRead == msgs.back().ts; }));
+}
+
+TEST("actions: Mark unread on a reply — the followed thread from there, the channel stays read") {
+    Env     e(true);
+    // A thread I follow (the demo's: started or replied in) and one I don't.
+    ConvRef conv = model::kNoConv, otherConv = model::kNoConv;
+    Ts      root = 0, otherRoot = 0;
+    for (ConvRef c = 0; c < e.store.conversationCount(); ++c)
+        for (const model::Thread &t : e.store.conversation(c).threads) {
+            if (t.replies.size() < 2)
+                continue;
+            if (e.backend.canMarkThreadUnread(c, t.root) && !root) {
+                conv = c;
+                root = t.root;
+            } else if (!e.backend.canMarkThreadUnread(c, t.root) && !otherRoot) {
+                otherConv = c;
+                otherRoot = t.root;
+            }
+        }
+    REQUIRE(root != 0);
+    e.list->showThread(conv, root);
+    REQUIRE(until([&] { return e.list->items().size() > 3; }));
+    pump(10);
+    CHECK(e.store.unreadThreads() == 0);
+    const auto &replies = *e.store.replies(conv, root);
+    const Ts    reply   = replies[replies.size() - 2].ts;
+    const Ts    chRead  = e.store.conversation(conv).lastRead;
+    CHECK(menuLabels(e.list->menuItems(reply)).find("Mark unread") != std::string::npos);
+    // The root in the panel is the channel's message: the channel's cursor.
+    CHECK(menuLabels(e.list->menuItems(root)).find("Mark unread") != std::string::npos);
+    e.list->runMenuAction(reply, MessageList::kMarkUnread);
+    CHECK(e.store.unreadThreads() == 1); // the Threads entry
+    CHECK(e.store.conversation(conv).lastRead == chRead);
+    CHECK(e.ctx.unreadHeld(conv, root));
+    CHECK_FALSE(e.ctx.unreadHeld(conv, 0));
+    pump(10);
+    CHECK(e.store.unreadThreads() == 1); // open, but held
+    // The Threads page sees the cursor just before the reply.
+    bool                        loaded = false;
+    model::Backend::ThreadsView page;
+    e.backend.loadThreadsView({}, [&](bool ok, model::Backend::ThreadsView p) {
+        loaded = ok;
+        page   = std::move(p);
+    });
+    REQUIRE(until([&] { return loaded; }));
+    bool seen = false;
+    for (const auto &t : page.threads)
+        if (t.conv == conv && t.root.ts == root) {
+            seen = true;
+            CHECK(t.lastRead == reply - 1);
+        }
+    CHECK(seen);
+    // Opened again: it reads itself.
+    e.ctx.releaseUnread(conv, root);
+    e.list->showThread(conv, root);
+    REQUIRE(until([&] { return e.store.unreadThreads() == 0; }));
+    // A reply in a thread I don't follow: no item (no cursor of mine there).
+    if (otherRoot) {
+        e.list->showThread(otherConv, otherRoot);
+        REQUIRE(until([&] { return e.list->items().size() > 3; }));
+        const auto &rs = *e.store.replies(otherConv, otherRoot);
+        CHECK(menuLabels(e.list->menuItems(rs.back().ts)).find("Mark unread") == std::string::npos);
+    }
 }
 
 TEST("actions: a message link is a chip; a click jumps there or opens the browser") {
@@ -1814,7 +2098,9 @@ TEST("actions: a shared message's files open in the viewer, never deleted or for
 }
 
 TEST("actions: a remote CSV's Preview downloads it to a temporary file, removed once read") {
-    Env           e(true);
+    Env                      e(true);
+    std::vector<std::string> errors;
+    e.backend.onError     = [&](const std::string &m) { errors.push_back(m); };
     const ConvRef general = e.conv("C0GENERAL");
     Ts            ts      = 0;
     std::string   url;
@@ -1847,6 +2133,8 @@ TEST("actions: a remote CSV's Preview downloads it to a temporary file, removed 
     pump(2);
     CHECK(e.win->topPopup() == nullptr);
     CHECK_FALSE(file::exists(e.backend.asked.back().to));
+    REQUIRE(errors.size() == 1);
+    CHECK_STR(errors.front(), "Download failed: http 404");
 }
 
 TEST("actions: right click on a message shows the same menu as More actions") {
@@ -1982,16 +2270,201 @@ TEST("actions: the file bar on hovered files; right click opens the file menu") 
     REQUIRE(dl != nullptr);
     ui::View *bar = dl->parent();
     CHECK(bar->visible());
-    CHECK(near(bar->frame().w, 108) && near(bar->frame().h, 40));
+    CHECK(near(bar->frame().w, 140) && near(bar->frame().h, 40));
     CHECK(near(bar->windowRect().y, c.y - 20, 1));
-    CHECK(near(bar->windowRect().x + 108, c.x + c.w - 1, 1));
+    CHECK(near(bar->windowRect().x + 140, c.x + c.w - 1, 1));
     CHECK_STR(bar->child(1)->tooltip(), "Share");
     static_cast<ui::Clickable *>(bar->child(1))->activate();
     CHECK_STR(shared, csv); // "Forward this file"
+    // Download, Share, Add reaction, More actions: the reaction comes from
+    // the hovered file's message, like the message toolbar's.
+    ui::View *react = findByTooltip(bar, "Add reaction");
+    REQUIRE(react != nullptr);
+    CHECK(react == bar->child(2));
+    CHECK(react->visible());
+    static_cast<ui::Clickable *>(react)->activate();
+    pump(2);
+    auto *ep = static_cast<screens::EmojiPicker *>(e.win->topPopup());
+    REQUIRE(ep != nullptr);
+    ep->pick("tada");
+    pump(4);
+    const model::Message *fileMsg = e.store.findMessage(general, csvTs);
+    REQUIRE(fileMsg != nullptr);
+    bool reacted = false;
+    for (const model::Reaction &r : fileMsg->reactions)
+        if (r.name == "tada")
+            reacted = e.store.reactedByMe(r);
+    CHECK(reacted);
+    if (e.win->topPopup() == ep)
+        ep->close();
+    pump(2);
     h->injectButton(e.win->native(), plat::Button::Right, true);
     h->injectButton(e.win->native(), plat::Button::Right, false);
     pump(2);
     CHECK(e.win->topPopup() != nullptr);
+}
+
+TEST("actions: the file bar reacts to an image thumbnail too") {
+    Env           e(false);
+    const int64_t t0 = base::nowSecs() - 600;
+    model::File   img;
+    img.id           = "FIMG";
+    img.name         = "mira.png";
+    img.mime         = "image/png";
+    img.path         = asset("avatars/mira.png");
+    img.width        = 256;
+    img.height       = 256;
+    model::Message m = msg(0, t0, "look");
+    m.extras().files.push_back(img);
+    std::vector<model::Message> ms;
+    ms.push_back(std::move(m));
+    const ConvRef conv = addConv(e.store, std::move(ms));
+    e.list->showConversation(conv);
+    pump(10);
+    const Ts  ts  = t0 * 1000000;
+    ui::View *row = e.row(ts);
+    REQUIRE(row != nullptr);
+    // The thumbnail: the image leaf (256 px), not the 36-px avatar.
+    ui::View                       *thumb = nullptr;
+    std::function<void(ui::View *)> find  = [&](ui::View *v) {
+        for (size_t i = 0; i < v->childCount(); ++i) {
+            ui::View *c = v->child(i);
+            if (c->childCount() == 0 && c->frame().h > 100)
+                thumb = c;
+            find(c);
+        }
+    };
+    find(row);
+    REQUIRE(thumb != nullptr);
+    auto           *h = app().platform().testHooks();
+    const ui::RectF t = thumb->windowRect();
+    h->injectPointerMove(e.win->native(), {t.x + t.w / 2, t.y + t.h / 2});
+    pump(4);
+    ui::View *dl = findByTooltip(e.win->root().child(0), "Download");
+    REQUIRE(dl != nullptr);
+    ui::View *bar = dl->parent();
+    REQUIRE(bar->visible());
+    ui::View *react = findByTooltip(bar, "Add reaction");
+    REQUIRE(react != nullptr);
+    CHECK(react->visible());
+    static_cast<ui::Clickable *>(react)->activate();
+    pump(2);
+    auto *ep = static_cast<screens::EmojiPicker *>(e.win->topPopup());
+    REQUIRE(ep != nullptr);
+    ep->pick("tada");
+    pump(4);
+    const model::Message *imgMsg = e.store.findMessage(conv, ts);
+    REQUIRE(imgMsg != nullptr);
+    bool reacted = false;
+    for (const model::Reaction &r : imgMsg->reactions)
+        if (r.name == "tada")
+            reacted = e.store.reactedByMe(r);
+    CHECK(reacted);
+    if (e.win->topPopup() == ep)
+        ep->close();
+    pump(2);
+}
+
+TEST("actions: the file bar on a file narrower than it stays inside the list") {
+    Env           e(false);
+    const int64_t t0 = base::nowSecs() - 600;
+    model::File   img;
+    img.id           = "FTINY";
+    img.name         = "dot.png";
+    img.mime         = "image/png";
+    img.path         = asset("avatars/mira.png");
+    img.width        = 16;
+    img.height       = 16;
+    model::Message m = msg(0, t0, "");
+    m.extras().files.push_back(img);
+    std::vector<model::Message> ms;
+    ms.push_back(std::move(m));
+    const ConvRef conv = addConv(e.store, std::move(ms));
+    e.list->showConversation(conv);
+    pump(10);
+    ui::View *row = e.row(t0 * 1000000);
+    REQUIRE(row != nullptr);
+    // The 16-px image, far narrower than the bar.
+    ui::View                       *thumb = nullptr;
+    std::function<void(ui::View *)> find  = [&](ui::View *v) {
+        for (size_t i = 0; i < v->childCount(); ++i) {
+            ui::View *c = v->child(i);
+            if (c->childCount() == 0 && near(c->frame().w, 16) && near(c->frame().h, 16))
+                thumb = c;
+            find(c);
+        }
+    };
+    find(row);
+    REQUIRE(thumb != nullptr);
+    auto           *h = app().platform().testHooks();
+    const ui::RectF t = thumb->windowRect();
+    h->injectPointerMove(e.win->native(), {t.x + t.w / 2, t.y + t.h / 2});
+    pump(4);
+    ui::View *dl = findByTooltip(e.win->root().child(0), "Download");
+    REQUIRE(dl != nullptr);
+    ui::View *bar = dl->parent();
+    REQUIRE(bar->visible());
+    // 12 px in from the list's left edge: every button on screen.
+    const ui::RectF list = e.list->windowRect();
+    CHECK(near(bar->windowRect().x, list.x + 12, 1));
+    CHECK(dl->windowRect().x >= list.x);
+    CHECK(bar->windowRect().x + bar->frame().w <= list.x + list.w);
+}
+
+TEST("actions: the file bar goes with its file: a message deleted under the pointer") {
+    Env           e(false);
+    const int64_t t0 = base::nowSecs() - 600;
+    model::File   img;
+    img.id           = "FGONE";
+    img.name         = "mira.png";
+    img.mime         = "image/png";
+    img.path         = asset("avatars/mira.png");
+    img.width        = 256;
+    img.height       = 256;
+    model::Message m = msg(0, t0, "look");
+    m.extras().files.push_back(img);
+    std::vector<model::Message> ms;
+    ms.push_back(std::move(m));
+    ms.push_back(msg(0, t0 + 60, "and this"));
+    const ConvRef conv = addConv(e.store, std::move(ms));
+    e.list->showConversation(conv);
+    pump(10);
+    const Ts  ts  = t0 * 1000000;
+    ui::View *row = e.row(ts);
+    REQUIRE(row != nullptr);
+    ui::View                       *thumb = nullptr;
+    std::function<void(ui::View *)> find  = [&](ui::View *v) {
+        for (size_t i = 0; i < v->childCount(); ++i) {
+            ui::View *c = v->child(i);
+            if (c->childCount() == 0 && c->frame().h > 100)
+                thumb = c;
+            find(c);
+        }
+    };
+    find(row);
+    REQUIRE(thumb != nullptr);
+    auto           *h = app().platform().testHooks();
+    const ui::RectF t = thumb->windowRect();
+    h->injectPointerMove(e.win->native(), {t.x + t.w / 2, t.y + t.h / 2});
+    pump(4);
+    ui::View *dl = findByTooltip(e.win->root().child(0), "Download");
+    REQUIRE(dl != nullptr);
+    ui::View *bar = dl->parent();
+    REQUIRE(bar->visible());
+    // Deleted (here or elsewhere) while the pointer rests on it: its row and
+    // the picture go, and the bar with them; its buttons would act on a
+    // message that is no longer there.
+    REQUIRE(e.store.removeMessage(conv, ts));
+    pump(4);
+    CHECK_FALSE(bar->visible());
+    // The pointer moving on finds nothing of it (no stale view to ask).
+    h->injectPointerMove(e.win->native(), {t.x + t.w / 2, t.y + t.h / 2 + 40});
+    pump(4);
+    CHECK_FALSE(bar->visible());
+    // Another conversation under a resting pointer: the same.
+    e.list->showConversation(e.conv("C0GENERAL"));
+    pump(4);
+    CHECK_FALSE(bar->visible());
 }
 
 TEST("actions: the delete, move to thread and reminder dialogs and the CSV viewer") {
@@ -2202,7 +2675,9 @@ TEST("image: \"Copy full image\" of a Slack-hosted image copies the original, no
         RemoteImages remote(app().platform(), nullptr, dir);
         FakeNet      fake;
         fake.install(remote);
-        Env e(true);
+        Env                      e(true);
+        std::vector<std::string> errors;
+        e.backend.onError    = [&](const std::string &m) { errors.push_back(m); };
         e.ctx.remote         = &remote;
         const ConvRef design = e.conv("C0DESIGN");
         Ts            ts     = 0;
@@ -2255,6 +2730,8 @@ TEST("image: \"Copy full image\" of a Slack-hosted image copies the original, no
         pump(2);
         CHECK_STR(clipboard(), "before");
         CHECK_FALSE(file::exists(e.backend.asked.back().to));
+        REQUIRE(errors.size() == 1);
+        CHECK_STR(errors.front(), "Download failed: http 404");
     }
     wipe(dir);
 }
@@ -2262,7 +2739,9 @@ TEST("image: \"Copy full image\" of a Slack-hosted image copies the original, no
 TEST("actions: the file bar's Download saves the original where asked, a job until written") {
     const std::string dir = tempDir("download");
     {
-        Env           e(true);
+        Env                      e(true);
+        std::vector<std::string> errors;
+        e.backend.onError     = [&](const std::string &m) { errors.push_back(m); };
         const ConvRef general = e.conv("C0GENERAL");
         Ts            ts      = 0;
         std::string   path;
@@ -2299,6 +2778,20 @@ TEST("actions: the file bar's Download saves the original where asked, a job unt
         pump(6);
         CHECK(model::jobs().count() == 0);
         CHECK(e.backend.asked.size() == 1);
+        // A failed source ends the job and tells the user why.
+        for (model::Message &m : e.store.conversation(general).messages)
+            for (model::File &f : m.extras().files)
+                if (f.name == "signups-week-37.csv")
+                    f.original = "https://files.csv.test/missing.csv";
+        const std::string missing = file::join(dir, "missing.csv");
+        REQUIRE(hooks->fileDialogRespond({missing}));
+        e.list->downloadFile(ts, path);
+        pump(10); // the save dialog's callback starts the job
+        REQUIRE(until([&] { return model::jobs().count() == 0; }));
+        CHECK(e.backend.asked.size() == 2);
+        REQUIRE(errors.size() == 1);
+        CHECK_STR(errors.front(), "Download failed: http 404");
+        CHECK_FALSE(file::exists(missing));
     }
     wipe(dir);
 }
@@ -2595,6 +3088,47 @@ TEST("loading: the ring and its hints until the first page, then No messages yet
     CHECK(e.list->state() == State::Loading);
     e.list->setWaiting(false);
     CHECK(e.list->state() == State::None);
+}
+
+TEST("loading: a failed first history page stops paging and reports the error") {
+    using State = MessageList::State;
+    HoldEnv                  e;
+    std::vector<std::string> errors;
+    e.backend.onError = [&](const std::string &m) { errors.push_back(m); };
+    const ConvRef c   = e.conv("C3");
+    e.list->showConversation(c);
+    REQUIRE(until([&] { return !e.backend.history.empty(); }));
+    REQUIRE(e.list->state() == State::Loading);
+    const size_t requests = e.backend.history.size();
+    e.backend.history.front()(false, "channel_not_found");
+    pump(200); // past the edge-check delay: a failure must not re-request
+    CHECK(e.backend.history.size() == requests);
+    CHECK(e.list->state() == State::Error);
+    CHECK_STR(e.list->stateText(), "Couldn't load messages");
+    REQUIRE(errors.size() == 1);
+    CHECK_STR(errors.front(), "Couldn't load messages: channel_not_found");
+}
+
+TEST("loading: a failed thread page reports the error without staying loading") {
+    using State = MessageList::State;
+    HoldEnv                  e;
+    std::vector<std::string> errors;
+    e.backend.onError                  = [&](const std::string &m) { errors.push_back(m); };
+    const ConvRef  c                   = e.conv("C4");
+    model::Message root                = msg(e.mira, 3000, "root");
+    root.replyCount                    = 1;
+    const Ts                    rootTs = root.ts;
+    std::vector<model::Message> page;
+    page.push_back(std::move(root));
+    e.store.addPage(c, std::move(page));
+    e.list->showThread(c, rootTs);
+    REQUIRE(e.list->state() == State::Loading);
+    REQUIRE(e.backend.threads.size() == 1);
+    e.backend.threads.front()(false, "thread_not_found");
+    pump();
+    CHECK(e.list->state() != State::Loading);
+    REQUIRE(errors.size() == 1);
+    CHECK_STR(errors.front(), "Couldn't load messages: thread_not_found");
 }
 
 TEST("loading: a thread shows the ring, not its root, until the replies are in") {
@@ -3004,10 +3538,10 @@ TEST("selection: drag positions, across messages, Ctrl+C copies, Escape clears")
     pump(8);
     const Ts   a = t0 * 1000000, b = (t0 + 600) * 1000000, d = (t0 + 1200) * 1000000;
     // What a selection runs over, also for rows not on screen.
-    const auto texts = selectableTexts(e.ctx, *e.store.findMessage(c, b));
+    const auto texts = selectableTexts(e.ctx, *e.store.findMessage(c, b), *e.list);
     REQUIRE(texts.size() == 2);
     CHECK_STR(texts[1], "with code");
-    CHECK_STR(selectableTexts(e.ctx, *e.store.findMessage(c, d)).back(), "edited text (edited)");
+    CHECK_STR(selectableTexts(e.ctx, *e.store.findMessage(c, d), *e.list).back(), "edited text (edited)");
     // A point on the first message's text maps to it.
     ui::View *l = findLeaf(e.row(a), "first message here");
     REQUIRE(l != nullptr);
@@ -3038,6 +3572,130 @@ TEST("selection: drag positions, across messages, Ctrl+C copies, Escape clears")
     CHECK(lab->selectionTo() == 0);
     ui::Event copy2 = key(plat::Key::C, plat::primaryMod());
     CHECK_FALSE(e.list->onEvent(copy2)); // nothing selected: not ours
+}
+
+TEST("selection: attachment cards join the message text selection") {
+    Env           e(false);
+    const int64_t t0 = base::nowSecs() - 3600;
+    model::Message m = msg(0, t0, "main body");
+
+    model::Attachment legacy;
+    legacy.pretext = "Pretext";
+    legacy.title   = "Linked title";
+    legacy.link    = "https://example.com/title";
+    legacy.text    = "Attachment body";
+    legacy.fields.push_back({"Field title", "Field value"});
+    m.extras().attachments.push_back(legacy);
+
+    model::Attachment shared;
+    shared.msgUnfurl = true;
+    model::Block quoted;
+    quoted.kind = model::Block::Kind::Text;
+    quoted.text = "Quoted body";
+    shared.blocks.push_back(quoted);
+    m.extras().attachments.push_back(shared);
+
+    using K = model::Block::Kind;
+    model::Attachment structured;
+    model::Block      text;
+    text.kind = K::Text;
+    text.text = "Block text";
+    structured.blocks.push_back(text);
+    model::Block table;
+    table.kind = K::Table;
+    table.rows = {{"*Metric*", "Value"}, {"Requests", "42"}};
+    structured.blocks.push_back(table);
+    m.extras().attachments.push_back(structured);
+
+    std::vector<model::Message> ms;
+    ms.push_back(std::move(m));
+    const ConvRef c = addConv(e.store, std::move(ms));
+    e.list->showConversation(c);
+    pump(8);
+    const Ts ts = t0 * 1000000;
+    const model::Message *stored = e.store.findMessage(c, ts);
+    REQUIRE(stored != nullptr);
+
+    const std::vector<std::string> texts = selectableTexts(e.ctx, *stored, *e.list);
+    REQUIRE(texts.size() == 9);
+    CHECK_STR(texts[0], "main body");
+    CHECK_STR(texts[1], "Pretext");
+    CHECK_STR(texts[2], "Linked title");
+    CHECK_STR(texts[3], "Attachment body");
+    CHECK_STR(texts[4], "Field title");
+    CHECK_STR(texts[5], "Field value");
+    CHECK_STR(texts[6], "Quoted body");
+    CHECK_STR(texts[7], "Block text");
+    CHECK_STR(texts[8], "Metric\tValue\nRequests\t42");
+
+    auto *row = static_cast<MessageRow *>(e.row(ts));
+    REQUIRE(row != nullptr);
+    CHECK(row->selectionLabels().size() == texts.size());
+    for (size_t i = 0; i < texts.size(); ++i)
+        CHECK(row->selectionLabels()[i]->textSize() == texts[i].size());
+
+    ui::View *body = findLeaf(row, "Attachment body");
+    REQUIRE(body != nullptr);
+    const ui::RectF r = body->windowRect();
+    const auto      p = e.list->textPosAt({r.x + 1, r.y + r.h / 2});
+    uint32_t        bodyOffset = 0;
+    for (size_t i = 0; i < 3; ++i)
+        bodyOffset += uint32_t(texts[i].size()) + 1;
+    CHECK(p.ts == ts && p.offset == bodyOffset);
+
+    uint32_t end = 0;
+    std::string expected;
+    for (size_t i = 0; i < texts.size(); ++i) {
+        if (i) {
+            ++end;
+            expected += '\n';
+        }
+        end += uint32_t(texts[i].size());
+        expected += texts[i];
+    }
+    e.list->select({ts, 0}, {ts, end});
+    CHECK_STR(e.list->selectedText(), expected);
+    ui::Event copy = key(plat::Key::C, plat::primaryMod());
+    CHECK(e.list->onEvent(copy));
+    CHECK_STR(clipboard(), expected);
+}
+
+TEST("selection: attachment preview offsets follow collapsed and expanded text") {
+    Env           e(false);
+    const int64_t t0 = base::nowSecs() - 3600;
+    const std::string body(900, 'x');
+    model::Message m = msg(0, t0, "");
+    model::Attachment a;
+    a.text = body;
+    m.extras().attachments.push_back(a);
+    std::vector<model::Message> ms;
+    ms.push_back(std::move(m));
+    const ConvRef c = addConv(e.store, std::move(ms));
+    e.list->showConversation(c);
+    pump(8);
+    const Ts ts = t0 * 1000000;
+    const model::Message *stored = e.store.findMessage(c, ts);
+    REQUIRE(stored != nullptr);
+
+    auto texts = selectableTexts(e.ctx, *stored, *e.list);
+    REQUIRE(texts.size() == 1);
+    CHECK(texts.front().size() < body.size());
+    auto *row = static_cast<MessageRow *>(e.row(ts));
+    REQUIRE(row != nullptr);
+    CHECK(row->selectionLabels().size() == texts.size());
+    CHECK(row->selectionLabels()[0]->textSize() == texts[0].size());
+
+    e.list->toggleUnfurl(ts, 0);
+    pump(8);
+    stored = e.store.findMessage(c, ts);
+    REQUIRE(stored != nullptr);
+    texts = selectableTexts(e.ctx, *stored, *e.list);
+    REQUIRE(texts.size() == 1);
+    CHECK_STR(texts.front(), body);
+    row = static_cast<MessageRow *>(e.row(ts));
+    REQUIRE(row != nullptr);
+    CHECK(row->selectionLabels().size() == texts.size());
+    CHECK(row->selectionLabels()[0]->textSize() == texts[0].size());
 }
 
 TEST("selection: a pointer drag runs from one message's text into the next ones") {
@@ -3430,7 +4088,7 @@ TEST("selection: runs over a table's cells, tab apart, a row per line") {
     e.list->showConversation(c);
     pump(8);
     const Ts   a     = t0 * 1000000;
-    const auto texts = selectableTexts(e.ctx, *e.store.findMessage(c, a));
+    const auto texts = selectableTexts(e.ctx, *e.store.findMessage(c, a), *e.list);
     REQUIRE(texts.size() == 2);
     CHECK_STR(texts[1], "Name\tScore\nAnn\t12\nBob\t7");
     auto *tv = static_cast<TableView *>(findLeaf(e.row(a), "*Name* | Score"));

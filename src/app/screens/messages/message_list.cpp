@@ -67,6 +67,18 @@ const model::File *anyFileAt(const model::Message *m, const std::string &path) {
     return nullptr;
 }
 
+// A user-started file action failed. Logging alone leaves the job ending with
+// no explanation; the banner is the same error boundary other writes use.
+void reportDownloadFailure(
+    const std::function<void(const std::string &)> &onError, const std::string &err = {}
+) {
+    if (!onError)
+        return;
+    onError(
+        err.empty() ? i18n::tr("Download failed") : i18n::arg(i18n::tr("Download failed: %1"), err)
+    );
+}
+
 uint64_t keyOf(const MessageList::Item &it) {
     switch (it.kind) {
     case Kind::Day:
@@ -420,13 +432,15 @@ public:
         } else if (s != State::Loading) {
             _ring.stop();
         }
-        _empty->setVisible(s == State::Empty);
+        _empty->setText(s == State::Error ? tr("Couldn't load messages") : tr("No messages yet"));
+        _empty->setVisible(s == State::Empty || s == State::Error);
         setVisible(s != State::None);
         refresh();
     }
     State       state() const { return _s; }
     std::string text() const {
         return _s == State::Empty     ? std::string(tr("No messages yet"))
+               : _s == State::Error   ? std::string(tr("Couldn't load messages"))
                : _s == State::Loading ? _hintText
                                       : std::string();
     }
@@ -565,7 +579,9 @@ MessageList::MessageList(Context &ctx)
         if (!_toolbarRow)
             return;
         const Ts ts = _toolbarRow->ts();
-        if (const model::Message *m = message(ts); m && m->isReply()) {
+        if (const model::Message *m = message(ts); m && m->isBroadcast())
+            viewThread(m->threadTs, m->ts);
+        else if (m && m->isReply()) {
             if (_ctx.openThread)
                 _ctx.openThread(_conv, m->threadTs);
         } else
@@ -589,7 +605,7 @@ MessageList::MessageList(Context &ctx)
         }
     };
     _toolbar->setVisible(false);
-    // The file action bar: Download, Share, More actions.
+    // The file action bar: Download, Share, Add reaction, More actions.
     _fileBar          = add<ToolbarCard>();
     auto *download    = _fileBar->add<ActionButton>(gfx::Icon::Download, tr("Download"));
     download->onClick = [this] { downloadFile(_fileTs, _filePath); };
@@ -597,6 +613,11 @@ MessageList::MessageList(Context &ctx)
     share->onClick    = [this] {
         if (_ctx.forwardMessage && _fileTs)
             _ctx.forwardMessage(_conv, _fileTs, _filePath);
+    };
+    _fbReact          = _fileBar->add<ActionButton>(gfx::Icon::Smile, tr("Add reaction"));
+    _fbReact->onClick = [this] {
+        const ui::RectF r = _fbReact->windowRect();
+        openReactionPicker(_fileTs, {r.x, r.y + r.h, 0, 0});
     };
     auto *fileMore    = _fileBar->add<ActionButton>(gfx::Icon::MoreHorizontal, tr("More actions"));
     fileMore->onClick = [this, fileMore] {
@@ -636,15 +657,18 @@ void MessageList::downloadFile(Ts ts, const std::string &path) {
         [&ctx, name, source](std::string to) {
             if (to.empty())
                 return;
-            const int job = model::jobs().begin(arg(tr("Downloading %1"), name));
+            const int  job     = model::jobs().begin(arg(tr("Downloading %1"), name));
+            const auto onError = ctx.backend.onError;
             fetchFile(
                 ctx.app.platform(),
                 ctx.backend,
                 source,
                 std::move(to),
-                [job](bool ok, const std::string &err) {
-                    if (!ok)
+                [job, onError](bool ok, const std::string &err) {
+                    if (!ok) {
                         LOG_WARN("messages", "File download failed: %s", err.c_str());
+                        reportDownloadFailure(onError, err);
+                    }
                     model::jobs().end(job);
                 }
             );
@@ -675,17 +699,32 @@ void MessageList::fileHovered(ui::View *v, Ts ts, const std::string &path, bool 
     });
 }
 
+void MessageList::fileGone(ui::View *v) {
+    if (!v || v != _fileView)
+        return;
+    _fileView = nullptr;
+    _fileTs   = 0;
+    _filePath.clear();
+    _fileBar->setVisible(false);
+}
+
 void MessageList::placeFileBar() {
-    if (!_fileView || !_fileView->window()) {
+    const model::Message *m = message(_fileTs);
+    if (!_fileView || !_fileView->window() || !m || m->pending) {
         _fileBar->setVisible(false);
         return;
     }
+    // MSGA has no agent sessions: every file's message takes a reaction.
+    _fbReact->setVisible(true);
     // cardTop = file top − 20 (straddling it); right edge on the file's
-    // last pixel column.
+    // last pixel column, but never out of the list on the left (a file
+    // narrower than the bar, a small image): 12 px in, as the message
+    // toolbar is on the right.
     const ui::SizeF  sz = _fileBar->measure(ui::kInf, ui::kInf);
     const ui::RectF  r  = _fileView->windowRect();
     const ui::PointF o  = mapFromWindow({r.x, r.y});
-    _fileBar->setFrame({std::floor(o.x + r.w - 1 - sz.w), std::floor(o.y - 20), sz.w, sz.h});
+    const float      x  = std::max(12.f, o.x + r.w - 1 - sz.w);
+    _fileBar->setFrame({std::floor(x), std::floor(o.y - 20), sz.w, sz.h});
     _fileBar->setVisible(true);
 }
 
@@ -697,7 +736,8 @@ MessageList::~MessageList() {
     _ctx.app.cancelTimer(_usersTimer);
     stopDragScroll();
     _toolbarRow = nullptr;
-    clearChildren(); // rows reach back into this object while being destroyed
+    _fileView   = nullptr; // the file views going below find nothing to hide
+    clearChildren();       // rows reach back into this object while being destroyed
 }
 
 const model::Message *MessageList::message(Ts ts) const {
@@ -734,13 +774,14 @@ void MessageList::clear() {
     ++_threadLoadGeneration;
     if (_conv != model::kNoConv)
         _ctx.store().setVisibleRange(_conv, 0, 0);
-    _conv               = model::kNoConv;
-    _root               = 0;
-    _jumpTs             = 0;
-    _loadingOlder       = false;
-    _loadingThread      = false;
-    _threadLoadPending  = false;
-    _unreadJump         = false;
+    _conv              = model::kNoConv;
+    _root              = 0;
+    _jumpTs            = 0;
+    _loadingOlder      = false;
+    _loadingThread     = false;
+    _threadLoadPending = false;
+    _historyFailed     = false;
+    _unreadJump        = false;
     hideToolbar();
     _items.clear();
     resetRows();
@@ -758,21 +799,22 @@ void MessageList::showConversation(ConvRef conv) {
         _inlineThreads.clear();
     ++_historyLoadGeneration;
     ++_threadLoadGeneration;
-    _conv              = conv;
-    _root              = 0;
+    _conv = conv;
+    _root = 0;
     _ctx.store().setVisibleRange(conv, 0, 0);
     _markedTs          = 0;
     _jumpTs            = 0;
     _loadingOlder      = false;
     _loadingThread     = false;
     _threadLoadPending = false;
+    _historyFailed     = false;
     // Where to land: where it was left, else its first unread
     // (switching away and back never jumps the view).
-    _openPending  = conv != model::kNoConv;
-    _openAnchor   = {};
-    _openLastRead = 0;
-    _unreadCursor = _openPending ? _ctx.store().conversation(conv).lastRead : 0;
-    _unreadJump = false;
+    _openPending       = conv != model::kNoConv;
+    _openAnchor        = {};
+    _openLastRead      = 0;
+    _unreadCursor      = _openPending ? _ctx.store().conversation(conv).lastRead : 0;
+    _unreadJump        = false;
     if (_openPending) {
         const std::string &id = _ctx.store().conversation(conv).id;
         for (const SavedAnchor &a : _anchors)
@@ -799,10 +841,12 @@ void MessageList::showThread(ConvRef conv, Ts root, Ts jumpTarget) {
     stopDragScroll();
     ++_historyLoadGeneration;
     ++_threadLoadGeneration;
-    _loadingOlder = false;
-    _openPending = false;
+    _loadingOlder  = false;
+    _historyFailed = false;
+    _openPending   = false;
     _conv = conv;
     _root = root;
+    _markedTs = 0; // shown again: it reads itself again (unless held)
     _ctx.store().setVisibleRange(conv, 0, root);
     _jumpTs = jumpTarget;
     _unreadJump = false;
@@ -821,18 +865,18 @@ void MessageList::showThread(ConvRef conv, Ts root, Ts jumpTarget) {
     updateVisibleRange();
 
     if (_threadLoadPending) {
-        const uint64_t generation = _threadLoadGeneration;
-        std::weak_ptr<char> alive = _alive;
+        const uint64_t      generation = _threadLoadGeneration;
+        std::weak_ptr<char> alive      = _alive;
         _ctx.backend.loadThread(
-            conv,
-            root,
-            [this, alive, conv, root, generation](bool, const std::string &) {
-                if (alive.expired() || generation != _threadLoadGeneration ||
-                    conv != _conv || root != _root)
+            conv, root, [this, alive, conv, root, generation](bool ok, const std::string &err) {
+                if (alive.expired() || generation != _threadLoadGeneration || conv != _conv ||
+                    root != _root)
                     return;
+                if (!ok && err != "cancelled" && _ctx.backend.onError)
+                    _ctx.backend.onError(i18n::arg(tr("Couldn't load messages: %1"), err));
                 const bool wasLoading = _loadingThread;
-                _threadLoadPending = false;
-                _loadingThread = false;
+                _threadLoadPending    = false;
+                _loadingThread        = false;
                 if (wasLoading) {
                     rebuild(false);
                     resetRows();
@@ -848,6 +892,8 @@ void MessageList::showThread(ConvRef conv, Ts root, Ts jumpTarget) {
         );
     }
     updateState();
+    if (conv != model::kNoConv)
+        scheduleEdgeCheck(); // a loaded thread reads itself at once
 }
 
 namespace {
@@ -910,9 +956,8 @@ void MessageList::rebuild(bool notify) {
             // The thread view: the root and its replies as one run with day
             // dividers ("Yesterday" above the root), no reply-count row.
             std::vector<const model::Message *> run{root};
-            if (const auto *replies = _ctx.store().replies(_conv, _root))
-                for (const model::Message &m : *replies)
-                    run.push_back(&m);
+            for (const model::Message *m : _ctx.store().threadTimeline(_conv, _root))
+                run.push_back(m);
             addRun(run, true);
         }
     }
@@ -959,9 +1004,11 @@ void MessageList::updateState() {
         bool loading = _waiting;
         if (_conv != model::kNoConv) {
             const model::Conversation &c = _ctx.store().conversation(_conv);
-            // Never loaded: no messages yet, but more before them.
-            loading = loading || (_root ? _loadingThread : c.messages.empty() && c.hasMoreBefore);
-            s       = loading ? State::Loading : State::Empty;
+            // Never loaded: no messages yet, but more before them. A failed
+            // first page stops the retry loop and says so instead of spinning.
+            loading = loading || (_root ? _loadingThread
+                                        : c.messages.empty() && c.hasMoreBefore && !_historyFailed);
+            s = !_root && _historyFailed ? State::Error : loading ? State::Loading : State::Empty;
         } else if (loading) {
             s = State::Loading;
         }
@@ -1037,6 +1084,7 @@ void MessageList::onChange(const model::Change &ch) {
         return;
     case CK::Meta:
     case CK::Roster:
+    case CK::ThreadRead:
         return;
     case CK::Users:
         // A burst (a presence round, a users.list page) → one pass.
@@ -1275,10 +1323,9 @@ void MessageList::usersChanged() {
         bool hit = touches(*m, c);
         // An inline thread's replies draw in their root's row.
         if (!hit && _root == 0 && has(_inlineThreads, ts))
-            if (const auto *replies = st.replies(_conv, ts))
-                for (const model::Message &r : *replies)
-                    if ((hit = touches(r, c)))
-                        break;
+            for (const model::Message *r : st.threadTimeline(_conv, ts))
+                if ((hit = touches(*r, c)))
+                    break;
         if (hit)
             rowsChanged(i, 1);
     }
@@ -1291,9 +1338,10 @@ std::string MessageList::itemLabel(size_t i) const {
     if (it.kind == Kind::Day)
         return base::dayLabel(model::tsSecs(it.ts), base::nowSecs());
     if (it.kind == Kind::Divider) {
-        const model::Message              *root = message(_root);
-        const std::vector<model::Message> *r    = _ctx.store().replies(_conv, _root);
-        const size_t                       n    = r ? r->size() : root ? root->replyCount : 0;
+        const model::Message *root     = message(_root);
+        const auto            timeline = _ctx.store().threadTimeline(_conv, _root);
+        const size_t          n =
+            !timeline.empty() ? timeline.size() : root ? root->replyCount : 0;
         return n == 1 ? std::string(tr("1 reply")) : arg(tr("%1 replies"), str::number(int64_t(n)));
     }
     return {};
@@ -1351,11 +1399,12 @@ void MessageList::checkEdges() {
     updateVisibleRange();
     if (_root != 0) {
         // An open thread reads itself — on load and on each new reply
-        // (markThreadRead: its cursor, the Threads entry).
-        const auto *replies = _ctx.store().replies(_conv, _root);
-        if (!_loadingThread && replies && !replies->empty() && !replies->back().pending &&
-            replies->back().ts != _markedTs) {
-            _markedTs = replies->back().ts;
+        // (markThreadRead: its cursor, the Threads entry) — unless it was
+        // marked unread here.
+        const auto timeline = _ctx.store().threadTimeline(_conv, _root);
+        if (!_loadingThread && !timeline.empty() && !timeline.back()->pending &&
+            timeline.back()->ts != _markedTs && !_ctx.unreadHeld(_conv, _root)) {
+            _markedTs = timeline.back()->ts;
             _ctx.backend.markThreadRead(_conv, _root, _markedTs);
         }
         return;
@@ -1366,7 +1415,9 @@ void MessageList::checkEdges() {
         return;
     }
     const model::Conversation &c = _ctx.store().conversation(_conv);
-    if (_reading && !_openPending && !c.messages.empty() &&
+    // Marked unread here: it stays so, new messages and all, until opened
+    // again.
+    if (_reading && !_openPending && !c.messages.empty() && !_ctx.unreadHeld(_conv, 0) &&
         _list->lastVisible() >= int(_items.size()) - 1) {
         const Ts newest = c.messages.back().ts;
         if (newest > c.lastRead && newest != _markedTs && !c.messages.back().pending) {
@@ -1394,26 +1445,28 @@ void MessageList::checkEdges() {
     // A pending target is older than the visible range only while the
     // oldest loaded message is still newer than it. Once a page reaches or
     // passes the target, it either found it or the target is unavailable.
-    if (_jumpTs && !c.messages.empty() &&
-        (_jumpTs >= c.messages.front().ts || !c.hasMoreBefore))
+    if (_jumpTs && !c.messages.empty() && (_jumpTs >= c.messages.front().ts || !c.hasMoreBefore))
         _jumpTs = 0;
 
-    if (c.hasMoreBefore && !_loadingOlder &&
+    if (c.hasMoreBefore && !_historyFailed && !_loadingOlder &&
         (c.messages.empty() || _jumpTs || _unreadJump || (first >= 0 && first <= 3))) {
-        _loadingOlder = true;
-        const Ts before = c.messages.empty() ? 0 : c.messages.front().ts;
-        const ConvRef conv = _conv;
-        const uint64_t generation = ++_historyLoadGeneration;
-        std::weak_ptr<char> alive = _alive;
+        _loadingOlder                  = true;
+        const Ts            before     = c.messages.empty() ? 0 : c.messages.front().ts;
+        const ConvRef       conv       = _conv;
+        const uint64_t      generation = ++_historyLoadGeneration;
+        std::weak_ptr<char> alive      = _alive;
         _ctx.backend.loadHistory(
-            conv,
-            before,
-            [this, alive, conv, before, generation](bool ok, const std::string &) {
+            conv, before, [this, alive, conv, before, generation](bool ok, const std::string &err) {
                 if (alive.expired() || generation != _historyLoadGeneration || conv != _conv)
                     return;
                 _loadingOlder = false;
+                if (!ok && err != "cancelled") {
+                    _historyFailed = true;
+                    if (_ctx.backend.onError)
+                        _ctx.backend.onError(i18n::arg(tr("Couldn't load messages: %1"), err));
+                }
                 const model::Conversation &loaded = _ctx.store().conversation(conv);
-                const bool noProgress =
+                const bool                 noProgress =
                     before != 0 && !loaded.messages.empty() && loaded.messages.front().ts >= before;
                 if (!applyJump() && _jumpTs &&
                     (!ok || loaded.messages.empty() || !loaded.hasMoreBefore || noProgress ||
@@ -1421,7 +1474,7 @@ void MessageList::checkEdges() {
                     _jumpTs = 0;
                 if (!ok || noProgress)
                     _unreadJump = false; // failure or a cursor that did not move
-                updateState(); // an empty first page changes no messages
+                updateState();           // an empty first page changes no messages
                 scheduleEdgeCheck();
             }
         );
@@ -1453,7 +1506,11 @@ void MessageList::placeToolbar() {
     }
     _tbEmoji->setVisible(true);
     _tbReply->setVisible(_root == 0);
-    _tbReply->setTooltip(m->isReply() ? tr("Open thread") : tr("Reply in thread"));
+    _tbReply->setTooltip(
+        m->isBroadcast() ? tr("View thread")
+        : m->isReply()   ? tr("Open thread")
+                         : tr("Reply in thread")
+    );
     syncQuickReactions(true);
     _tbSave->setVisible(_ctx.backend.capabilities().messageReminders);
     const bool saved = m->saved || _ctx.store().reminderAt(_conv, m->ts) != 0;
@@ -1667,6 +1724,52 @@ void MessageList::reply(Ts ts) {
         _ctx.openThread(_conv, root);
 }
 
+void MessageList::viewThread(Ts root, Ts reply) {
+    if (!root)
+        return;
+    if (reply && _ctx.openMessage) {
+        _ctx.openMessage(_conv, reply, root);
+        return;
+    }
+    if (_ctx.openThread)
+        _ctx.openThread(_conv, root);
+}
+
+Ts MessageList::unreadThreadOf(const model::Message &m) const {
+    if (_conv == model::kNoConv)
+        return 0;
+    if (_root != 0) // the thread panel: its root is a channel message
+        return m.ts == _root ? 0 : _root;
+    if (!m.isReply())
+        return 0;
+    // A reply in the channel's own list was also sent to the channel; one
+    // expanded inline under its root is the thread's.
+    const auto &msgs = _ctx.store().conversation(_conv).messages;
+    const auto  it =
+        std::lower_bound(msgs.begin(), msgs.end(), m.ts, [](const model::Message &x, Ts t) {
+            return x.ts < t;
+        });
+    return it != msgs.end() && it->ts == m.ts ? 0 : m.threadTs;
+}
+
+// Moves the cursor back to just before the message and holds it there while
+// it is on screen (Context::unreadHolds): no reading it again until it is
+// opened again.
+void MessageList::markUnread(Ts ts) {
+    const model::Message *m = message(ts);
+    if (!m || m->pending || _conv == model::kNoConv)
+        return;
+    if (const Ts thread = unreadThreadOf(*m)) {
+        if (!_ctx.backend.canMarkThreadUnread(_conv, thread))
+            return;
+        _ctx.holdUnread(_conv, thread);
+        _ctx.backend.markThreadUnread(_conv, thread, ts);
+    } else {
+        _ctx.holdUnread(_conv, 0);
+        _ctx.backend.markUnread(_conv, ts);
+    }
+}
+
 void MessageList::openReactionPicker(Ts ts, ui::RectF anchor) {
     if (!window())
         return;
@@ -1821,11 +1924,7 @@ constexpr ui::MenuDef kItemDefs[] = {
      nullptr,
      nullptr},
     {MessageList::kCopyText, uint16_t(gfx::Icon::Copy), N_("Copy message"), nullptr, "Ctrl+C"},
-    {MessageList::kMarkUnread,
-     uint16_t(gfx::Icon::Mail),
-     N_("Mark unread from here"),
-     nullptr,
-     "U"},
+    {MessageList::kMarkUnread, uint16_t(gfx::Icon::Eye), N_("Mark unread"), nullptr, "U"},
     {MessageList::kPin, uint16_t(gfx::Icon::Pin), N_("Pin to channel"), nullptr, "P"},
     {MessageList::kUnpin, uint16_t(gfx::Icon::PinOff), N_("Unpin from channel"), nullptr, "P"},
     {MessageList::kSave, uint16_t(gfx::Icon::Bookmark), N_("Save for later"), nullptr, nullptr},
@@ -1933,8 +2032,11 @@ std::vector<ui::MenuItem> MessageList::menuItems(Ts ts) const {
 
     // Frequent actions first, matching the hover toolbar and Slack's right-click
     // hierarchy. A reply in a thread opens that thread, never a nested thread.
-    if (_root == 0)
-        addItem(items, m->isReply() ? kOpenThread : kReply);
+    if (_root == 0) {
+        ui::MenuItem &item = addItem(items, m->isReply() ? kOpenThread : kReply);
+        if (m->isBroadcast())
+            item.label = tr("View thread");
+    }
     addItem(items, kReact);
     addItem(items, kForward, bool(_ctx.forwardMessage));
     ui::addMenuSeparator(items);
@@ -1943,9 +2045,10 @@ std::vector<ui::MenuItem> MessageList::menuItems(Ts ts) const {
     addItem(items, kCopyText);
     if (!firstLink(m->text).empty())
         addItem(items, kCopyLinkInText);
-    // A reply has its own read cursor; do not move the channel's cursor
-    // backwards from a reply timestamp.
-    if (_root == 0 && !m->isReply())
+    // A reply only where the thread has a cursor of its own to move back
+    // (a followed thread); otherwise the conversation's, where I'm in it.
+    if (const Ts thread = unreadThreadOf(*m);
+        thread ? _ctx.backend.canMarkThreadUnread(_conv, thread) : st.conversation(_conv).member)
         addItem(items, kMarkUnread);
     ui::addMenuSeparator(items);
 
@@ -2090,15 +2193,15 @@ void MessageList::runMenuAction(Ts ts, int id, const std::string &path, ui::Poin
         reply(ts);
         break;
     case kOpenThread:
-        if (_root == 0 && msg->isReply() && msg->threadTs && _ctx.openThread)
-            _ctx.openThread(conv, msg->threadTs);
+        if (_root == 0 && msg->isReply() && msg->threadTs) {
+            if (msg->isBroadcast())
+                viewThread(msg->threadTs, msg->ts);
+            else if (_ctx.openThread)
+                _ctx.openThread(conv, msg->threadTs);
+        }
         break;
     case kReact:
         openReactionPicker(ts, {at.x, at.y, 0, 0});
-        break;
-    case kMarkUnread:
-        if (_root == 0 && !msg->isReply())
-            _ctx.backend.markUnread(conv, ts);
         break;
     case kMuteThread:
     case kUnmuteThread:
@@ -2123,7 +2226,10 @@ void MessageList::runMenuAction(Ts ts, int id, const std::string &path, ui::Poin
         copy = firstLink(msg->text);
         break;
     case kCopyText: // shortened link labels copy as their full URLs
-        copy = plainText(_ctx.store(), msg->text, true);
+        copy = copyableMessageText(_ctx, *msg, *this);
+        break;
+    case kMarkUnread:
+        markUnread(ts);
         break;
     case kPin:
     case kUnpin:
@@ -2210,12 +2316,13 @@ void MessageList::copyImage(const model::File &f) {
     std::string mime = f.mime;
     if (mime.empty()) // from the name; a URL's query is not part of it
         mime = imageMime(std::string_view(source).substr(0, source.find('?')));
-    const std::string name = f.name.empty() ? std::string(tr("image")) : f.name;
-    const int         job  = model::jobs().begin(arg(tr("Copying %1"), name));
-    plat::App        &pa   = _ctx.app.platform();
+    const std::string name    = f.name.empty() ? std::string(tr("image")) : f.name;
+    const int         job     = model::jobs().begin(arg(tr("Copying %1"), name));
+    const auto        onError = _ctx.backend.onError;
+    plat::App        &pa      = _ctx.app.platform();
     // Reads `local` off the UI thread (deleting it when `temp`), then sets the
     // clipboard and ends the job. Never touches the list: it may be gone.
-    auto              put  = [&pa, job, mime](std::string local, bool temp, bool withUri) {
+    auto              put = [&pa, job, mime, onError](std::string local, bool temp, bool withUri) {
         auto bytes = std::make_shared<std::string>();
         auto ok    = std::make_shared<bool>(false);
         model::runInBackground(
@@ -2225,7 +2332,7 @@ void MessageList::copyImage(const model::File &f) {
                 if (temp)
                     removeTempDownload(local);
             },
-            [&pa, job, mime, bytes, ok, local, withUri] {
+            [&pa, job, mime, bytes, ok, local, withUri, onError] {
                 if (*ok) {
                     std::vector<plat::DataItem> items;
                     items.push_back({mime, std::move(*bytes)});
@@ -2234,6 +2341,7 @@ void MessageList::copyImage(const model::File &f) {
                     pa.setClipboard(std::move(items));
                 } else {
                     LOG_WARN("messages", "Copy full image failed: unreadable");
+                    reportDownloadFailure(onError);
                 }
                 model::jobs().end(job);
             }
@@ -2251,18 +2359,22 @@ void MessageList::copyImage(const model::File &f) {
     std::string temp = tempDownloadPath(pa, name);
     if (temp.empty()) {
         LOG_WARN("messages", "Copy full image failed: no temporary directory");
+        reportDownloadFailure(onError);
         model::jobs().end(job);
         return;
     }
-    fetchFile(pa, _ctx.backend, source, temp, [put, temp, job](bool ok, const std::string &err) {
-        if (ok) {
-            put(temp, true, false);
-            return;
+    fetchFile(
+        pa, _ctx.backend, source, temp, [put, temp, job, onError](bool ok, const std::string &err) {
+            if (ok) {
+                put(temp, true, false);
+                return;
+            }
+            LOG_WARN("messages", "Copy full image failed: %s", err.c_str());
+            reportDownloadFailure(onError, err);
+            removeTempDownload(temp);
+            model::jobs().end(job);
         }
-        LOG_WARN("messages", "Copy full image failed: %s", err.c_str());
-        removeTempDownload(temp);
-        model::jobs().end(job);
-    });
+    );
 }
 
 // The file fetched to a temporary copy (a local one
@@ -2272,11 +2384,12 @@ void MessageList::openCsvPreview(const model::File &f) {
     const std::string source = f.source();
     if (source.empty())
         return;
-    const std::string   name  = f.name.empty() ? std::string(tr("file")) : f.name;
-    const int           job   = model::jobs().begin(arg(tr("Downloading %1"), name));
-    plat::App          &pa    = _ctx.app.platform();
-    std::weak_ptr<char> alive = _alive;
-    auto                parse = [this, alive, &pa, job](std::string local, bool temp) {
+    const std::string   name    = f.name.empty() ? std::string(tr("file")) : f.name;
+    const int           job     = model::jobs().begin(arg(tr("Downloading %1"), name));
+    const auto          onError = _ctx.backend.onError;
+    plat::App          &pa      = _ctx.app.platform();
+    std::weak_ptr<char> alive   = _alive;
+    auto                parse   = [this, alive, &pa, job](std::string local, bool temp) {
         auto rows = std::make_shared<std::vector<std::vector<std::string>>>();
         model::runInBackground(
             pa,
@@ -2299,18 +2412,26 @@ void MessageList::openCsvPreview(const model::File &f) {
     std::string temp = tempDownloadPath(pa, name);
     if (temp.empty()) {
         LOG_WARN("messages", "CSV preview download failed: no temporary directory");
+        reportDownloadFailure(onError);
         model::jobs().end(job);
         return;
     }
-    fetchFile(pa, _ctx.backend, source, temp, [parse, temp, job](bool ok, const std::string &err) {
-        if (ok) {
-            parse(temp, true);
-            return;
+    fetchFile(
+        pa,
+        _ctx.backend,
+        source,
+        temp,
+        [parse, temp, job, onError](bool ok, const std::string &err) {
+            if (ok) {
+                parse(temp, true);
+                return;
+            }
+            LOG_WARN("messages", "CSV preview download failed: %s", err.c_str());
+            reportDownloadFailure(onError, err);
+            removeTempDownload(temp);
+            model::jobs().end(job);
         }
-        LOG_WARN("messages", "CSV preview download failed: %s", err.c_str());
-        removeTempDownload(temp);
-        model::jobs().end(job);
-    });
+    );
 }
 
 void MessageList::jumpToUnread() {
@@ -2561,7 +2682,8 @@ std::string MessageList::selectedText() const {
         if (!m)
             continue;
         // Joined by '\n', as the offsets count.
-        const std::vector<std::string> parts = selectableTexts(const_cast<Context &>(_ctx), *m);
+        const std::vector<std::string> parts =
+            selectableTexts(const_cast<Context &>(_ctx), *m, *this);
         std::string                    text;
         for (size_t k = 0; k < parts.size(); ++k) {
             if (k)

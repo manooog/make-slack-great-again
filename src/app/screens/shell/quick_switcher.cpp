@@ -23,7 +23,9 @@ namespace shell {
 
 namespace {
 
-constexpr float kListH = 380; // compact, scrollable search results
+constexpr float kListMaxH = 480; // grow with results, then scroll
+constexpr float kEmptyStateH = 96;
+constexpr float kResultInsetX = 10;
 constexpr float kMessageRowH = 60;
 constexpr size_t kPreviewChars = 180;
 
@@ -314,7 +316,7 @@ public:
     public:
         Row() {
             setLook({C::None, C::Hover, C::Pressed, C::Selection, 6});
-            style().row().height(36).padding(10, 4).spacing(10).items(Align::Center);
+            style().row().height(36).padding(14, 4).spacing(10).items(Align::Center);
             avatar = add<Avatar>();
             avatar->style().size(20, 20);
             avatar->setRadius(5);
@@ -336,6 +338,19 @@ public:
             snippet = body->add<Label>("", Font::Small, C::TextMuted);
             snippet->setMaxLines(1);
             snippet->setVisible(false);
+        }
+
+        void paint(gfx::Painter &p) override {
+            View::paint(p);
+            const C background = stateColor();
+            if (background == C::None)
+                return;
+            RectF highlight = bounds();
+            const float left = snapPx(kResultInsetX);
+            const float right = snapPx(width() - kResultInsetX);
+            highlight.x = left;
+            highlight.w = std::max(0.f, right - left);
+            p.fillRoundRect(highlight, _look.radius, color(background));
         }
         Avatar   *avatar = nullptr;
         IconView *icon = nullptr;
@@ -365,7 +380,7 @@ public:
     std::unique_ptr<View> create(int kind) override {
         if (kind == 1) {
             auto header = std::make_unique<Label>("", Font::Small, C::TextMuted);
-            header->style().height(24).padding(0, 5, 8, 1);
+            header->style().height(24).padding(kResultInsetX, 5, 8, 1);
             header->setMaxLines(1);
             return header;
         }
@@ -414,7 +429,7 @@ public:
         const Entry e = entry(i);
         if (e.type == Type::Header) {
             auto &header = static_cast<Label &>(v);
-            header.style().padding(0, 5, 8, 1);
+            header.style().padding(kResultInsetX, 5, 8, 1);
             header.setText(e.section == Section::Conversations ? tr("Conversations")
                              : e.section == Section::People ? tr("People") : tr("Messages"));
             return;
@@ -432,7 +447,7 @@ public:
             const auto &cv = st.conversation(c);
             const std::string nm = st.displayName(c);
             const bool person = cv.isDirect();
-            r.style().height(36).padding(10, 4).spacing(10).items(Align::Center);
+            r.style().height(36).padding(14, 4).spacing(10).items(Align::Center);
             r.avatar->style().size(20, 20);
             r.avatar->setVisible(person);
             r.icon->setVisible(!person);
@@ -448,7 +463,7 @@ public:
         } else if (e.type == Type::Person) {
             const auto &st = *_q._tabs[size_t(_q._tab)].store;
             const auto &u = st.user(_q._people[e.dataIndex]);
-            r.style().height(36).padding(10, 4).spacing(10).items(Align::Center);
+            r.style().height(36).padding(14, 4).spacing(10).items(Align::Center);
             r.avatar->style().size(20, 20);
             r.avatar->setVisible(true);
             r.icon->setVisible(false);
@@ -463,7 +478,7 @@ public:
                 hit.user < tab.store->userCount() ? &tab.store->user(hit.user) : nullptr;
             const std::string sender = user ? std::string(user->label()) : hit.sender;
 
-            r.style().height(kMessageRowH).padding(10, 6).spacing(10).items(Align::Center);
+            r.style().height(kMessageRowH).padding(14, 6).spacing(10).items(Align::Center);
             r.avatar->style().size(28, 28);
             r.avatar->setVisible(!sender.empty());
             r.icon->setVisible(sender.empty());
@@ -540,6 +555,21 @@ private:
 
     QuickSwitcher &_q;
 };
+
+namespace {
+
+// Size the popup's results viewport to its content until it reaches maxH.
+class ContentSizedList final : public VirtualList {
+public:
+    using VirtualList::VirtualList;
+
+    SizeF measureContent(float, float availableHeight) override {
+        return {0, std::min(contentExtent(), availableHeight)};
+    }
+};
+
+} // namespace
+
 QuickSwitcher::QuickSwitcher(
     screens::Context           &ctx,
     Avatars                    &avatars,
@@ -564,11 +594,11 @@ QuickSwitcher::QuickSwitcher(
     if (_scope != model::kNoConv && searchScopeQuery(ctx.store(), _scope).empty())
         _scope = model::kNoConv;
     _searchPages.assign(_tabs.size(), SearchPageState{});
-    style().width(620).padding(10).spacing(8);
+    style().width(620).padding(0, 10).spacing(8);
     // The tabs first — the card's header when there is a choice to make.
     if (multi) {
         _strip = add<View>();
-        _strip->style().row().spacing(6).items(Align::Center);
+        _strip->style().row().spacing(6).items(Align::Center).margins(kResultInsetX, 0, kResultInsetX, 0);
         for (size_t i = 0; i < _tabs.size(); ++i) {
             const QuickSwitchTab &t = _tabs[i];
             auto                 *b =
@@ -582,7 +612,7 @@ QuickSwitcher::QuickSwitcher(
         _tabName->style().flex(1).margins(4, 0, 0, 0);
     }
     _scopeChip = add<Button>("", Button::Kind::Secondary, Button::Form::Small);
-    _scopeChip->style().alignSelf(Align::Start);
+    _scopeChip->style().alignSelf(Align::Start).margins(kResultInsetX, 0, kResultInsetX, 0);
     _scopeChip->onClick = [this] { clearScope(); };
     _scopeChip->setVisible(_scope != model::kNoConv);
     if (_scope != model::kNoConv)
@@ -592,7 +622,7 @@ QuickSwitcher::QuickSwitcher(
     _field->setMaxLines(1);
     _field->setBackground(C::InputBg, 6);
     _field->setBorder(C::InputBorderFocus);
-    _field->style().padding(10, 8);
+    _field->style().margins(kResultInsetX, 0, kResultInsetX, 0).padding(14, 8);
     _field->onChange = [this] { applyFilter(); };
     // The switcher's keys, whatever the modifiers: Up/Down move (wrapping),
     // Enter opens; with several workspaces ←/→ and Tab/Shift+Tab switch
@@ -622,9 +652,9 @@ QuickSwitcher::QuickSwitcher(
     };
     // The list: conversation suggestions followed by the scrollable message results.
     _rows = std::make_unique<Rows>(*this);
-    _list = add<VirtualList>(_rows.get());
+    _list = add<ContentSizedList>(_rows.get());
     _list->setGap(1);
-    _list->style().height(kListH);
+    _list->style().maxH = kListMaxH;
     // Pagination belongs to the message stream, which is the final section.
     _list->onScroll = [this] {
         if (!_searching && _searchError.empty() && _list->atEnd() && hasMore())
@@ -633,7 +663,7 @@ QuickSwitcher::QuickSwitcher(
     // In the list's place when nothing matches.
     _empty = add<Label>(tr("No results found."), Font::Body, C::TextMuted);
     _empty->setAlign(text::LayoutOptions::Align::Center);
-    _empty->style().height(kListH);
+    _empty->style().height(kEmptyStateH);
     _empty->setVisible(false);
     _status = add<Label>("", Font::Small, C::TextMuted);
     _status->setAlign(text::LayoutOptions::Align::Center);
@@ -801,6 +831,9 @@ void QuickSwitcher::refreshResults() {
     if (_current >= total) _current = 0;
     const float oldOffset = _preserveScroll ? _list->scrollOffset() : 0;
     _list->reset();
+    // The list remains a scroll-layout boundary: only data refreshes change
+    // the popup's natural height; scrolling itself must not re-layout the popup.
+    invalidateLayout();
     _list->scrollTo(oldOffset);
     _list->setVisible(rowCount > 0);
     _empty->setVisible(total == 0);

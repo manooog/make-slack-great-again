@@ -140,9 +140,9 @@ public:
     };
     const std::vector<Item> &items() const { return _items; }
     std::string              itemLabel(size_t i) const; // Day: "Today"; Divider: "3 replies"
-    // What the empty list shows, and its text (the hint under the ring, or
-    // "No messages yet").
-    enum class State : uint8_t { None, Loading, Empty };
+    // What the empty list shows, and its text (the hint under the ring,
+    // "No messages yet", or a first-page load failure).
+    enum class State : uint8_t { None, Loading, Empty, Error };
     State              state() const;
     std::string        stateText() const;
     const std::string &typingText() const;
@@ -178,7 +178,7 @@ public:
         kCopyLink,
         kCopyLinkInText,
         kCopyText,
-        kMarkUnread,
+        kMarkUnread, // the conversation from here, or the thread from a reply
         kPin,
         kUnpin,
         kSave,
@@ -209,6 +209,10 @@ public:
     // The file action bar ("…" → the file menu), for the hovered file.
     void openFileMenu(Ts ts, const std::string &path, ui::PointF windowPos);
     void fileHovered(ui::View *fileView, Ts ts, const std::string &path, bool on);
+    // A file view going (its row rebuilt, the message deleted or edited, another
+    // conversation) or naming another message: the file bar it showed goes with it,
+    // so its buttons never act on a message that is no longer under them.
+    void fileGone(ui::View *fileView);
     // These run in the background (model::jobs(): the footer's cog lists
     // them) and outlive the list.
     void downloadFile(Ts ts, const std::string &path); // the bar's Download
@@ -222,6 +226,14 @@ public:
     void pressButton(Ts ts, const std::string &buttonId, ui::PointF windowPos);
     void showToast(const std::string &text, int ms, ui::PointF windowPos);
     void reply(Ts ts);
+    // "View thread" on a broadcast reply: open its original thread, at the
+    // reply when the shell can navigate there.
+    void viewThread(Ts root, Ts reply = 0);
+    // "Mark unread": what the message's read cursor is — 0 for the
+    // conversation's (a top-level message, a thread's root, a reply also
+    // sent to the channel), else the thread's root (a reply).
+    Ts   unreadThreadOf(const model::Message &m) const;
+    void markUnread(Ts ts);
 
     // ── Internal (rows): state the rows read and the actions they take ─────
     void               applySelection(MessageRow &row) const;
@@ -332,7 +344,8 @@ private:
                               *_tbMore = nullptr;
     class ActionButton        *_tbSave = nullptr;
     ui::View                  *_fileBar = nullptr, *_fileView = nullptr; // the hovered file
-    Ts                         _fileTs = 0;
+    class ActionButton        *_fbReact = nullptr;
+    Ts                         _fileTs  = 0;
     std::string                _filePath;
     MessageRow                *_toolbarRow = nullptr;
     std::vector<Item>          _items;
@@ -350,6 +363,7 @@ private:
     MessageRow                *_rows = nullptr; // every message row (live, kept, spare), linked
     bool                       _loadingOlder = false, _loadingThread = false;
     bool                       _threadLoadPending = false, _waiting = false;
+    bool                       _historyFailed = false; // a first page failed: stop auto-paging
     // Selection.
     TextPos                    _selAnchor, _selFocus;
     bool                       _selDragging = false;

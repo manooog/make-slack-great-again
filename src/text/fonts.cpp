@@ -107,7 +107,7 @@ struct State {
     std::vector<Loaded>   loaded;
     std::vector<FileMap>  maps;
     FT_Library            ft = nullptr;
-    int                   ui = -1, defaultUi = -1, mono = -1, emoji = -1;
+    int                   ui = -1, defaultUi = -1, mono = -1, defaultMono = -1, emoji = -1;
     // fallback()'s answers, open-addressed: (cp + 1) << 16 | family
     // (0xFFFF = none); 0 is an empty slot. At most half full.
     std::vector<uint64_t> fbCache;
@@ -125,6 +125,24 @@ int findFamily(const char *name) {
         if (!std::strcmp(g->ix.str(g->fams[i].name), name))
             return int(i);
     return -1;
+}
+
+int findSelectableFamily(const std::string &key) {
+    const int i = findFamily(key.c_str());
+    if (i < 0 || (g->ix.faces[g->fams[size_t(i)].faces[0]].flags & kColor))
+        return -1;
+    return i;
+}
+
+bool selectFamily(std::string_view family, int fallback, int &slot) {
+    const std::string key = str::asciiLower(str::trim(family));
+    if (key.empty()) {
+        slot = fallback;
+        return true;
+    }
+    const int found = findSelectableFamily(key);
+    slot = found >= 0 ? found : fallback;
+    return found >= 0;
 }
 
 // "noto sans cjk jp" etc. from the locale, so Han characters get the
@@ -381,7 +399,8 @@ bool init(std::string *error) {
         g->ui = g->fallbackOrder[0];
     if (g->mono < 0)
         g->mono = g->ui;
-    g->defaultUi = g->ui;
+    g->defaultUi   = g->ui;
+    g->defaultMono = g->mono;
     // Linear coverage looks thin when blended in sRGB; a mild boost (gamma
     // 1/1.2) brings dark-on-light text close to what users know from
     // FreeType+Cairo without colour-dependent caches.
@@ -422,24 +441,11 @@ std::vector<std::string> uiFamilies() {
 }
 
 bool setUiFamily(std::string_view family) {
-    if (!g)
-        return false;
-    // The index stores ASCII-lowercase family names, but user-entered names
-    // keep their original casing in settings.json (e.g. "Maple Mono NF CN").
-    const std::string key = str::asciiLower(str::trim(family));
-    if (key.empty()) {
-        g->ui = g->defaultUi;
-        return true;
-    }
-    for (size_t i = 0; i < g->fams.size(); ++i) {
-        const Family &f = g->fams[i];
-        if (key == g->ix.str(f.name) && !(g->ix.faces[f.faces[0]].flags & kColor)) {
-            g->ui = int(i);
-            return true;
-        }
-    }
-    g->ui = g->defaultUi;
-    return false;
+    return g && selectFamily(family, g->defaultUi, g->ui);
+}
+
+bool setMonoFamily(std::string_view family) {
+    return g && selectFamily(family, g->defaultMono, g->mono);
 }
 
 FontKey primary(const Style &s) {

@@ -242,6 +242,62 @@ TEST("slack realtime: a reply to a thread I started is followed, its root unload
     CHECK(!e.be->threadFollowed(c, model::parseTs("1800000000.000060")));
 }
 
+TEST("slack realtime: a loaded thread reply becomes a broadcast when its event arrives") {
+    if (!haveServer())
+        return;
+    Env e;
+    REQUIRE(e.connect());
+    REQUIRE(e.live());
+    const ConvRef c    = e.conv("C1");
+    const Ts      root = model::parseTs("1800000000.000050");
+    const Ts      ts   = model::parseTs("1800000000.000300");
+    const auto    mira = e.store.findUser("UMIRA");
+
+    model::Message rootMsg;
+    rootMsg.ts          = root;
+    rootMsg.threadTs    = root;
+    rootMsg.user        = mira;
+    rootMsg.text        = "root";
+    rootMsg.replyCount  = 1;
+    rootMsg.latestReply = ts;
+    std::vector<model::Message> history;
+    history.push_back(std::move(rootMsg));
+    e.store.addPage(c, std::move(history));
+    model::Message reply;
+    reply.ts       = ts;
+    reply.threadTs = root;
+    reply.user     = mira;
+    reply.text     = "reply";
+    std::vector<model::Message> replies;
+    replies.push_back(std::move(reply));
+    e.store.addPage(c, std::move(replies));
+    e.store.updateConversation(c, [root](model::Conversation &x) { x.lastRead = root; });
+    REQUIRE(e.store.replies(c, root) && e.store.replies(c, root)->size() == 1);
+    CHECK(e.store.indexOf(c, ts) == SIZE_MAX);
+
+    const std::string event =
+        R"({"type":"message","subtype":"thread_broadcast","channel":"C1","user":"UMIRA",)"
+        R"("text":"reply","ts":"1800000000.000300","thread_ts":"1800000000.000050"})";
+    REQUIRE(push(envelope("env-b1", event)));
+    REQUIRE(pumpUntil([&] { return e.store.indexOf(c, ts) != SIZE_MAX; }));
+    const model::Message *m = e.store.findMessage(c, ts);
+    REQUIRE(m != nullptr);
+    CHECK(m->isBroadcast() && !m->pending);
+    CHECK(e.store.replies(c, root)->empty());
+    CHECK(e.store.threadTimeline(c, root).size() == 1);
+    CHECK(e.store.findMessage(c, root)->replyCount == 1);
+    CHECK(e.store.conversation(c).unread == 1);
+    CHECK(e.store.conversation(c).latest == ts);
+
+    // A redelivered broadcast event finds the channel row already there.
+    REQUIRE(push(envelope("env-b2", event)));
+    pumpFor(150);
+    CHECK(e.store.conversation(c).messages.size() == 2);
+    CHECK(e.store.replies(c, root)->empty());
+    CHECK(e.store.findMessage(c, root)->replyCount == 1);
+    CHECK(e.store.conversation(c).unread == 1);
+}
+
 TEST("slack realtime: edits, deletions, reactions, presence, users and marks") {
     if (!haveServer())
         return;

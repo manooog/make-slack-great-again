@@ -363,6 +363,10 @@ void fields(IO &io, model::Message &m) {
         io.flags({&x.huddle.ended});
         io.str(x.sendBlocks);
         io.flags({&x.sendBroadcast});
+        // Appended for backward-compatible reads: a thread_broadcast's parent
+        // preview survives a restart until history refreshes it.
+        io.str(x.threadParentText);
+        io.user(x.threadParentUser);
         io.close();
     }
     // Appended for backward-compatible reads of existing message cache records.
@@ -735,8 +739,10 @@ Ts WorkspaceCache::loadMessages(ConvRef c) {
             m.sendError = "Application closed before delivery was confirmed";
         }
         m.pending = false;
-        if (m.isReply())
-            m.threadTs = 0; // tolerate malformed legacy top-level cache records
+        // Broadcast replies legitimately sit in the channel list with their
+        // thread_ts; other replies there are malformed legacy records.
+        if (m.isReply() && !m.isBroadcast())
+            m.threadTs = 0;
         page.push_back(std::move(m));
     }
     // Thread replies otherwise live only in memory. Keep local outgoing replies
