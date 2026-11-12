@@ -881,7 +881,7 @@ TEST("settings: the External connections section can be turned off, on Save") {
     pump();
     h.click(save);
     CHECK_FALSE(h.settings.externalSection);
-    CHECK_FALSE(shell::Settings::load(path).externalSection);
+    REQUIRE(until([&] { return !shell::Settings::load(path).externalSection; }));
     file::remove(path);
 }
 
@@ -921,7 +921,9 @@ TEST("settings: direct messages at the top, under the External connections box, 
     pump();
     h.click(save);
     CHECK(h.settings.directAndExternalFirst);
-    CHECK(shell::Settings::load(path).directAndExternalFirst);
+    // Settings are written on a worker: wait for the file rather than
+    // assuming the click's pump also finished the background write.
+    REQUIRE(until([&] { return shell::Settings::load(path).directAndExternalFirst; }));
     file::remove(path);
 }
 
